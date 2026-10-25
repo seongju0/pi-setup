@@ -22,14 +22,14 @@ export async function inspectTools({ root, env, target }) {
   const catalog = JSON.parse(await fs.readFile(path.join(root, 'manifests/tools.json'), 'utf8'));
   const skillsDir = path.join(target, 'skills');
   const gh = await findExecutable('gh', env);
-  let extensions = [], skillSupport = false;
+  let extensions = [], skillSupport = false, extensionInspectionFailed = false;
   if (gh) {
     // Inspection must not trigger gh's daily network checks/telemetry, and the
     // extension list must retain its non-TTY tab-separated format.
     const inspectEnv = { ...env, GH_NO_UPDATE_NOTIFIER: '1', GH_NO_EXTENSION_UPDATE_NOTIFIER: '1', GH_TELEMETRY: 'false', GH_FORCE_TTY: '', NO_COLOR: '1' };
     const listing = spawnSync(gh, ['extension', 'list'], { env: inspectEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    if (listing.error || listing.status !== 0) throw new Error(`Cannot inspect GitHub CLI extensions: ${listing.error?.message || listing.stderr}`);
-    extensions = listing.stdout.split('\n').map(line => line.split('\t')[0]);
+    extensionInspectionFailed = !!listing.error || listing.status !== 0;
+    if (!extensionInspectionFailed) extensions = listing.stdout.split('\n').map(line => line.split('\t')[0]);
     const help = spawnSync(gh, ['skill', 'install', '--help'], { env: inspectEnv, stdio: 'ignore' });
     skillSupport = !help.error && help.status === 0;
   }
@@ -43,8 +43,9 @@ export async function inspectTools({ root, env, target }) {
     else installed = await findExecutable(tool.executable, env);
     const prerequisite = await findExecutable(tool.prerequisite, env);
     const requires = tool.prerequisite === 'gh' && !gh && canInstallGh ? ['gh'] : [];
-    const available = !installed && (!!prerequisite || requires.length > 0) && (!tool.skill || !gh || skillSupport);
+    const available = !installed && (!!prerequisite || requires.length > 0) && (!tool.skill || !gh || skillSupport) && (!tool.extension || !extensionInspectionFailed);
     const reason = installed ? `installed or occupied: ${installed}; preserved, no upgrades or browser downloads`
+      : tool.extension && extensionInspectionFailed ? 'Cannot inspect installed gh extensions. Run gh extension list yourself, resolve its error (including authentication), then rerun install.'
       : tool.skill && gh && !skillSupport ? `Installed gh has no gh skill support. ${tool.instructions}`
       : !prerequisite && !requires.length ? `Missing ${tool.prerequisite}. ${tool.instructions}` : null;
     const commands = tool.commands.map(command => ({ ...command, args: command.args.map(arg => arg === '{skillsDir}' ? skillsDir : arg) }));

@@ -161,6 +161,9 @@ Upstream content is installed by GitHub CLI with tracking metadata, not copied
 into this repository. Existing skill paths—including local directories, symlinks,
 and broken links—are preserved without overwrite or adoption. gh-stack presence
 is detected through `gh extension list`, not by mistaking `gh` for the extension.
+If that inspection fails (for example, `gh` is not authenticated), only the
+extension choice is unavailable; foundation setup still works. Resolve the native
+error yourself and use `pi-setup install` to revisit that choice.
 Native commands may leave approved partial changes if they fail; rerun after
 following the owner's instructions. Missing choices are informational in `check`,
 not auto-repaired.

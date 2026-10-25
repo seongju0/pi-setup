@@ -37,7 +37,7 @@ async function fixture(t) {
   // record their input and materialize the executable as a native install does.
   const ghCode = `const fs=require('node:fs'),path=require('node:path');
 const args=process.argv.slice(2), installed=path.join(process.env.TOOL_BIN,'gh-stack-installed');
-if(args[0]==='extension' && args[1]==='list') { if(fs.existsSync(installed)) console.log('gh stack\\tgithub/gh-stack\\tv0.2.0'); process.exit(0); }
+if(args[0]==='extension' && args[1]==='list') { if(process.env.GH_LIST_FAIL){console.error('Please run gh auth login');process.exit(4);} if(fs.existsSync(installed)) console.log('gh stack\\tgithub/gh-stack\\tv0.2.0'); process.exit(0); }
 if(args.join(' ')==='skill install --help') process.exit(process.env.GH_NO_SKILLS ? 1 : 0);
 fs.appendFileSync(process.env.TOOL_CALLS,JSON.stringify({owner:'gh',args})+'\\n');
 if(process.env.TOOL_FAIL){fs.writeFileSync(path.join(process.env.TOOL_BIN,'partial'),'approved partial');process.exit(9);}
@@ -197,6 +197,20 @@ test('tool boundaries: dry run/cancel/prerequisites stay read-only and failed ap
   await fs.mkdir(path.join(f.target, 'skills/gh-stack'), { recursive: true });
   await fs.writeFile(path.join(f.target, 'skills/gh-stack/SKILL.md'), 'client-owned');
   await fs.symlink(path.join(f.home, 'missing-owner-content'), path.join(f.target, 'skills/agent-browser'));
+  // An installed but unauthenticated gh must not block the foundation, nor may
+  // failed inspection be interpreted as permission to reinstall an extension.
+  await fs.writeFile(path.join(f.root, 'agent/AGENTS.md'), 'synthetic foundation guidance');
+  await fs.writeFile(path.join(f.root, 'manifests/resources.json'), JSON.stringify({ instructions: ['agent/AGENTS.md'], extensions: [], support: [], skills: [] }));
+  const beforeInspectionFailure = await read(f.calls);
+  await f.setup({ env: { ...f.env, GH_LIST_FAIL: '1' }, selectTools: async offers => {
+    const stack = offers.find(tool => tool.id === 'gh-stack');
+    assert.equal(stack.available, false);
+    assert.match(stack.reason, /Cannot inspect.*authentication/);
+    return [];
+  }, ask: async (key, message, fallback) => key === 'group:instructions' ? true : f.ask(key, message, fallback) });
+  assert.equal(await fs.readlink(path.join(f.target, 'AGENTS.md')), path.join(f.root, 'agent/AGENTS.md'));
+  assert.equal(await read(f.calls), beforeInspectionFailure);
+  assert.equal(await read(f.settings), f.settingsBytes);
   await f.setup({ env: { ...f.env, GH_NO_SKILLS: '1' }, selectTools: async offers => {
     assert.ok(!offers.some(tool => ['gh', 'gh-stack', 'gh-stack-skill', 'agent-browser-skill'].includes(tool.id)));
     const herdr = offers.find(tool => tool.id === 'herdr-skill');
