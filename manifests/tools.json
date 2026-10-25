@@ -1,0 +1,68 @@
+[
+  {
+    "id": "gh",
+    "name": "GitHub CLI (gh)",
+    "executable": "gh",
+    "prerequisite": "brew",
+    "instructions": "Install Homebrew yourself using https://brew.sh, then rerun install.",
+    "source": "https://cli.github.com/",
+    "commands": [{ "executable": "brew", "args": ["install", "gh"] }]
+  },
+  {
+    "id": "gh-stack",
+    "name": "gh-stack extension",
+    "extension": "stack",
+    "prerequisite": "gh",
+    "instructions": "Select GitHub CLI above, or install it yourself and rerun install. Configure authentication yourself if the native command requests it. Requires Git >=2.36.",
+    "source": "https://github.com/github/gh-stack",
+    "commands": [{ "executable": "gh", "args": ["extension", "install", "github/gh-stack"] }]
+  },
+  {
+    "id": "gh-stack-skill",
+    "name": "gh-stack companion skill (separate from the extension)",
+    "skill": "gh-stack",
+    "prerequisite": "gh",
+    "instructions": "Requires GitHub CLI with gh skill support. Select GitHub CLI above or update it yourself through its existing owner.",
+    "source": "https://github.com/github/gh-stack",
+    "commands": [{ "executable": "gh", "args": ["skill", "install", "github/gh-stack", "gh-stack", "--dir", "{skillsDir}"] }]
+  },
+  {
+    "id": "herdr",
+    "name": "Herdr",
+    "executable": "herdr",
+    "prerequisite": "brew",
+    "instructions": "Install Homebrew yourself using https://brew.sh, then rerun install.",
+    "source": "https://herdr.dev/docs/install/",
+    "commands": [{ "executable": "brew", "args": ["install", "herdr"] }]
+  },
+  {
+    "id": "herdr-skill",
+    "name": "Herdr companion skill (separate from the CLI)",
+    "skill": "herdr",
+    "prerequisite": "gh",
+    "instructions": "Requires GitHub CLI with gh skill support. Select GitHub CLI above or update it yourself through its existing owner.",
+    "source": "https://herdr.dev/agent-guide.md",
+    "commands": [{ "executable": "gh", "args": ["skill", "install", "herdrdev/herdr", "herdr", "--dir", "{skillsDir}"] }]
+  },
+  {
+    "id": "agent-browser",
+    "name": "agent-browser (CLI + Chrome for Testing download)",
+    "executable": "agent-browser",
+    "prerequisite": "npm",
+    "instructions": "Select your existing Node owner's npm on PATH, then rerun install.",
+    "source": "https://agent-browser.dev/installation",
+    "commands": [
+      { "executable": "npm", "args": ["install", "-g", "agent-browser"] },
+      { "executable": "agent-browser", "args": ["install"] }
+    ]
+  },
+  {
+    "id": "agent-browser-skill",
+    "name": "agent-browser companion skill (separate from the CLI/browser)",
+    "skill": "agent-browser",
+    "prerequisite": "gh",
+    "instructions": "Requires GitHub CLI with gh skill support. Select GitHub CLI above or update it yourself through its existing owner.",
+    "source": "https://agent-browser.dev/skills",
+    "commands": [{ "executable": "gh", "args": ["skill", "install", "vercel-labs/agent-browser", "agent-browser", "--dir", "{skillsDir}"] }]
+  }
+]

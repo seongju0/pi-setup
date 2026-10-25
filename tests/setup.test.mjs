@@ -1,0 +1,250 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { test } from 'node:test';
+import { runSetup, inspectSetup } from '../scripts/setup.mjs';
+import { checkSetup } from '../scripts/check.mjs';
+import { updateCheckout } from '../scripts/update.mjs';
+
+const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const readJSON = async name => JSON.parse(await fs.readFile(name, 'utf8'));
+const exists = async name => { try { await fs.lstat(name); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } };
+async function fixture(t) {
+  const temp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pi-setup-test-')));
+  t.after(() => fs.rm(temp, { recursive: true, force: true }));
+  const root = path.join(temp, 'checkout');
+  const home = path.join(temp, 'home');
+  const bin = path.join(temp, 'bin');
+  await fs.mkdir(root);
+  await fs.mkdir(home);
+  await fs.mkdir(bin);
+  await fs.cp(path.join(source, 'agent'), path.join(root, 'agent'), { recursive: true });
+  await fs.cp(path.join(source, 'manifests'), path.join(root, 'manifests'), { recursive: true });
+  const target = path.join(home, 'custom-agent');
+  const calls = path.join(temp, 'calls.jsonl');
+  const pi = path.join(bin, 'pi');
+  // External vendor boundary only: real subprocess records arguments and acts like
+  // native Pi by preserving settings while appending the requested package.
+  await fs.writeFile(pi, `#!${process.execPath}\nconst fs = require('node:fs');\nconst path = require('node:path');\nfs.appendFileSync(process.env.FAKE_CALLS, JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),target:process.env.PI_CODING_AGENT_DIR})+'\\n');\nconst file = path.join(process.env.PI_CODING_AGENT_DIR,'settings.json');\nconst settings = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file,'utf8')) : {};\nif (process.env.FAKE_FAIL) { settings.vendorPartial = true; fs.writeFileSync(file,JSON.stringify(settings)); process.exit(7); }\nsettings.packages ||= []; settings.packages.push(process.argv[3]);\nfs.writeFileSync(file,JSON.stringify(settings));\n`, { mode: 0o755 });
+  const env = { ...process.env, HOME: home, PI_CODING_AGENT_DIR: '~/custom-agent', PATH: bin, FAKE_CALLS: calls };
+  const ask = async (key, _message, fallback) => key === 'apply' || key === 'package:npm:pi-updater' ? true : fallback;
+  const setup = options => runSetup({ root, env, ask, log() {}, ...options });
+  return { temp, root, home, bin, target, calls, env, ask, setup, settings: path.join(target, 'settings.json'), backups: path.join(home, '.local/state/pi-setup/backups') };
+}
+
+// Exactly three caller-level flows; no internal implementation stubs.
+test('fresh install: preview/prerequisites/cancellation are read-only, then links, preferences and native package apply', async t => {
+  const f = await fixture(t);
+  let prompted = false;
+  await f.setup({ dryRun: true, ask: async () => { prompted = true; throw new Error('prompted'); } });
+  assert.equal(prompted, false);
+  await assert.rejects(f.setup({ env: { ...f.env, PATH: path.join(f.temp, 'missing') } }), /Pi is required on PATH/);
+  await f.setup({ ask: async (key, _message, fallback) => key === 'apply' ? false : fallback });
+  assert.equal(await exists(f.target), false);
+  assert.equal(await exists(f.backups), false);
+  assert.equal(await exists(f.calls), false);
+  const result = await f.setup();
+  assert.equal(result.applied, true);
+  assert.equal(result.backup, undefined);
+  for (const link of result.links) {
+    assert.equal(link.status, 'linked');
+    assert.equal(await fs.readlink(link.to), link.from);
+  }
+  assert.equal((await fs.lstat(path.join(f.target, 'extensions'))).isSymbolicLink(), false);
+  assert.equal((await fs.lstat(path.join(f.target, 'skills'))).isSymbolicLink(), false);
+  const settings = await readJSON(f.settings);
+  assert.deepEqual(settings, { ...await readJSON(path.join(f.root, 'agent/settings.base.json')), packages: ['npm:pi-updater'] });
+  const call = JSON.parse((await fs.readFile(f.calls, 'utf8')).trim());
+  assert.deepEqual(call, { args: ['install', 'npm:pi-updater'], cwd: f.target, target: f.target });
+  assert.equal(await exists(f.backups), false);
+  const before = await fs.readFile(f.settings, 'utf8');
+  assert.ok((await checkSetup({ root: f.root, env: f.env })).some(line => line.startsWith('linked:')));
+  assert.equal(await fs.readFile(f.settings, 'utf8'), before);
+  const help = spawnSync(process.execPath, [path.join(source, 'scripts/setup.mjs'), '--help'], { env: f.env, encoding: 'utf8' });
+  assert.equal(help.status, 0);
+  const invalid = spawnSync(process.execPath, [path.join(source, 'scripts/setup.mjs'), '--yes'], { env: f.env, encoding: 'utf8' });
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /Unknown argument/);
+  const nonTTY = spawnSync(process.execPath, [path.join(source, 'scripts/setup.mjs')], { env: f.env, encoding: 'utf8' });
+  assert.match(nonTTY.stderr, /TTY/);
+});
+
+test('rerun and upstream update preserve settings; new resource links apply and unsafe Git updates refuse without resetting', async t => {
+  const f = await fixture(t);
+  const gitEnv = { ...f.env, PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+  const git = (cwd, ...args) => {
+    const result = spawnSync('git', ['-c', 'user.name=Setup Test', '-c', 'user.email=setup-test@example.invalid', ...args], { cwd, env: gitEnv, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  // Only local temporary Git repositories: no real checkout or remote network.
+  const upstream = path.join(f.temp, 'upstream.git');
+  const publisher = path.join(f.temp, 'publisher');
+  git(f.temp, 'init', '--bare', '--initial-branch=main', upstream);
+  git(f.root, 'init', '--initial-branch=main');
+  git(f.root, 'add', '.');
+  git(f.root, 'commit', '-m', 'Initial fixture');
+  git(f.root, 'remote', 'add', 'origin', upstream);
+  git(f.root, 'push', '-u', 'origin', 'main');
+  git(f.temp, 'clone', upstream, publisher);
+  const update = () => updateCheckout({ root: f.root, env: gitEnv, log() {} });
+  await f.setup();
+  const originalSettings = await fs.readFile(f.settings, 'utf8');
+  const originalCalls = await fs.readFile(f.calls, 'utf8');
+  const originalLink = await fs.lstat(path.join(f.target, 'AGENTS.md'));
+  const repeat = await f.setup({ ask: async (key, _message, fallback) => { assert.notEqual(key, 'apply'); return fallback; } });
+  assert.equal(repeat.applied, false);
+  assert.equal(await fs.readFile(f.settings, 'utf8'), originalSettings);
+  assert.equal(await exists(f.backups), false);
+  // Local preferences may change independently between installation and update.
+  const customized = await readJSON(f.settings);
+  customized.theme = 'my-local-theme';
+  customized.terminal.showImages = false;
+  customized.custom = { preserved: true };
+  const customBytes = JSON.stringify(customized, null, 1) + '\n\n';
+  await fs.writeFile(f.settings, customBytes);
+  await fs.mkdir(path.join(f.target, 'extensions/local-only'));
+  await fs.writeFile(path.join(f.target, 'extensions/local-only/index.ts'), 'local extension');
+  const manifestFile = path.join(publisher, 'manifests/resources.json');
+  const manifest = await readJSON(manifestFile);
+  manifest.extensions.push('agent/extensions/new-resource');
+  await fs.mkdir(path.join(publisher, 'agent/extensions/new-resource'));
+  await fs.writeFile(path.join(publisher, 'agent/extensions/new-resource/index.ts'), 'export default function () {}\n');
+  await fs.writeFile(manifestFile, JSON.stringify(manifest));
+  const baseFile = path.join(publisher, 'agent/settings.base.json');
+  const base = await readJSON(baseFile);
+  base.terminal.newPreference = true;
+  await fs.writeFile(baseFile, JSON.stringify(base));
+  git(publisher, 'add', '.');
+  git(publisher, 'commit', '-m', 'Add resource and preference');
+  git(publisher, 'push');
+  update();
+  assert.equal(git(f.root, 'rev-parse', 'HEAD'), git(publisher, 'rev-parse', 'HEAD'));
+  assert.equal((await readJSON(path.join(f.root, 'agent/settings.base.json'))).terminal.newPreference, true);
+  const added = await f.setup();
+  assert.equal(await fs.readlink(path.join(f.target, 'extensions/new-resource')), path.join(f.root, 'agent/extensions/new-resource'));
+  assert.equal(added.backup, undefined);
+  assert.equal(await fs.readFile(f.settings, 'utf8'), customBytes);
+  assert.equal((await readJSON(f.settings)).terminal.newPreference, undefined);
+  assert.equal((await fs.lstat(path.join(f.target, 'AGENTS.md'))).ino, originalLink.ino);
+  assert.equal(await fs.readFile(f.calls, 'utf8'), originalCalls);
+  assert.equal(await fs.readFile(path.join(f.target, 'extensions/local-only/index.ts'), 'utf8'), 'local extension');
+  update();
+  await f.setup();
+  assert.equal(await fs.readFile(f.settings, 'utf8'), customBytes);
+  assert.equal(await exists(f.backups), false);
+  const head = git(f.root, 'rev-parse', 'HEAD');
+  const tracked = path.join(f.root, 'agent/AGENTS.md');
+  const trackedBytes = await fs.readFile(tracked, 'utf8');
+  await fs.writeFile(tracked, trackedBytes + '\nlocal edit\n');
+  assert.throws(update);
+  assert.equal(await fs.readFile(tracked, 'utf8'), trackedBytes + '\nlocal edit\n');
+  assert.equal(git(f.root, 'rev-parse', 'HEAD'), head);
+  await fs.writeFile(tracked, trackedBytes);
+  const untracked = path.join(f.root, 'untracked-local');
+  await fs.writeFile(untracked, 'keep untracked');
+  assert.throws(update);
+  assert.equal(await fs.readFile(untracked, 'utf8'), 'keep untracked');
+  await fs.unlink(untracked);
+  await fs.writeFile(path.join(f.root, 'local-commit'), 'keep local history');
+  git(f.root, 'add', 'local-commit');
+  git(f.root, 'commit', '-m', 'Local-only change');
+  const localHead = git(f.root, 'rev-parse', 'HEAD');
+  await fs.writeFile(path.join(publisher, 'upstream-change'), 'upstream addition');
+  git(publisher, 'add', 'upstream-change');
+  git(publisher, 'commit', '-m', 'Upstream advances');
+  git(publisher, 'push');
+  assert.throws(update);
+  assert.equal(git(f.root, 'rev-parse', 'HEAD'), localHead);
+  assert.equal(await fs.readFile(path.join(f.root, 'local-commit'), 'utf8'), 'keep local history');
+  assert.equal(await exists(path.join(f.root, 'upstream-change')), false);
+  assert.equal(await fs.readFile(f.settings, 'utf8'), customBytes);
+  assert.equal(await exists(f.backups), false);
+});
+
+test('existing agent: preserve local data and filters, explicit conflict backups, malformed input and native failure readback', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.target, 'extensions/move'), { recursive: true });
+  const sentinels = {
+    'sessions/a.json': 'session', 'todos/a.json': 'todo', 'tasks/a.json': 'task',
+    'auth.json': 'private-auth', 'mcp.json': 'private-mcp', 'extensions/local/index.ts': 'local',
+    'extensions/move/config.json': '{"local":true}',
+  };
+  for (const [name, data] of Object.entries(sentinels)) {
+    await fs.mkdir(path.dirname(path.join(f.target, name)), { recursive: true });
+    await fs.writeFile(path.join(f.target, name), data);
+  }
+  const local = { theme: 'local', terminal: { showImages: false, localNested: 'keep' }, custom: { keep: true }, extensions: ['local'],
+    packages: [{ source: 'npm:pi-updater@1.2.3', extensions: ['!blocked.ts'], skills: [] }], mcpServers: { private: true } };
+  const original = JSON.stringify(local, null, 1) + '\n';
+  await fs.writeFile(f.settings, '{broken');
+  await assert.rejects(f.setup(), /JSON/);
+  await fs.writeFile(f.settings, JSON.stringify({ packages: {} }));
+  await assert.rejects(f.setup(), /packages/);
+  await fs.writeFile(f.settings, original);
+  const outside = path.join(f.temp, 'original-settings');
+  await fs.rename(f.settings, outside);
+  await fs.symlink(outside, f.settings);
+  await assert.rejects(f.setup(), /settings.json is a symlink/);
+  await fs.unlink(f.settings);
+  await fs.rename(outside, f.settings);
+  await fs.symlink(path.join(f.root, 'agent/extensions/lib'), path.join(f.target, 'extensions/lib'));
+  await assert.rejects(f.setup(), /destination resolves into checkout/);
+  await fs.unlink(path.join(f.target, 'extensions/lib'));
+  await assert.rejects(f.setup({ env: { ...f.env, PI_CODING_AGENT_DIR: f.root } }), /Unsafe layout/);
+  assert.equal(await exists(f.backups), false);
+  assert.equal(await exists(f.calls), false);
+  await fs.writeFile(path.join(f.target, 'AGENTS.md'), 'original instructions');
+  await fs.symlink('/nonexistent/pi-setup-old', path.join(f.target, 'extensions/continue'));
+  await fs.mkdir(path.join(f.target, 'extensions/task'));
+  await fs.writeFile(path.join(f.target, 'extensions/task/local-data'), 'original task data');
+  const declined = await f.setup({ ask: async (key, _message, fallback) => key.startsWith('package:') ? false : key === 'apply' ? true : fallback });
+  assert.equal(await fs.readFile(path.join(f.target, 'AGENTS.md'), 'utf8'), 'original instructions');
+  assert.equal(await fs.readlink(path.join(f.target, 'extensions/continue')), '/nonexistent/pi-setup-old');
+  let settings = await readJSON(f.settings);
+  assert.equal(settings.theme, 'local');
+  assert.equal(settings.terminal.showImages, false);
+  assert.equal(settings.terminal.clearOnShrink, undefined);
+  assert.equal(settings.terminal.localNested, 'keep');
+  assert.deepEqual(settings.packages, local.packages);
+  assert.equal(await fs.readFile(f.settings, 'utf8'), original);
+  assert.equal(declined.backup, undefined);
+  assert.equal(await exists(f.backups), false);
+  const beforeApproval = await fs.readFile(f.settings, 'utf8');
+  const approved = await f.setup({ ask: async (key, _message, fallback) => key.startsWith('package:') ? false : key.startsWith('replace:') || key === 'group:preferences' || key === 'preference:theme' || key === 'apply' ? true : fallback });
+  assert.equal(await fs.readFile(path.join(approved.backup, 'AGENTS.md'), 'utf8'), 'original instructions');
+  assert.equal(await fs.readlink(path.join(approved.backup, 'extensions/continue')), '/nonexistent/pi-setup-old');
+  assert.equal(await fs.readFile(path.join(approved.backup, 'extensions/task/local-data'), 'utf8'), 'original task data');
+  assert.equal(await fs.readFile(path.join(approved.backup, 'settings.json'), 'utf8'), beforeApproval);
+  assert.equal((await fs.stat(approved.backup)).mode & 0o777, 0o700);
+  assert.equal((await fs.stat(path.join(approved.backup, 'settings.json'))).mode & 0o777, 0o600);
+  settings = await readJSON(f.settings);
+  assert.equal(settings.theme, 'system');
+  assert.equal(settings.terminal.clearOnShrink, true);
+  assert.equal(settings.terminal.showImages, false);
+  assert.deepEqual(settings.custom, local.custom);
+  assert.deepEqual(settings.extensions, local.extensions);
+  assert.deepEqual(settings.mcpServers, local.mcpServers);
+  assert.deepEqual(settings.packages, local.packages);
+  assert.equal(await exists(f.calls), false);
+  assert.equal((await fs.lstat(path.join(f.target, 'extensions/move'))).isDirectory(), true);
+  for (const [name, data] of Object.entries(sentinels)) assert.equal(await fs.readFile(path.join(f.target, name), 'utf8'), data);
+  const preFailure = await fs.readFile(f.settings, 'utf8');
+  await assert.rejects(f.setup({ env: { ...f.env, FAKE_FAIL: '1' }, ask: async (key, _message, fallback) => key.startsWith('group:') ? false : key === 'package:npm:glimpseui' || key === 'apply' ? true : fallback }), /Setup stopped:.*failed.*Originals are in/);
+  const backupFolders = await fs.readdir(f.backups);
+  assert.equal(backupFolders.length, 2);
+  const saved = await Promise.all(backupFolders.map(folder => fs.readFile(path.join(f.backups, folder, 'settings.json'), 'utf8')));
+  assert.ok(saved.includes(preFailure));
+  const partial = await readJSON(f.settings);
+  assert.equal(partial.vendorPartial, true);
+  assert.deepEqual(partial.packages, local.packages);
+  const call = JSON.parse((await fs.readFile(f.calls, 'utf8')).trim());
+  assert.deepEqual(call.args, ['install', 'npm:glimpseui']);
+  assert.equal(call.cwd, f.target);
+  const inspection = await inspectSetup({ root: f.root, env: f.env });
+  assert.equal(inspection.packages.find(x => x.source === 'npm:pi-updater').configured, true);
+  for (const [name, data] of Object.entries(sentinels)) assert.equal(await fs.readFile(path.join(f.target, name), 'utf8'), data);
+});

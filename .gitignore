@@ -1,0 +1,19 @@
+node_modules/
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage/
+# Runtime data and machine-local files never belong in this source repository.
+auth.json
+mcp.json
+mcp-auth.json
+mcp-oauth/
+sessions/
+subagents/
+tasks/
+todos/
+*-cache/
+*.local.json
+backups/
+agent/extensions/move/config.json

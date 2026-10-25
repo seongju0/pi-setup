@@ -1,0 +1,31 @@
+{
+  "instructions": [
+    "agent/AGENTS.md"
+  ],
+  "extensions": [
+    "agent/extensions/continue",
+    "agent/extensions/herdr-session",
+    "agent/extensions/subagent",
+    "agent/extensions/move/index.ts",
+    "agent/extensions/no-sleep",
+    "agent/extensions/task",
+    "agent/extensions/todo",
+    "agent/extensions/update-skills",
+    "agent/extensions/web-search"
+  ],
+  "support": [
+    "agent/extensions/lib/models.ts"
+  ],
+  "skills": [
+    "agent/skills/build",
+    "agent/skills/checkout",
+    "agent/skills/deliver",
+    "agent/skills/design",
+    "agent/skills/handoff",
+    "agent/skills/linear-issues",
+    "agent/skills/open-pr",
+    "agent/skills/research",
+    "agent/skills/review",
+    "agent/skills/walkthrough"
+  ]
+}

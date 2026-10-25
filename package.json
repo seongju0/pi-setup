@@ -1,0 +1,14 @@
+{
+  "name": "pi-setup",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal Pi foundation: curated source, settings, and dependency declarations.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "scripts": {
+    "test": "node scripts/test.mjs"
+  }
+}

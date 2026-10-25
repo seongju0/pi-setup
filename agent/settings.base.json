@@ -1,0 +1,25 @@
+{
+  "theme": "system",
+  "editorPaddingX": 3,
+  "outputPad": 1,
+  "terminal": {
+    "showTerminalProgress": false,
+    "clearOnShrink": true,
+    "showImages": true
+  },
+  "showCacheMissNotices": true,
+  "collapseChangelog": true,
+  "defaultTools": [
+    "+codemode"
+  ],
+  "tuiMode": "fullscreen",
+  "fullscreenExitOutput": "resume-hint",
+  "markdown": {
+    "mermaid": "streaming"
+  },
+  "hideThinkingBlock": true,
+  "showHardwareCursor": false,
+  "autocompleteMaxVisible": 5,
+  "followUpMode": "all",
+  "steeringMode": "all"
+}
