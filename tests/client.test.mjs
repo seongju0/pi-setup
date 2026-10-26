@@ -135,8 +135,8 @@ test('bootstrap and managed launcher isolate source, preserve local state, and h
   const rawEnv = { ...f.env, PATH: [bin, '/usr/bin', '/bin', '/usr/sbin'].join(path.delimiter) };
   const prompt = (message, input = '\r') => ({ prompt: message, input });
   const output = terminal([f.command, 'update'], [
-    prompt('Include instructions? [Y/n]'), prompt('Include extensions? [Y/n]'),
-    prompt('Include skills? [Y/n]'), prompt('Include preferences? [y/N]'),
+    prompt('Manage global Pi guidance (AGENTS.md)? [Y/n]'), prompt('Include extensions? [Y/n]'),
+    prompt('Include skills? [Y/n]'), prompt('Review suggested Pi settings from this repository? [y/N]'),
     ...['npm:pi-updater', 'npm:@ff-labs/pi-fff', 'npm:glimpseui', 'npm:pi-zentui'].map(name => prompt(`Install optional ${name}? Third-party packages can execute code. [y/N]`)),
     prompt('Optional tools: ↑/↓ move, Space toggle, Enter finish; Esc/Ctrl-C cancel', ' \x1b[B \x1b[A \x1b[B \x1b[A  \r'),
     prompt('Apply the approved changes? Existing replacements will be backed up. [y/N]', 'yes\r'),

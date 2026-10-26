@@ -117,10 +117,13 @@ export async function runSetup({ root = checkout, env = process.env, ask, log = 
   if (!dryRun && typeof ask !== 'function') throw new Error('Interactive setup requires a terminal prompt.');
   log(`Pi: ${info.pi}\nAgent: ${info.target}\nCheckout: ${info.root}`);
   const groups = new Set();
-  if (info.settingsExists) log('Existing settings are preserved byte-for-byte by default. Opt into preferences to preview and approve a merge; selected new native packages may also change settings.');
+  if (info.settingsExists) log('Your existing Pi settings are kept by default.\nYou can review suggested settings later in this setup, before approving any changes.\nInstalling an optional Pi package also adds its entry to settings.json.');
   for (const group of ['instructions', 'extensions', 'skills', 'preferences']) {
     const fallback = group !== 'preferences' || !info.settingsExists;
-    if (await choose(`group:${group}`, `Include ${group}?`, fallback)) groups.add(group);
+    const message = group === 'instructions' ? 'Manage global Pi guidance (AGENTS.md)?'
+      : group === 'preferences' ? 'Review suggested Pi settings from this repository?'
+      : `Include ${group}?`;
+    if (await choose(`group:${group}`, message, fallback)) groups.add(group);
   }
   const packages = [];
   for (const item of info.packages) {
