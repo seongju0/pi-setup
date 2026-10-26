@@ -68,24 +68,6 @@ only. External packages and tools keep their own update mechanisms.
 Use `PI_CODING_AGENT_DIR` for a custom Pi directory or `PI_SETUP_HOME` for another
 managed installation location.
 
-## Development
-
-Keep development separate from the managed checkout:
-
-```text
-edit → npm test → commit → push → pi-setup update → review → /reload
-```
-
-```sh
-npm test                   # Requires globally installed Pi and Python 3
-./setup.sh --dry-run        # Preview this checkout
-./setup.sh                 # Explicitly link resources from this checkout
-```
-
-Source lives in `agent/`; installation choices live in `manifests/`.
-Running `./setup.sh` links directly to that checkout, so use the managed install
-for ordinary use.
-
 ## License
 
 [MIT](LICENSE). External packages and tools retain their own licenses.
