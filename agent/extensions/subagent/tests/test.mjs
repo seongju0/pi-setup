@@ -224,7 +224,7 @@ try {
   assert.equal(profile.model, 'openai/gpt-6.1-sol');
   assert.equal(profile.requestedModel, 'openai/gpt-6.1-sol');
   assert.equal(profile.thinkingLevel, 'off', 'explicit/flagged physical models use normal child thinking defaults');
-  assert.match(view(flagged), /physical · gpt-6\.1-sol · ~\$/);
+  assert.match(view(flagged), /physical · gpt-6\.1-sol · ctx (?:\?|\d+%) · ~\$/);
   assert.doesNotMatch(view(flagged), /openai\//);
   await stopAll(flagged);
 
@@ -416,11 +416,11 @@ export default async function (pi: ExtensionAPI) {
   assert.equal(widget(ui)[1].replace(/\x1b\[[0-9;]*m/g, ''), 'Subagents · 1 active');
   assert.equal(widget(ui)[0], '', 'blank line separates Tasks from subagents');
   assert.equal(widget(ui).at(-1), '', 'blank line separates subagents from the next widget');
-  assert.match(view(ui), / · chosen · ~\$[?\d.]+ · running/);
+  assert.match(view(ui), / · chosen · ctx (?:\?|\d+%) · ~\$[?\d.]+ · running/);
   assert.doesNotMatch(view(ui), /test\/chosen|Context|total/);
   await until(async () => (await snapshot(ui, named.id)).contextUsage?.tokens === 2500, 'native child context remains available through status');
   await until(async () => (await snapshot(ui, named.id)).sessionCost === 0, 'known pricing permits zero before billed responses');
-  assert.match(view(ui), /~\$0\.000 · running/);
+  assert.match(view(ui), /ctx 3% · ~\$0\.000 · running/, 'native context percentage rounds to whole percent');
   const initialHeader = widget(ui)[1];
   const initialFrame = view(ui);
   const rendersBeforeAnimation = ui.state.renderRequests;
@@ -429,12 +429,13 @@ export default async function (pi: ExtensionAPI) {
   assert.equal(widget(ui)[1], initialHeader, 'header stays static while active row animates');
   assert.doesNotMatch(view(ui), /\x1b/);
   const queriesBeforeRender = (await logs()).filter((line) => line.command?.type === 'get_session_stats').length;
-  for (const width of [0, 1, 12, 36, 60, 80, 240]) {
+  for (const width of [0, 1, 12, 21, 31, 36, 45, 60, 80, 240]) {
     assert.equal(widget(ui, width).length, 4, 'a child never wraps into extra rows');
     for (const line of widget(ui, width)) assert(visibleWidth(line) <= width, `widget overflow at ${width}`);
   }
-  assert.match(widget(ui, 36)[2], /chosen · ~\$0\.000 · running/, 'name truncates before model, cost and status');
-  assert.match(widget(ui, 21)[2].replace(/\x1b\[[0-9;]*m/g, ''), /~\$0\.000 · running/, 'cost and status remain when model no longer fits');
+  assert.match(widget(ui, 45)[2], /chosen · ctx 3% · ~\$0\.000 · running/, 'name truncates before model, context, cost and status');
+  assert.match(widget(ui, 31)[2], /ctx 3% · ~\$0\.000 · running/, 'metrics remain when model no longer fits');
+  assert.match(widget(ui, 21)[2], /ctx 3% · running/, 'context takes priority over cost at narrow widths');
   assert.equal(widget(ui, 7)[2].replace(/\x1b\[[0-9;]*m/g, ''), 'running', 'very narrow rows prioritize status');
   view(ui); view(ui);
   assert.equal((await logs()).filter((line) => line.command?.type === 'get_session_stats').length, queriesBeforeRender, 'render/keystrokes must not perform RPC reads');
@@ -444,7 +445,7 @@ export default async function (pi: ExtensionAPI) {
   await release(named.id);
   await until(async () => (await snapshot(ui, named.id)).contextUsage?.tokens === 5000, 'final context sample');
   await until(async () => (await snapshot(ui, named.id)).sessionCost === 0.02, 'completed cost sample');
-  assert.match(view(ui), /✓ .* · chosen · ~\$0\.020 · completed/);
+  assert.match(view(ui), /✓ .* · chosen · ctx 5% · ~\$0\.020 · completed/);
   assert.match(view(ui), /Subagents · 0 active/);
   const settledRenders = ui.state.renderRequests;
   await delay(180);
@@ -454,27 +455,31 @@ export default async function (pi: ExtensionAPI) {
   assert.notEqual(widget(ui).join('\n'), light, 'theme evaluated at render time');
   themes.initTheme('light', false);
   await ui.call({ action: 'stop', id: named.id });
-  assert.match(view(ui), /completed/);
+  assert.match(view(ui), /ctx 5% · ~\$0\.020 · completed/, 'stopped children retain their last context sample');
   assert.doesNotMatch(view(ui), /closed|Context/);
   const uiRestored = await instance({ id: ui.state.id, branch: ui.state.branch });
   assert.equal((await snapshot(uiRestored, named.id)).contextUsage.tokens, 5000, 'restore keeps last known context without launching a process');
   assert.equal((await snapshot(uiRestored, named.id)).sessionCost, 0.02, 'restored cost is persisted');
+  assert.match(view(uiRestored), /ctx 5% · ~\$0\.020 · completed/, 'restored context is displayed without reopening the child');
   const unpriced = (await ui.call({ action: 'spawn', name: 'unpriced', model: 'test/unpriced', message: 'normal' })).details;
   await until(() => ui.state.reports.some((item) => item.message.details.childId === unpriced.id));
   await until(async () => (await snapshot(ui, unpriced.id)).sessionCost === null);
-  assert.match(view(ui), /unpriced · unpriced · ~\$\? · completed/, 'missing pricing is not displayed as zero');
+  assert.match(view(ui), /unpriced · unpriced · ctx (?:\?|\d+%) · ~\$\? · completed/, 'missing pricing is not displayed as zero');
   await ui.call({ action: 'stop', id: unpriced.id });
 
   const compact = (await ui.call({ action: 'spawn', name: 'compact', message: 'compact hold' })).details;
   assert.match(widget(ui)[2], /compact/, 'active child precedes completed history');
   await until(async () => /compact.*running/.test(view(ui)) && (await snapshot(ui, compact.id)).contextUsage?.tokens === null, 'unknown post-compaction context');
+  assert.match(widget(ui)[2], /ctx \?/, 'post-compaction context is unknown, not zero or stale');
   await release(compact.id);
   await until(async () => (await snapshot(ui, compact.id)).contextUsage?.tokens === 5000);
+  assert.match(widget(ui)[2], /ctx 5%/, 'context display recovers after compaction');
   await ui.call({ action: 'stop', id: compact.id });
   const unavailable = (await ui.call({ action: 'spawn', name: 'stats-unavailable', message: 'stats-error hold' })).details;
   await until(async () => (await logs()).some((line) => line.child === unavailable.id && line.command?.type === 'get_session_stats'));
   await until(async () => (await snapshot(ui, unavailable.id)).contextUsage?.tokens === null);
   assert.equal((await snapshot(ui, unavailable.id)).state, 'running', 'telemetry errors do not abort delegated work');
+  assert.match(widget(ui)[2], /ctx \?/, 'unavailable telemetry is not displayed as zero');
   await ui.call({ action: 'stop', id: unavailable.id });
   const stale = (await ui.call({ action: 'spawn', name: 'compaction-race', message: 'stale-stat hold' })).details;
   await until(async () => (await logs()).some((line) => line.child === stale.id && line.type === 'stale-stats-replied'));

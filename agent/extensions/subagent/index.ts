@@ -80,9 +80,13 @@ export default function (pi: ExtensionAPI) {
             }
             const available = width - visibleWidth(prefix + suffix);
             const estimate = snapshot.sessionCost == null ? "~$?" : snapshot.sessionCost > 0 && snapshot.sessionCost < 0.001 ? "~$<0.001" : `~$${snapshot.sessionCost.toFixed(3)}`;
-            const cost = visibleWidth(estimate) <= available ? estimate : "";
-            const model = truncateToWidth(cleanLine(snapshot.model.slice(snapshot.model.indexOf("/") + 1)), Math.max(0, available - visibleWidth(cost) - (cost ? 3 : 0)));
-            const details = [model, cost].filter(Boolean).join(" · ");
+            const percent = snapshot.contextUsage?.percent;
+            const contextEstimate = percent == null ? "ctx ?" : `ctx ${Math.round(percent)}%`;
+            const contextLabel = visibleWidth(contextEstimate) <= available ? contextEstimate : "";
+            const cost = visibleWidth(estimate) + visibleWidth(contextLabel) + (contextLabel ? 3 : 0) <= available ? estimate : "";
+            const metrics = [contextLabel, cost].filter(Boolean).join(" · ");
+            const model = truncateToWidth(cleanLine(snapshot.model.slice(snapshot.model.indexOf("/") + 1)), Math.max(0, available - visibleWidth(metrics) - (metrics ? 3 : 0)));
+            const details = [model, metrics].filter(Boolean).join(" · ");
             const name = truncateToWidth(cleanLine(snapshot.name), Math.max(0, available - visibleWidth(details) - 3));
             lines.push(theme.fg(color, `${prefix}${name ? `${name} · ` : ""}${details}${suffix}`));
           }

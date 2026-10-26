@@ -203,14 +203,15 @@ Tasks · 2/3 complete
 ▶ #3 Integrate review findings
 
 Subagents · 1 active
-  ⠹ auth-reader · gpt-6.1-sol · ~$0.024 · running
-  ✓ reviewer · claude-sonnet-5-5 · ~$0.011 · completed
+  ⠹ auth-reader · gpt-6.1-sol · ctx 42% · ~$0.024 · running
+  ✓ reviewer · claude-sonnet-5-5 · ctx 18% · ~$0.011 · completed
 ```
 
-- **Compact rows:** name, resolved physical model without its provider prefix, estimated session cost, and active state or terminal assignment outcome. Full model identity, process state, native context usage, and full history remain available through `status`.
+- **Compact rows:** name, resolved physical model without its provider prefix, context usage percentage, estimated session cost, and active state or terminal assignment outcome. Full model identity, process state, native context usage, and full history remain available through `status`.
+- **Context usage:** `ctx 42%` is Pi's native context estimate rounded to a whole percentage, not cumulative billed tokens. Startup, unavailable statistics, older unsampled records, and post-compaction unknown estimates show `ctx ?`, not zero. Samples update through existing events and may lag during streaming; completed, stopped, and restored children retain their last recorded sample.
 - **Session cost:** `sessionCost` comes from Pi's native session statistics, covering the child's saved conversation across `send` and process reopening—not just the latest assignment. `~$0.024` is an estimate, not an invoice; positive amounts below $0.001 display as `~$<0.001`. Unknown pricing or older unsampled records display `~$?`, not a false zero. Zero is shown only when pricing is configured. Estimates update with the existing event-driven statistics reads and may lag during a streaming response; closed children retain their last sample.
 - **Selection:** active workers first, then most recently finished assignments (completion time, falling back to start time). Show at most five entries; older children remain saved but are omitted without an overflow row.
-- **Bounded layout:** one header, up to five single-line rows, and a blank line above and below: at most eight lines. Names truncate first while reserving room for model, cost, and status; at narrower widths the name is omitted and the model truncates, then cost is omitted if it cannot fit. Status takes priority. Width handling is Unicode-safe and rows never wrap. No fixed-height padding or embedded scrolling.
+- **Bounded layout:** one header, up to five single-line rows, and a blank line above and below: at most eight lines. Names truncate first while reserving room for model, context, cost, and status; at narrower widths the name is omitted and the model truncates, then cost is omitted before context. Status takes priority over context when both cannot fit. Width handling is Unicode-safe and rows never wrap. No fixed-height padding or embedded scrolling.
 - **Activity:** The header is static with no indicator. Pi's built-in loader animates only active-row markers while starting, running, or stopping. It indicates an active assignment, not measured progress. Animation only requests local redraws and stops when inactive or when the widget is replaced/cleared.
 - **Telemetry:** startup, completed messages/turns, compaction, and settlement trigger coalesced native statistics reads for context and cumulative cost. Compaction invalidates the old estimate; telemetry failures do not fail the assignment. Rendering, animation, and keystrokes make no RPC or model calls.
 - **Isolation:** only the `subagent` widget key is touched. Tasks, Todo, footer, and composer are unchanged. RPC exposes metadata through status without terminal rendering or animation.
