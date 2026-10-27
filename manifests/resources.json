@@ -11,6 +11,7 @@
     "agent/extensions/task",
     "agent/extensions/todo",
     "agent/extensions/update-skills",
+    "agent/extensions/view",
     "agent/extensions/web-search"
   ],
   "support": [

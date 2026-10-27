@@ -43,6 +43,11 @@ Setup does not change shell startup files.
 for each Pi session by default. Use `/no-sleep off` to disable it or
 `/no-sleep agent` for active agent runs only. The display may still sleep.
 
+[View](agent/extensions/view/README.md) opens the current directory or a supplied
+path with `/view [path]`. It defaults to Zed; set `view.editor` and `view.args` in
+personal Pi settings to choose another GUI editor. Zed is an optional,
+unselected Homebrew cask offer (`brew install --cask zed`), not a requirement.
+
 ## Local configuration
 
 ```text
