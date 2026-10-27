@@ -35,8 +35,13 @@ configured local read-only workflows.
   silent model/provider substitution.
 - Appended guidance and worker task/reporting boundaries survive compaction.
 - A handoff succeeds only after its initial prompt is found in the intended
-  session. Partial failures retain existing tab/pane/agent identifiers; inspect
-  those sessions before retrying, rather than blindly creating duplicates.
+  session. Confirmation uses the created pane ID, not the generated agent name,
+  which may be unavailable after a startup readiness timeout. Agent-not-found
+  responses during detection are retried within the existing 15-second
+  confirmation window; the exact session ID and initial prompt must still match.
+  No agent is relaunched and no prompt is resent during confirmation.
+  Partial failures retain existing tab/pane/agent identifiers; inspect those
+  sessions before retrying, rather than blindly creating duplicates.
 - Creating a session is not permission to access data or change external systems.
 
 ## Reporting

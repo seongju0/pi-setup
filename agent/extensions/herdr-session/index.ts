@@ -50,12 +50,19 @@ async function resolvePromptFile(path: string | undefined, cwd: string) {
   return file;
 }
 
-async function confirmPrompt(name: string, sessionId: string, prompt: string, signal?: AbortSignal) {
+async function confirmPrompt(paneId: string, sessionId: string, prompt: string, signal?: AbortSignal) {
   const deadline = AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]);
   while (true) {
     deadline.throwIfAborted();
-    const live = (await herdrCommand(["agent", "get", name], deadline)).result?.agent;
-    const reference = live?.agent_session;
+    let reference;
+    try {
+      // Startup can lose the generated name even while the intended Pi is working.
+      reference = (await herdrCommand(["agent", "get", paneId], deadline)).result?.agent?.agent_session;
+    } catch (error) {
+      let code: string | undefined;
+      try { code = JSON.parse(String((error as { stderr?: string }).stderr)).error?.code; } catch { /* not a Herdr server error */ }
+      if (code !== "agent_not_found") throw error;
+    }
     if (reference?.kind === "path" && typeof reference.value === "string") {
       try {
         const entries = (await readFile(reference.value, "utf8")).split("\n").filter(Boolean).flatMap((line) => {
@@ -129,7 +136,7 @@ async function createSession(input: { workspace?: string; cwd?: string; label?: 
       }
     }
     if (prompt) {
-      result.sessionPath = await confirmPrompt(name, sessionId, prompt, signal);
+      result.sessionPath = await confirmPrompt(paneId, sessionId, prompt, signal);
       result.launchState = "started";
       result.deliveryState = "accepted";
     }

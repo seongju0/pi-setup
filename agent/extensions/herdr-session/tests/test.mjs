@@ -110,11 +110,17 @@ if (args[0] === 'agent' && args[1] === 'start') {
   if (prompt && process.env.TEST_NO_ACCEPT !== '1') entries.push({ type: 'message', message: { role: 'user', content: [{ type: 'text', text: prompt }] } });
   fs.writeFileSync(file + '.' + id, entries.map(JSON.stringify).join('\\n'));
   fs.writeFileSync(file, file + '.' + id);
+  fs.writeFileSync(process.env.TEST_HERDR_LOG + '.' + args[args.indexOf('--pane') + 1] + '.session', file + '.' + id);
   if (process.env.TEST_NOT_READY === '1') { console.error(JSON.stringify({ error: { code: 'agent_not_ready' } })); process.exit(1); }
   if (process.env.TEST_START_TIMEOUT === '1') { console.error(JSON.stringify({ error: { code: 'timeout', message: 'timed out waiting for agent startup' } })); process.exit(1); }
 }
 if (args[0] === 'agent' && args[1] === 'get') {
   const file = process.env.TEST_HERDR_LOG + '.' + args[2] + '.session';
+  if ((process.env.TEST_NO_AGENT_NAME === '1' && !args[2].startsWith('test-w:p')) ||
+      (process.env.TEST_DELAYED_DETECTION === '1' && !fs.existsSync(file + '.detected'))) {
+    fs.writeFileSync(file + '.detected', '1');
+    console.error(JSON.stringify({ error: { code: 'agent_not_found' } })); process.exit(1);
+  }
   if (process.env.TEST_DELAYED_ACCEPT === '1' && !fs.existsSync(file + '.seen')) { fs.writeFileSync(file + '.seen', '1'); result = { agent: { agent_status: 'unknown' } }; }
   else result = { agent: { agent_status: 'working', agent_session: { kind: 'path', value: fs.readFileSync(file, 'utf8') } } };
 }
@@ -160,9 +166,15 @@ console.log(JSON.stringify({ result }));
   assert.equal(workingAtStartup.details.deliveryState, 'accepted', 'native prompt acceptance survives readiness failure without restarting');
   process.env.TEST_START_TIMEOUT = '1';
   const beforeTimeout = (await calls()).filter(args => args[1] === 'start').length;
+  process.env.TEST_NO_AGENT_NAME = '1';
+  process.env.TEST_DELAYED_DETECTION = '1';
   const acceptedAfterTimeout = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
+  delete process.env.TEST_NO_AGENT_NAME;
+  delete process.env.TEST_DELAYED_DETECTION;
   assert.equal(acceptedAfterTimeout.details.launchState, 'started');
-  assert.equal(acceptedAfterTimeout.details.deliveryState, 'accepted');
+  assert.equal(acceptedAfterTimeout.details.deliveryState, 'accepted', 'pane acknowledgement survives a missing name and delayed agent detection');
+  assert.deepEqual((await calls()).filter(args => args[1] === 'get').slice(-2).map(args => args[2]),
+    [acceptedAfterTimeout.details.paneId, acceptedAfterTimeout.details.paneId], 'retry only the returned pane lookup, not the missing name');
   assert.equal((await calls()).filter(args => args[1] === 'start').length, beforeTimeout + 1, 'timeout recovery must not relaunch');
   process.env.TEST_NO_ACCEPT = '1';
   const timeoutAbort = new AbortController();
