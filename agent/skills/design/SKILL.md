@@ -7,7 +7,7 @@ description: Settle direction and turn it into a detailed, codebase-verified imp
 
 Settle what to build, then define exactly how to build it. Produce an implementation specification that a smaller model in a fresh session can execute without rediscovering architecture, making product decisions, or guessing core behavior. Detail should remove ambiguity, not add speculative scope.
 
-The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions; do not reopen what the product should do. Do not automatically implement, delegate, or start another session.
+The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions; do not reopen what the product should do. Do not automatically implement or start another session. Delegate bounded research or specification work when useful under the global delegation contract; retain ownership of the final design.
 
 ## Direction checkpoint
 
@@ -43,7 +43,7 @@ Preserving existing behavior during extraction does not automatically require tr
 
 ## Delegation contract
 
-When delegation is authorized, include the supported user flow, settled decisions, explicit non-requirements, accepted trade-offs, and permission boundaries in the assignment itself. Do not rely on inherited conversation context or a skill-path reference alone. Require the child to read the applicable skill before working; for review work, that includes `../review/SKILL.md`. These constraints apply equally to research, design, implementation, and review. This contract does not authorize delegation.
+Use the global AGENTS.md delegation contract: assign a bounded outcome with the supported flow, settled decisions, non-requirements, accepted trade-offs and permissions. Read and inject the actual relevant stage skill through the launcher's supported mechanism; a skill path or instruction to read it is not a substitute, except for the launcher's explicit size-limit fallback. This does not authorize work beyond the request or override workflow-required stage separation.
 
 The delegating agent remains responsible for checking returned work against those constraints before incorporating it. A child's confidence, severity label, or code citation does not establish that additional behavior is required. No findings or no additional changes is a valid outcome.
 
