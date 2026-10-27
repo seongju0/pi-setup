@@ -8,6 +8,8 @@ import { Loader, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { requireLaunchModel } from "../lib/models.ts";
 import { mcpPolicyPath, selectedMcpConfig } from "./mcp.ts";
 import { ChildRpc } from "./rpc.ts";
+import { LiveTranscript, loadTranscript } from "./transcript.ts";
+import { SubagentViewer, sortedChildren, working, childStatus, costLabel, contextLabel, modelLabel, cleanLine } from "./viewer.ts";
 
 const ENTRY = "subagent-state";
 const REPORT = "subagent-report";
@@ -18,13 +20,12 @@ const WEB_EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "../web-sear
 class ActivityLoader extends Loader {
   get indicator() { return this.getRenderedIndicator(); }
 }
-const cleanLine = (value: string) => value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ");
 type Outcome = "running" | "completed" | "failed" | "cancelled" | "timed_out" | "interrupted";
 type Summary = {
   id: string; outcome: Outcome; startedAt: number; durationMs?: number; resultPath?: string;
   error?: string; usage: { tokens: number; cost: number }; delivery: "pending" | "queued" | "delivered" | "retained";
 };
-type Snapshot = {
+export type Snapshot = {
   id: string; name: string; owner: string; cwd: string; directory: string; requestedModel: string; model: string;
   web?: boolean; mcpServers?: string[];
   thinkingLevel?: string; sessionPath?: string; state: "starting" | "running" | "idle" | "closed" | "failed"; latest?: Summary;
@@ -35,7 +36,7 @@ type Run = {
   summary: Summary; text: string; stopReason?: string; error?: string; accepted: boolean;
   settled?: boolean; requestedOutcome?: Outcome; finishing?: Promise<void>;
 };
-type Child = { snapshot: Snapshot; rpc?: ChildRpc; run?: Run; stopping?: boolean; contextRefresh?: Promise<void>; contextDirty?: boolean };
+type Child = { snapshot: Snapshot; rpc?: ChildRpc; run?: Run; stopping?: boolean; contextRefresh?: Promise<void>; contextDirty?: boolean; live?: LiveTranscript };
 
 function textResult(data: unknown) {
   const details = structuredClone(data);
@@ -49,27 +50,45 @@ export default function (pi: ExtensionAPI) {
   let context: ExtensionContext | undefined;
   let generation = 0;
   let children = new Map<string, Child>();
+  let viewer: SubagentViewer | undefined;
+
+  pi.registerCommand("subagents", {
+    description: "Inspect owned subagents and their live or saved transcripts (read-only)",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui") { ctx.ui.notify("/subagents requires interactive mode", "error"); return; }
+      try {
+        await ctx.ui.custom<void>((tui, theme, keys, done) => {
+          viewer = new SubagentViewer(tui, theme, keys, () => done(), {
+            children: () => [...children.values()],
+            load: (id, signal) => loadTranscript(children.get(id)!, signal),
+          });
+          return viewer;
+        }, { overlay: true, overlayOptions: { width: "90%", maxHeight: "85%", anchor: "center", margin: 1 } });
+      } finally { viewer?.dispose(); viewer = undefined; }
+    },
+  });
 
   function current(child: Child, epoch: number) {
     return epoch === generation && context?.sessionManager.getSessionId() === child.snapshot.owner && children.get(child.snapshot.id) === child;
   }
   function refreshWidget() {
+    viewer?.changed();
     const ctx = context;
     if (!ctx || ctx.mode !== "tui") return;
     if (!children.size) { ctx.ui.setWidget(WIDGET, undefined); return; }
     ctx.ui.setWidget(WIDGET, (tui, theme) => {
-      const working = (child: Child) => !!child.stopping || child.snapshot.state === "starting" || child.snapshot.state === "running";
-      const recent = (child: Child) => (child.snapshot.latest?.startedAt ?? 0) + (child.snapshot.latest?.durationMs ?? 0);
-      const rows = [...children.values()].sort((a, b) => Number(working(b)) - Number(working(a)) || recent(b) - recent(a));
+      const rows = sortedChildren([...children.values()]);
       const active = rows.filter(working).length;
       const loader = active ? new ActivityLoader(tui, (frame) => frame, (text) => text, "") : undefined;
       return {
         render(width) {
           const indicator = loader?.indicator ?? "○";
-          const lines = [theme.fg("accent", `Subagents · ${active} active`)];
+          const header = `Subagents · ${active} active`;
+          const hint = " · /subagents to inspect";
+          const lines = [theme.fg("accent", header + (visibleWidth(header + hint) <= width ? hint : ""))];
           for (const child of rows.slice(0, 5)) {
             const snapshot = child.snapshot;
-            const status = child.stopping ? "stopping" : working(child) ? snapshot.state : snapshot.state === "failed" ? "failed" : snapshot.latest?.outcome ?? snapshot.state;
+            const status = childStatus(child);
             const color = status === "running" ? "accent" : status === "starting" || status === "stopping" ? "warning" : status === "failed" || status === "timed_out" ? "error" : status === "completed" ? "success" : "muted";
             const glyph = working(child) ? indicator : status === "completed" ? "✓" : status === "failed" || status === "timed_out" ? "!" : "○";
             const prefix = `  ${glyph} `;
@@ -79,13 +98,12 @@ export default function (pi: ExtensionAPI) {
               continue;
             }
             const available = width - visibleWidth(prefix + suffix);
-            const estimate = snapshot.sessionCost == null ? "~$?" : snapshot.sessionCost > 0 && snapshot.sessionCost < 0.001 ? "~$<0.001" : `~$${snapshot.sessionCost.toFixed(3)}`;
-            const percent = snapshot.contextUsage?.percent;
-            const contextEstimate = percent == null ? "ctx ?" : `ctx ${Math.round(percent)}%`;
-            const contextLabel = visibleWidth(contextEstimate) <= available ? contextEstimate : "";
-            const cost = visibleWidth(estimate) + visibleWidth(contextLabel) + (contextLabel ? 3 : 0) <= available ? estimate : "";
-            const metrics = [contextLabel, cost].filter(Boolean).join(" · ");
-            const model = truncateToWidth(cleanLine(snapshot.model.slice(snapshot.model.indexOf("/") + 1)), Math.max(0, available - visibleWidth(metrics) - (metrics ? 3 : 0)));
+            const estimate = costLabel(snapshot);
+            const contextEstimate = contextLabel(snapshot);
+            const usageLabel = visibleWidth(contextEstimate) <= available ? contextEstimate : "";
+            const cost = visibleWidth(estimate) + visibleWidth(usageLabel) + (usageLabel ? 3 : 0) <= available ? estimate : "";
+            const metrics = [usageLabel, cost].filter(Boolean).join(" · ");
+            const model = truncateToWidth(modelLabel(snapshot), Math.max(0, available - visibleWidth(metrics) - (metrics ? 3 : 0)));
             const details = [model, metrics].filter(Boolean).join(" · ");
             const name = truncateToWidth(cleanLine(snapshot.name), Math.max(0, available - visibleWidth(details) - 3));
             lines.push(theme.fg(color, `${prefix}${name ? `${name} · ` : ""}${details}${suffix}`));
@@ -182,7 +200,10 @@ export default function (pi: ExtensionAPI) {
       try { await finish(child, "failed", errorText(error)); }
       finally { await child.rpc?.close(); child.rpc = undefined; }
       child.snapshot.state = "failed";
-      if (context?.sessionManager.getSessionId() === child.snapshot.owner && children.get(child.snapshot.id) === child) persist(child);
+      if (context?.sessionManager.getSessionId() === child.snapshot.owner && children.get(child.snapshot.id) === child) {
+        persist(child);
+        viewer?.refreshHistory(child.snapshot.id);
+      }
     } catch (failure) {
       context?.ui.notify(`Subagent ${child.snapshot.name}: ${errorText(failure)}`, "warning");
     }
@@ -225,8 +246,14 @@ export default function (pi: ExtensionAPI) {
       "--append-system-prompt", instructionsPath,
       snapshot.cwd === resolve(ctx.cwd) && ctx.isProjectTrusted() ? "--approve" : "--no-approve"];
     if (snapshot.thinkingLevel) args.push("--thinking", snapshot.thinkingLevel);
+    child.live = new LiveTranscript();
     child.rpc = new ChildRpc(args, snapshot.cwd, (event) => {
       if (!current(child, epoch)) return;
+      if (event.type === "message_start" || event.type === "message_update" || event.type === "message_end" || event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
+        child.live!.update(event);
+        viewer?.event(snapshot.id, event);
+      }
+      if (event.type === "compaction_end" || event.type === "agent_settled") viewer?.refreshHistory(snapshot.id);
       if (event.type === "compaction_start" && child.snapshot.contextUsage) {
         child.snapshot.contextUsage = { ...child.snapshot.contextUsage, tokens: null, percent: null };
         refreshWidget();
@@ -308,6 +335,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function cleanup(save: boolean) {
+    viewer?.close();
+    viewer = undefined;
     const oldChildren = [...children.values()];
     const oldContext = context;
     const writes: Promise<void>[] = [];
@@ -407,7 +436,7 @@ export default function (pi: ExtensionAPI) {
           await child.rpc?.close();
           child.rpc = undefined;
           child.snapshot.state = "closed";
-          if (current(child, epoch)) persist(child);
+          if (current(child, epoch)) { persist(child); viewer?.refreshHistory(child.snapshot.id); }
           return textResult(child.snapshot);
         } finally { child.stopping = false; if (current(child, epoch)) refreshWidget(); }
       }

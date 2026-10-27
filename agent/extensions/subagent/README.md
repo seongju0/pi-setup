@@ -20,6 +20,7 @@ Main Pi session
   │         ◄────────────── responses / events ─────────────└── saved conversation
   │
   ├── above-composer widget ◄── child state + native context estimates
+  ├── /subagents overlay   ◄── native history + runtime streaming buffer (read-only)
   └── automatic follow-up   ◄── final answer + diagnostic + artifact paths
 ```
 
@@ -202,7 +203,7 @@ The widget appears above the composer only when the current session has children
 Tasks · 2/3 complete
 ▶ #3 Integrate review findings
 
-Subagents · 1 active
+Subagents · 1 active · /subagents to inspect
   ⠹ auth-reader · gpt-6.1-sol · ctx 42% · ~$0.024 · running
   ✓ reviewer · claude-sonnet-5-5 · ctx 18% · ~$0.011 · completed
 ```
@@ -210,13 +211,38 @@ Subagents · 1 active
 - **Compact rows:** name, resolved physical model without its provider prefix, context usage percentage, estimated session cost, and active state or terminal assignment outcome. Full model identity, process state, native context usage, and full history remain available through `status`.
 - **Context usage:** `ctx 42%` is Pi's native context estimate rounded to a whole percentage, not cumulative billed tokens. Startup, unavailable statistics, older unsampled records, and post-compaction unknown estimates show `ctx ?`, not zero. Samples update through existing events and may lag during streaming; completed, stopped, and restored children retain their last recorded sample.
 - **Session cost:** `sessionCost` comes from Pi's native session statistics, covering the child's saved conversation across `send` and process reopening—not just the latest assignment. `~$0.024` is an estimate, not an invoice; positive amounts below $0.001 display as `~$<0.001`. Unknown pricing or older unsampled records display `~$?`, not a false zero. Zero is shown only when pricing is configured. Estimates update with the existing event-driven statistics reads and may lag during a streaming response; closed children retain their last sample.
-- **Selection:** active workers first, then most recently finished assignments (completion time, falling back to start time). Show at most five entries; older children remain saved but are omitted without an overflow row.
-- **Bounded layout:** one header, up to five single-line rows, and a blank line above and below: at most eight lines. Names truncate first while reserving room for model, context, cost, and status; at narrower widths the name is omitted and the model truncates, then cost is omitted before context. Status takes priority over context when both cannot fit. Width handling is Unicode-safe and rows never wrap. No fixed-height padding or embedded scrolling.
+- **Ordering:** active workers first, then most recently finished assignments (completion time, falling back to start time). Show at most five entries; older children remain saved but are omitted without an overflow row. `/subagents` lists all owned children.
+- **Bounded layout:** one header, up to five single-line rows, and a blank line above and below: at most eight lines. The `/subagents to inspect` hint appears only when it fits in the header. Names truncate first while reserving room for model, context, cost, and status; at narrower widths the name is omitted and the model truncates, then cost is omitted before context. Status takes priority over context when both cannot fit. Width handling is Unicode-safe and rows never wrap. No fixed-height padding or embedded scrolling.
 - **Activity:** The header is static with no indicator. Pi's built-in loader animates only active-row markers while starting, running, or stopping. It indicates an active assignment, not measured progress. Animation only requests local redraws and stops when inactive or when the widget is replaced/cleared.
 - **Telemetry:** startup, completed messages/turns, compaction, and settlement trigger coalesced native statistics reads for context and cumulative cost. Compaction invalidates the old estimate; telemetry failures do not fail the assignment. Rendering, animation, and keystrokes make no RPC or model calls.
 - **Isolation:** only the `subagent` widget key is touched. Tasks, Todo, footer, and composer are unchanged. RPC exposes metadata through status without terminal rendering or animation.
 
 Closed/restored children retain their last recorded native context sample; older records may have no estimate. No process is launched just to reconstruct historical context.
+
+## Inspect live and saved transcripts
+
+Run **`/subagents`** in the interactive parent, including while the parent is streaming. It opens a centered native Pi overlay—not a browser, Herdr tab, or new child process.
+
+```text
+/subagents → picker → Enter → transcript
+                ▲                 │
+                └────── B ────────┘
+                  Esc closes either view
+```
+
+| View | Keys |
+|---|---|
+| Picker | ↑/↓ select, Enter inspect, Esc close |
+| Transcript | ↑/↓ scroll a line, PgUp/PgDn scroll a page, Home start |
+| Transcript | End resume following, E expand/collapse all tool arguments/output |
+| Transcript | B return to picker, Esc close |
+
+- **All owned children:** running, finished, failed, stopped and restored conversations, including those omitted from the compact widget. Initial order matches the widget; selection stays on the same child and existing rows stay in place while the picker is open. New children append. Returning from a transcript refreshes the order.
+- **Live without polling:** opening midway includes the current partial response and tool activity received before opening. Later deltas redraw the viewer directly, not the widget. Native history loads on opening and coalesced message-completion, compaction and settlement events while viewed; rendering, scrolling and tool expansion send no RPC requests.
+- **Follow or read earlier work:** transcripts start at the bottom. Scrolling up pauses following and indicates new activity below; End returns to live output. Headers and controls stay fixed as the body scrolls.
+- **Native, read-only history:** live children supply `get_entries`; stopped/restored children load their saved session file through Pi's parser and in-memory branch resolution. The viewer shows user/assistant messages, tool preparation/execution/results and compaction markers, retaining pre-compaction messages on the selected native branch. It never rewrites or migrates the saved file on disk. Tools start collapsed; E reveals generic native argument/output rendering without loading child extensions or parent-specific tool renderers. Thinking bodies remain hidden; images show placeholders.
+- **Local errors:** starting children show “Waiting for transcript…”. Missing/unreadable history shows “Transcript unavailable”; a live read failure keeps known messages and streaming updates visible with a warning. Completion or failure updates the status without closing the viewer. Viewing errors do not fail a child.
+- **No control or context injection:** there is no send, stop, approval, takeover or editing action in this overlay. Closing it leaves execution and automatic reporting unchanged. Transcript content is runtime-only, not added to `subagent-state`, parent messages or model context. Closing, shutdown and branch navigation dispose viewer state and pending reads. RPC/print parents cannot open this terminal UI.
 
 ## Ownership and recovery
 
@@ -268,6 +294,8 @@ The recursion guard blocks ordinary tool delegation, not malicious shell executi
 ```text
 extensions/subagent/
 ├── index.ts             tool + manager + reporting + persistence + widget
+├── transcript.ts        read-only native history + runtime live message/tool state
+├── viewer.ts            native picker + scrolling read-only transcript overlay
 ├── rpc.ts               subprocess + JSONL transport + command correlation
 ├── mcp.ts               selected-server config + child MCP integration
 └── tests/
@@ -308,6 +336,9 @@ The regression suite uses the real Pi extension loader and real subprocesses wit
 - Reports/receipts and parent/child operating guidance, artifacts before settlement, retries, failures, explicit cancellation without assignment deadlines, dialogs, and transport framing.
 - Reload/fork/tree ownership, restore, cleanup, and headless behavior.
 - Compact widget bounds and recency ordering, animation/disposal, Tasks isolation, themes, narrow/Unicode layout, native versus billed context, and compaction/unknown telemetry.
+- The actual `/subagents` command and native UI components at a captured terminal boundary: stable/all-child selection, mid-stream deltas, authoritative message/tool reconciliation, tool expansion, scroll/follow, no render-time RPC, live/saved read errors, pre-compaction branch history, read-only older-file loading and lifecycle disposal.
+
+Automated checks do not establish real-terminal focus or resize behavior. Manual acceptance in regular and fullscreen Pi should inspect a running child, resize, scroll while output arrives, then close and verify normal reporting. This is separate from the provider smoke test and requires authorization to launch live agents.
 
 The live smoke runs two bounded research assignments using the real model/CLI: default-enabled native `web_search`, `/tmp/` report writing, automatic reporting, and reopening the stopped child for a follow-up that preserves prior evidence. It verifies a successful direct `web_search` result with IANA source metadata in the actual child transcript, provider-family inheritance, and no shell fallback. It stops the child and removes test artifacts. **Its parent runtime is mocked**; it is not a real TUI test.
 

@@ -11,7 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = process.env.PI_TEST_PACKAGE_ROOT || join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@earendil-works/pi-coding-agent');
 const { loadExtensions, createExtensionRuntime, clearExtensionCache } = await import(pathToFileURL(join(root, 'dist/core/extensions/loader.js')));
-const { visibleWidth } = await import(pathToFileURL(join(root, 'node_modules/@earendil-works/pi-tui/dist/index.js')));
+const { visibleWidth, stripTerminalSequences, getKeybindings } = await import(pathToFileURL(join(root, 'node_modules/@earendil-works/pi-tui/dist/index.js')));
 const themes = await import(pathToFileURL(join(root, 'dist/modes/interactive/theme/theme.js')));
 themes.initTheme('light', false);
 const scratch = await mkdtemp(join(tmpdir(), 'pi-subagent-test-'));
@@ -27,7 +27,7 @@ async function until(check, message = 'condition') {
 async function logs() { return (await readFile(process.env.TEST_SUBAGENT_LOG, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); }
 async function instance({ id = `parent-${instances.length}`, branch = [], flag, mode = 'tui' } = {}) {
   const runtime = createExtensionRuntime();
-  const state = { id, branch: structuredClone(branch), reports: [], queue: [], busy: false, warnings: [], widgets: new Map([['task', 'untouched task'], ['todo', 'untouched todo'], ['physical-model-usage', 'untouched model usage']]), widgetUpdates: 0, renderRequests: 0 };
+  const state = { id, branch: structuredClone(branch), reports: [], queue: [], busy: false, warnings: [], widgets: new Map([['task', 'untouched task'], ['todo', 'untouched todo'], ['physical-model-usage', 'untouched model usage']]), widgetUpdates: 0, renderRequests: 0, customCalls: 0 };
   runtime.appendEntry = (customType, data) => state.branch.push({ type: 'custom', id: `entry-${++entryId}`, customType, data: structuredClone(data) });
   const loaded = await loadExtensions([join(directory, '../index.ts')], scratch, undefined, runtime);
   assert.deepEqual(loaded.errors, []);
@@ -47,6 +47,14 @@ async function instance({ id = `parent-${instances.length}`, branch = [], flag, 
     isProjectTrusted: () => true, hasPendingMessages: () => state.queue.length > 0,
     ui: {
       notify: (text) => state.warnings.push(text),
+      custom: (factory, options) => new Promise(resolve => {
+        state.customCalls++;
+        assert.equal(options.overlay, true);
+        assert.deepEqual(options.overlayOptions, { width: '90%', maxHeight: '85%', anchor: 'center', margin: 1 });
+        const tui = { terminal: { rows: 48, columns: 180 }, requestRender: () => { state.renderRequests++; } };
+        const done = () => { state.overlay.component.dispose?.(); state.overlay = undefined; resolve(); };
+        state.overlay = { tui, component: factory(tui, themes.theme, getKeybindings(), done) };
+      }),
       setWidget: (key, factory, options) => {
         assert.equal(key, 'subagent', 'must not overwrite another extension widget');
         state.widgetUpdates++;
@@ -78,6 +86,20 @@ async function instance({ id = `parent-${instances.length}`, branch = [], flag, 
 async function snapshot(parent, id) { return (await parent.call({ action: 'status', id })).details; }
 function widget(parent, width = 240) { return parent.state.widgets.get('subagent').render(width); }
 function view(parent, width = 240) { return widget(parent, width).join('\n').replace(/\x1b\[[0-9;]*m/g, ''); }
+function inspect(parent) {
+  const pending = parent.extension.commands.get('subagents').handler('', parent.ctx);
+  const overlay = parent.state.overlay;
+  assert(overlay, 'command opens the real custom component immediately');
+  const screen = (width = 180) => overlay.component.render(width).map(stripTerminalSequences).join('\n');
+  const key = (data) => { overlay.component.handleInput(data); return screen(); };
+  screen();
+  return { ...overlay, pending, screen, key };
+}
+async function stage(id, number) {
+  const launch = (await logs()).filter(line => line.child === id && line.type === 'launch').at(-1);
+  process.kill(launch.pid, 'SIGUSR2');
+  await until(async () => (await logs()).some(line => line.child === id && line.type === 'transcript-stage' && line.stage === number));
+}
 async function stopAll(parent) { for (const child of (await parent.call({ action: 'status' })).details) await parent.call({ action: 'stop', id: child.id }); }
 async function release(id) {
   await until(async () => (await logs()).some((line) => line.child === id && line.type === 'command' && line.command.type === 'prompt'));
@@ -93,6 +115,10 @@ try {
   process.argv[1] = join(directory, 'fake-pi.mjs');
   const parent = await instance();
   assert.equal(parent.state.widgets.has('subagent'), false, 'empty sessions have no subagent widget');
+  const emptyInspector = inspect(parent);
+  assert.match(emptyInspector.screen(), /No subagents in this session/);
+  emptyInspector.key('\x1b'); await emptyInspector.pending;
+  assert.equal(parent.state.widgets.has('subagent'), false);
   const toolDescription = parent.extension.tools.get('subagent').definition.description;
   assert.match(toolDescription, /Continue independent work after acceptance/);
   assert.match(toolDescription, /end the current response/);
@@ -413,7 +439,8 @@ export default async function (pi: ExtensionAPI) {
   // Compact activity widget: real component lifecycle, animation, and width-safe rows.
   const ui = await instance();
   const named = (await ui.call({ action: 'spawn', name: '測試🙂\n\x1b[31m', message: 'hold' })).details;
-  assert.equal(widget(ui)[1].replace(/\x1b\[[0-9;]*m/g, ''), 'Subagents · 1 active');
+  assert.equal(widget(ui)[1].replace(/\x1b\[[0-9;]*m/g, ''), 'Subagents · 1 active · /subagents to inspect');
+  assert.doesNotMatch(widget(ui, 30)[1], /subagents to inspect/, 'hint disappears rather than adding a widget row');
   assert.equal(widget(ui)[0], '', 'blank line separates Tasks from subagents');
   assert.equal(widget(ui).at(-1), '', 'blank line separates subagents from the next widget');
   assert.match(view(ui), / · chosen · ctx (?:\?|\d+%) · ~\$[?\d.]+ · running/);
@@ -503,17 +530,32 @@ export default async function (pi: ExtensionAPI) {
   const recentRows = widget(recent).slice(2, -1).map((line) => line.replace(/\x1b\[[0-9;]*m/g, ''));
   assert.deepEqual(recentRows.map((line) => line.match(/recent-\d/)[0]), ['recent-0', 'recent-5', 'recent-4', 'recent-3', 'recent-2'], 'finished assignments sort by completion time, not start time or open process');
   assert.equal((await recent.call({ action: 'status' })).details.length, 6, 'hidden history remains inspectable');
+  const historyPicker = inspect(recent);
+  const historyChoices = historyPicker.screen();
+  for (let index = 0; index < 6; index++) assert.match(historyChoices, new RegExp(`recent-${index}`), 'picker includes children beyond the widget cap');
+  for (let index = 0; index < 5; index++) historyPicker.key('\x1b[B');
+  historyPicker.key('\r');
+  assert.match(historyPicker.screen().split('\n')[1], /recent-1/, 'old omitted child is selectable');
+  historyPicker.key('\x1b'); await historyPicker.pending;
 
   await ui.call({ action: 'spawn', name: 'reload-active', message: 'hold' });
+  const shutdownInspector = inspect(ui);
+  shutdownInspector.key('\r');
   await ui.emit({ type: 'session_shutdown', reason: 'reload' });
+  await shutdownInspector.pending;
+  assert.equal(ui.state.overlay, undefined, 'shutdown disposes the open viewer');
   const rendersAfterShutdown = ui.state.renderRequests;
   await delay(180);
   assert.equal(ui.state.renderRequests, rendersAfterShutdown, 'shutdown disposes active animation');
   assert.equal(ui.state.widgets.has('subagent'), false);
   assert.equal(ui.state.widgets.get('task'), 'untouched task');
   await uiRestored.call({ action: 'spawn', name: 'tree-active', message: 'hold' });
+  const navigationInspector = inspect(uiRestored);
+  navigationInspector.key('\r');
   uiRestored.state.branch = [];
   await uiRestored.emit({ type: 'session_tree', newLeafId: null });
+  await navigationInspector.pending;
+  assert.equal(uiRestored.state.overlay, undefined, 'navigation disposes the viewer and in-flight history read');
   const rendersAfterNavigation = uiRestored.state.renderRequests;
   await delay(180);
   assert.equal(uiRestored.state.renderRequests, rendersAfterNavigation, 'navigation disposes active animation');
@@ -523,13 +565,149 @@ export default async function (pi: ExtensionAPI) {
   await until(() => rpc.state.reports.length === 1);
   await rpc.call({ action: 'stop', id: headless.id });
   assert.equal(rpc.state.widgetUpdates, 0, 'headless/RPC operation must not use terminal component factories');
+  for (const headlessParent of [rpc, print]) {
+    await headlessParent.extension.commands.get('subagents').handler('', headlessParent.ctx);
+    assert.equal(headlessParent.state.customCalls, 0, 'non-TUI command never constructs an overlay');
+    assert.match(headlessParent.state.warnings.at(-1), /requires interactive mode/);
+  }
+
+  // Actual command + native UI components, with only terminal presentation and
+  // the child CLI as external boundaries. No live providers or installed state.
+  const trace = await instance();
+  trace.state.busy = true;
+  trace.ctx.waitForIdle = () => { throw new Error('Inspection must not wait for the parent turn'); };
+  const traced = (await trace.call({ action: 'spawn', name: 'trace 雪🙂', message: 'transcript-hold' })).details;
+  await until(async () => (await logs()).some(line => line.child === traced.id && line.type === 'transcript-stage' && line.stage === 0));
+  const neighbor = (await trace.call({ action: 'spawn', name: 'neighbor', message: 'hold' })).details;
+  let inspector = inspect(trace);
+  inspector.key('\x1b[B'); // Select trace, initially second behind the newer active child.
+  await release(neighbor.id);
+  await until(async () => (await snapshot(trace, neighbor.id)).sessionCost === 0.02);
+  const stableRows = inspector.screen();
+  assert(stableRows.indexOf('neighbor') < stableRows.indexOf('trace 雪🙂'), 'finishing a child does not reorder an open picker');
+  const appended = (await trace.call({ action: 'spawn', name: 'newcomer', message: 'hold' })).details;
+  await until(async () => (await snapshot(trace, appended.id)).contextUsage?.tokens === 2500);
+  assert(inspector.screen().indexOf('newcomer') > inspector.screen().indexOf('trace 雪🙂'), 'new children append without moving existing picker rows');
+  inspector.tui.terminal.rows = 28;
+  inspector.key('\r');
+  assert.match(inspector.screen().split('\n')[1], /trace 雪🙂/, 'selection remains attached to the child ID');
+  await until(() => /INDEXED_TEXT/.test(inspector.screen()), 'opening midway includes deltas emitted before the viewer existed');
+  assert.match(inspector.screen(), /lookup · preparing/);
+  inspector.key('\x1b[H');
+  await until(() => /Delegated assignment/.test(inspector.screen()), 'native history loaded');
+  assert.match(inspector.screen(), /PRELUDE 雪🙂/);
+  assert.doesNotMatch(inspector.screen(), /Abandoned branch/);
+  const bodyBeforeDelta = inspector.screen().split('\n').slice(4, -2);
+  const beforeDeltaWidgets = trace.state.widgetUpdates;
+  const beforeDeltaQueries = (await logs()).filter(line => line.child === traced.id && line.type === 'command').length;
+  await stage(traced.id, 1);
+  await until(() => /New activity below/.test(inspector.screen()));
+  assert.deepEqual(inspector.screen().split('\n').slice(4, -2), bodyBeforeDelta, 'scrolling up pauses follow while new output arrives');
+  assert.equal(trace.state.widgetUpdates, beforeDeltaWidgets, 'text deltas do not redraw the compact widget');
+  assert.equal((await logs()).filter(line => line.child === traced.id && line.type === 'command').length, beforeDeltaQueries, 'deltas use the runtime buffer, not history polling');
+  inspector.key('\x1b[F');
+  assert.match(inspector.screen(), /LIVE_DELTA/);
+  assert.match(inspector.screen(), /AUTHORITATIVE_BLOCK/, 'block-end content replaces the reconstructed delta block');
+  assert.match(inspector.screen(), /LIVE/);
+  inspector.key('\x1b'); await inspector.pending;
+  assert.equal((await snapshot(trace, traced.id)).state, 'running', 'closing a live viewer does not stop its child');
+  inspector = inspect(trace);
+  inspector.key('\x1b[B'); inspector.key('\r');
+  inspector.tui.terminal.rows = 28;
+  assert.match(inspector.screen().split('\n')[1], /trace 雪🙂/);
+  assert.match(inspector.screen(), /LIVE_DELTA/, 'reopening retains the current partial response');
+  inspector.key('e');
+  await stage(traced.id, 2);
+  await until(() => /replacement partial/.test(inspector.screen()), 'tool updates stream into the open transcript');
+  assert.doesNotMatch(inspector.screen(), /obsolete partial/, 'partial results replace the latest snapshot, not concatenate');
+  inspector.tui.terminal.rows = 100;
+  const pendingHistory = inspector.screen();
+  assert.equal((pendingHistory.match(/AUTHORITATIVE_END/g) ?? []).length, 1, 'completed live message survives a lagging native baseline without duplication');
+  assert.equal((pendingHistory.match(/INDEXED_TEXT/g) ?? []).length, 1, 'contentIndex keeps text blocks separate from thinking and tools');
+  assert.match(pendingHistory, /complete-arguments/);
+  assert.match(pendingHistory, /AUTHORITATIVE_MESSAGE/, 'message-end content is authoritative over block-end content');
+  assert.doesNotMatch(pendingHistory, /AUTHORITATIVE_BLOCK/);
+  assert.match(pendingHistory, /lookup · running/);
+  assert.doesNotMatch(pendingHistory, /PRIVATE_THINKING_BODY|incomplete/);
+  await stage(traced.id, 3);
+  await until(() => /History unavailable/.test(inspector.screen()), 'history failure remains local to the viewer');
+  const failedHistory = inspector.screen();
+  assert.match(failedHistory, /AUTHORITATIVE_END/);
+  assert.match(failedHistory, /lookup · completed/);
+  assert.match(failedHistory, /check · failed/);
+  assert.match(failedHistory, /FINAL_TOOL_OUTPUT/);
+  assert.match(failedHistory, /FAILED_TOOL_OUTPUT/);
+  assert.match(failedHistory, /\[Image omitted\]/);
+  assert.doesNotMatch(failedHistory, /omitted-base64|replacement partial/);
+  assert.equal((await snapshot(trace, traced.id)).state, 'running', 'viewer read failure never fails the assignment');
+  await stage(traced.id, 4);
+  await until(() => /Context compacted/.test(inspector.screen()) && /Transcript final/.test(inspector.screen()));
+  await until(async () => (await snapshot(trace, traced.id)).latest.outcome === 'completed');
+  const reconciled = inspector.screen();
+  for (const text of ['PRELUDE', 'AUTHORITATIVE_END', 'INDEXED_TEXT', 'FINAL_TOOL_OUTPUT', 'FAILED_TOOL_OUTPUT', 'Transcript final']) assert.equal(reconciled.split(text).length - 1, 1, `${text} renders once after native reconciliation`);
+  assert.doesNotMatch(reconciled, /PRIVATE_THINKING_BODY|Abandoned branch|History unavailable/);
+  assert.match(reconciled, /completed/);
+  assert.equal(trace.state.reports.filter(item => item.message.details.childId === traced.id).length, 1, 'normal automatic reporting continues with the viewer open');
+  inspector.key('e');
+  assert.doesNotMatch(inspector.screen(), /FINAL_TOOL_OUTPUT|complete-arguments/, 'E collapses all tool arguments and output');
+  assert.match(inspector.screen(), /lookup · completed/);
+  inspector.key('e');
+  assert.match(inspector.screen(), /FINAL_TOOL_OUTPUT/);
+  await delay(30); // Drain coalesced completion/settlement reads before the render-only check.
+  const readOnlyQueries = (await logs()).filter(line => line.child === traced.id && line.type === 'command').length;
+  for (const width of [0, 1, 12, 32, 80, 180]) {
+    const lines = inspector.component.render(width);
+    for (const line of lines) assert(visibleWidth(line) <= width, `transcript overflow at ${width}`);
+    assert(lines.length <= Math.floor(inspector.tui.terminal.rows * 0.85), 'overlay height is bounded');
+  }
+  for (const key of ['\x1b[H', '\x1b[B', '\x1b[6~', '\x1b[5~', '\x1b[A', '\x1b[F', 'e', 'e']) inspector.key(key);
+  inspector.component.invalidate(); inspector.screen();
+  await delay(20);
+  assert.equal((await logs()).filter(line => line.child === traced.id && line.type === 'command').length, readOnlyQueries, 'rendering, scrolling, expansion, invalidation and resize make no child RPC calls');
+  inspector.key('b');
+  const reordered = inspector.screen();
+  assert(reordered.indexOf('newcomer') < reordered.indexOf('trace 雪🙂'), 'returning rebuilds active-first picker order');
+  inspector.key('\r');
+  assert.match(inspector.screen().split('\n')[1], /trace 雪🙂/);
+  inspector.key('\x1b'); await inspector.pending;
+  assert.equal((await snapshot(trace, traced.id)).state, 'idle', 'closing inspection does not stop or reopen the child');
+  assert.equal(trace.state.overlay, undefined);
+  assert.doesNotMatch(JSON.stringify(trace.state.branch), /PRIVATE_THINKING_BODY|AUTHORITATIVE_END|FINAL_TOOL_OUTPUT|PRELUDE/, 'transcript bodies never enter parent persisted entries or queued reports');
+  assert.doesNotMatch(JSON.stringify(await snapshot(trace, traced.id)), /PRIVATE_THINKING_BODY|AUTHORITATIVE_END|FINAL_TOOL_OUTPUT|PRELUDE/);
+  await trace.call({ action: 'send', id: traced.id, message: 'second saved assignment' });
+  await until(() => trace.state.reports.filter(item => item.message.details.childId === traced.id).length === 2);
+  await stopAll(trace);
+  const saved = await snapshot(trace, traced.id);
+  const savedLines = (await readFile(saved.sessionPath, 'utf8')).trim().split('\n').map(JSON.parse);
+  savedLines[0].version = 2; // Native in-memory migration must not rewrite the file.
+  await writeFile(saved.sessionPath, savedLines.map(JSON.stringify).join('\n') + '\n');
+  const savedBytes = await readFile(saved.sessionPath, 'utf8');
+  const savedTrace = await instance({ id: trace.state.id, branch: trace.state.branch.filter(entry => entry.customType === 'subagent-state' && entry.data.id === traced.id) });
+  const savedLogs = (await logs()).length;
+  const savedInspector = inspect(savedTrace);
+  savedInspector.tui.terminal.rows = 120;
+  savedInspector.key('\r');
+  await until(() => /second saved assignment/.test(savedInspector.screen()));
+  const savedScreen = savedInspector.screen();
+  assert.match(savedScreen, /PRELUDE/);
+  assert.match(savedScreen, /Context compacted/);
+  assert.match(savedScreen, /Transcript final/);
+  assert.doesNotMatch(savedScreen, /Abandoned branch|PRIVATE_THINKING_BODY/);
+  assert.equal(await readFile(saved.sessionPath, 'utf8'), savedBytes, 'viewing older native saved history never mutates it');
+  assert.equal((await logs()).length, savedLogs, 'saved/restored inspection launches no child and sends no RPC');
+  savedInspector.key('b');
+  await rm(saved.sessionPath);
+  savedInspector.key('\r');
+  await until(() => /Transcript unavailable/.test(savedInspector.screen()));
+  assert.equal((await snapshot(savedTrace, traced.id)).latest.outcome, 'completed', 'missing file is a local viewer error, not an execution failure');
+  savedInspector.key('\x1b'); await savedInspector.pending;
 
   process.env.PI_SUBAGENT = '1';
   const guarded = await instance();
   assert.equal(guarded.extension.tools.size, 0, 'child cannot register delegation tool');
   delete process.env.PI_SUBAGENT;
   assert.equal(parent.state.warnings.length, 0);
-  console.log('subagent checks passed: physical/inherited models, web loading and capability persistence, selected MCP connection/tools/resources and personal-only policy (optional, blocked calls, fail-closed loading), parallel limits, context reuse, reporting/retries, failures, approvals, Unicode, no assignment deadline, ownership, cleanup, and widget isolation');
+  console.log('subagent checks passed: physical/inherited models, web loading and capability persistence, selected MCP connection/tools/resources and personal-only policy (optional, blocked calls, fail-closed loading), parallel limits, context reuse, reporting/retries, failures, approvals, Unicode, no assignment deadline, ownership, cleanup, widget isolation, read-only /subagents picker/live streaming, scroll/follow/expansion, saved pre-compaction branch history, and transcript lifecycle/error isolation');
 } finally {
   for (const item of instances) await item.emit({ type: 'session_shutdown', reason: 'quit' });
   const launches = await logs();
