@@ -44,7 +44,7 @@ export async function inspectTools({ root, env, target }) {
     const prerequisite = await findExecutable(tool.prerequisite, env);
     const requires = tool.prerequisite === 'gh' && !gh && canInstallGh ? ['gh'] : [];
     const available = !installed && (!!prerequisite || requires.length > 0) && (!tool.skill || !gh || skillSupport) && (!tool.extension || !extensionInspectionFailed);
-    const reason = installed ? `installed or occupied: ${installed}; preserved, no upgrades or browser downloads`
+    const reason = installed ? `detected at ${installed}; left untouched (version and health not verified)`
       : tool.extension && extensionInspectionFailed ? 'Cannot inspect installed gh extensions. Run gh extension list yourself, resolve its error (including authentication), then rerun install.'
       : tool.skill && gh && !skillSupport ? `Installed gh has no gh skill support. ${tool.instructions}`
       : !prerequisite && !requires.length ? `Missing ${tool.prerequisite}. ${tool.instructions}` : null;
@@ -64,7 +64,10 @@ export async function planTools({ root, env, target, mode, dryRun, selectTools, 
       tool.reason = 'GitHub CLI was previously declined. Use pi-setup install to revisit it, or install it yourself.';
     }
   }
-  for (const tool of info.tools.filter(tool => tool.installed)) log(`Optional tool ${tool.name}: ${tool.reason}`);
+  const detected = info.tools.filter(tool => tool.installed);
+  log(`\nOptional tools and companion skills\n  ${detected.length} detected; left untouched (versions and health not verified).`);
+  log('  External tools and packages are not upgraded. Use pi-setup check for paths and details.');
+  if (!offers.length) log(mode === 'new' ? '  No new missing tools to offer.' : '  No missing tools to offer.');
   for (const tool of offers) {
     log(`Optional tool [ ] ${tool.name}${tool.reason ? ` — unavailable: ${tool.reason}` : ''}`);
     if (dryRun && tool.available) for (const command of tool.commands) log(`OPTIONAL COMMAND ${command.executable} ${command.args.join(' ')}`);
@@ -72,7 +75,7 @@ export async function planTools({ root, env, target, mode, dryRun, selectTools, 
   if (dryRun || !offers.length) return { ...info, offers: [], commands: [] };
   if (typeof selectTools !== 'function') throw new Error('Optional-tool selection requires a terminal checklist.');
   const selected = await selectTools(offers);
-  if (selected === null) throw new Error('Cancelled; nothing changed.');
+  if (selected === null) throw new Error('Cancelled; no setup changes applied. Any source update remains in place.');
   if (!Array.isArray(selected) || selected.some(id => typeof id !== 'string' || !offers.some(tool => tool.id === id && tool.available)) || new Set(selected).size !== selected.length) throw new Error('Invalid optional-tool selection; choose only available offered IDs.');
   for (const tool of offers.filter(tool => selected.includes(tool.id))) {
     if (tool.requires.some(id => !selected.includes(id))) throw new Error(`${tool.name} requires selecting GitHub CLI (gh) too; nothing changed.`);

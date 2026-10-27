@@ -63,7 +63,15 @@ are backed up. Native installer failures may leave earlier approved changes.
 
 Setup does not prune resources, uninstall tools, reload Pi, or restart Herdr.
 Updates require a clean checkout and tracking upstream, and allow fast-forward
-only. External packages and tools keep their own update mechanisms.
+only. The pull updates the managed checkout, not a copy in `~/.local/bin`:
+the command and individual Pi resources link into that checkout. Existing links
+therefore use the updated source before the setup review; cancelling that review
+does not undo the pull. Reload idle Pi sessions when ready to load changed extensions.
+
+Update output separates the source revision, setup preview, and applied changes.
+Detected optional tools/skills are summarized and left untouched; detection does
+not verify their version or health. Use `pi-setup check` for paths and details.
+External packages and tools keep their own update mechanisms.
 
 Use `PI_CODING_AGENT_DIR` for a custom Pi directory or `PI_SETUP_HOME` for another
 managed installation location.

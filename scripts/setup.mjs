@@ -115,7 +115,7 @@ export async function runSetup({ root = checkout, env = process.env, ask, log = 
   if (!info.pi) throw new Error('Pi is required on PATH. Install Pi using its official instructions and your existing Node/version-manager owner, then rerun setup. Setup never installs or upgrades Pi or Node.');
   const choose = async (key, message, fallback) => dryRun ? fallback : ask(key, message, fallback);
   if (!dryRun && typeof ask !== 'function') throw new Error('Interactive setup requires a terminal prompt.');
-  log(`Pi: ${info.pi}\nAgent: ${info.target}\nCheckout: ${info.root}`);
+  log(`\nReview setup\n  Pi: ${info.pi}\n  Agent: ${info.target}\n  Checkout: ${info.root}`);
   const groups = new Set();
   if (info.settingsExists) log('Your existing Pi settings are kept by default.\nYou can review suggested settings later in this setup, before approving any changes.\nInstalling an optional Pi package also adds its entry to settings.json.');
   for (const group of ['instructions', 'extensions', 'skills', 'preferences']) {
@@ -126,14 +126,16 @@ export async function runSetup({ root = checkout, env = process.env, ask, log = 
     if (await choose(`group:${group}`, message, fallback)) groups.add(group);
   }
   const packages = [];
-  for (const item of info.packages) {
-    if (item.configured) log(`Package already configured (preserved): ${item.source}`);
-    else if (await choose(`package:${item.source}`, `Install optional ${item.source}? Third-party packages can execute code.`, false)) packages.push(item.source);
+  const configuredPackages = info.packages.filter(item => item.configured).length;
+  if (configuredPackages) log(`\nOptional Pi packages: ${configuredPackages} already configured; left untouched.`);
+  for (const item of info.packages.filter(item => !item.configured)) {
+    if (await choose(`package:${item.source}`, `Install optional ${item.source}? Third-party packages can execute code.`, false)) packages.push(item.source);
     else if (dryRun) log(`Optional, not selected: ${info.pi} install ${item.source}`);
   }
   const tools = toolsMode === null ? null : await planTools({ root: info.root, env, target: info.target, mode: toolsMode, dryRun, selectTools, log });
   const links = info.links.filter(x => groups.has(x.group === 'support' ? 'extensions' : x.group) && x.status !== 'linked');
   const preferences = groups.has('preferences') ? preferenceChanges(info.base, info.settings) : [];
+  log(`\nSetup preview\n  Resource links already in place: ${info.links.filter(link => link.status === 'linked').length}\n  Proposed links: ${links.length}; settings: ${preferences.length}; Pi packages: ${packages.length}; tool commands: ${tools?.commands.length ?? 0}`);
   for (const link of links) log(`${link.status === 'conflict' ? 'CONFLICT' : 'LINK'} ${link.to} -> ${link.from}`);
   for (const change of preferences) log(`${change.conflict ? 'CONFLICT' : 'SET'} settings.${change.keys.join('.')}: ${JSON.stringify(change.old) ?? '(missing)'} -> ${JSON.stringify(change.value)}`);
   for (const source of packages) log(`COMMAND ${info.pi} install ${source} (personal agent: ${info.target})`);
@@ -144,10 +146,10 @@ export async function runSetup({ root = checkout, env = process.env, ask, log = 
   for (const link of links) if (link.status !== 'conflict' || await choose(`replace:${link.relative}`, `Back up and replace ${link.to}?`, false)) approvedLinks.push(link);
   const approvedPreferences = [];
   for (const change of preferences) if (!change.conflict || await choose(`preference:${change.keys.join('.')}`, `Replace settings.${change.keys.join('.')} with ${JSON.stringify(change.value)}?`, false)) approvedPreferences.push(change);
-  if (!approvedLinks.length && !approvedPreferences.length && !packages.length && !tools?.offers.length) { log('No changes selected.'); return { ...info, applied: false }; }
+  if (!approvedLinks.length && !approvedPreferences.length && !packages.length && !tools?.offers.length) { log('\nSetup summary\n  No additional setup changes selected. Any source update remains in place.\n  Reload idle Pi sessions if source was updated.'); return { ...info, applied: false }; }
   const backupBase = await resolved(path.join(info.home, '.local/state/pi-setup/backups'));
   if (inside(info.root, backupBase) || inside(info.target, backupBase)) throw new Error('Backup directory must be outside the checkout and agent destination.');
-  if (!await choose('apply', 'Apply the approved changes? Existing replacements will be backed up.', false)) { log('Cancelled; nothing changed.'); return { ...info, applied: false }; }
+  if (!await choose('apply', 'Apply the approved changes? Existing replacements will be backed up.', false)) { log('\nSetup summary\n  Cancelled; no setup changes applied. Any source update remains in place.\n  Reload idle Pi sessions if source was updated.'); return { ...info, applied: false }; }
   let backup;
   try {
     if (approvedLinks.some(x => x.status === 'conflict') || (info.settingsExists && (approvedPreferences.length || packages.length))) {
@@ -181,7 +183,7 @@ export async function runSetup({ root = checkout, env = process.env, ask, log = 
   } catch (error) {
     throw new Error(`Setup stopped: ${error.message} Approved earlier changes may remain. ${backup ? `Originals are in ${backup}.` : 'No existing originals were replaced without backup.'} No rollback was attempted.`, { cause: error });
   }
-  log('Setup complete. Reload idle Pi sessions yourself when ready.');
+  log(`\nSetup summary\n  Applied: ${approvedLinks.length} resource links, ${approvedPreferences.length} settings, ${packages.length} Pi packages, ${tools?.commands.length ?? 0} tool commands.\n  ${tools?.offers.length ? 'Optional-tool choices remembered. ' : ''}Existing external tools and packages were not upgraded.\n  Reload idle Pi sessions yourself when ready.`);
   return { ...await inspectSetup({ root, env }), applied: true, backup };
 }
 

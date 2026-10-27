@@ -42,7 +42,9 @@ test('fresh install: preview/prerequisites/cancellation are read-only, then link
   await f.setup({ dryRun: true, ask: async () => { prompted = true; throw new Error('prompted'); } });
   assert.equal(prompted, false);
   await assert.rejects(f.setup({ env: { ...f.env, PATH: path.join(f.temp, 'missing') } }), /Pi is required on PATH/);
-  await f.setup({ ask: async (key, _message, fallback) => key === 'apply' ? false : fallback });
+  const cancelledLogs = [];
+  await f.setup({ ask: async (key, _message, fallback) => key === 'apply' ? false : fallback, log: line => cancelledLogs.push(line) });
+  assert.match(cancelledLogs.join('\n'), /Cancelled; no setup changes applied\. Any source update remains in place/);
   assert.equal(await exists(f.target), false);
   assert.equal(await exists(f.backups), false);
   assert.equal(await exists(f.calls), false);
@@ -90,13 +92,16 @@ test('rerun and upstream update preserve settings; new resource links apply and 
   git(f.root, 'remote', 'add', 'origin', upstream);
   git(f.root, 'push', '-u', 'origin', 'main');
   git(f.temp, 'clone', upstream, publisher);
-  const update = () => updateCheckout({ root: f.root, env: gitEnv, log() {} });
+  const updateLogs = [];
+  const update = () => updateCheckout({ root: f.root, env: gitEnv, log: line => updateLogs.push(line) });
   await f.setup();
   const originalSettings = await fs.readFile(f.settings, 'utf8');
   const originalCalls = await fs.readFile(f.calls, 'utf8');
   const originalLink = await fs.lstat(path.join(f.target, 'AGENTS.md'));
-  const repeat = await f.setup({ ask: async (key, _message, fallback) => { assert.notEqual(key, 'apply'); return fallback; } });
+  const repeatLogs = [];
+  const repeat = await f.setup({ log: line => repeatLogs.push(line), ask: async (key, _message, fallback) => { assert.notEqual(key, 'apply'); return fallback; } });
   assert.equal(repeat.applied, false);
+  assert.match(repeatLogs.join('\n'), /No additional setup changes selected\. Any source update remains in place/);
   assert.equal(await fs.readFile(f.settings, 'utf8'), originalSettings);
   assert.equal(await exists(f.backups), false);
   // Local preferences may change independently between installation and update.
@@ -121,7 +126,10 @@ test('rerun and upstream update preserve settings; new resource links apply and 
   git(publisher, 'add', '.');
   git(publisher, 'commit', '-m', 'Add resource and preference');
   git(publisher, 'push');
+  const beforeUpdate = git(f.root, 'rev-parse', '--short', 'HEAD');
   update();
+  assert.ok(updateLogs.includes(`  Updated: ${beforeUpdate} → ${git(publisher, 'rev-parse', '--short', 'HEAD')}.`));
+  assert.match(updateLogs.join('\n'), /Cancelling setup does not undo the pull/);
   assert.equal(git(f.root, 'rev-parse', 'HEAD'), git(publisher, 'rev-parse', 'HEAD'));
   assert.equal((await readJSON(path.join(f.root, 'agent/settings.base.json'))).terminal.newPreference, true);
   const added = await f.setup();
@@ -133,6 +141,7 @@ test('rerun and upstream update preserve settings; new resource links apply and 
   assert.equal(await fs.readFile(f.calls, 'utf8'), originalCalls);
   assert.equal(await fs.readFile(path.join(f.target, 'extensions/local-only/index.ts'), 'utf8'), 'local extension');
   update();
+  assert.ok(updateLogs.includes(`  Already up to date at ${git(f.root, 'rev-parse', '--short', 'HEAD')}.`));
   await f.setup();
   assert.equal(await fs.readFile(f.settings, 'utf8'), customBytes);
   assert.equal(await exists(f.backups), false);

@@ -86,8 +86,12 @@ test('tool offers: approved install, update discovery/history, install revisits 
   assert.equal((await fs.stat(path.dirname(f.history))).mode & 0o777, 0o700);
   const beforeHistory = await read(f.history);
   const beforeCalls = await read(f.calls);
-  const noOffers = await f.setup({ toolsMode: 'new', selectTools: async () => assert.fail('seen declines/installed tools must not be reoffered'), ask: async (key, message, fallback) => { assert.notEqual(key, 'apply'); return f.ask(key, message, fallback); } });
+  const noOfferLogs = [];
+  const noOffers = await f.setup({ log: line => noOfferLogs.push(line), toolsMode: 'new', selectTools: async () => assert.fail('seen declines/installed tools must not be reoffered'), ask: async (key, message, fallback) => { assert.notEqual(key, 'apply'); return f.ask(key, message, fallback); } });
   assert.equal(noOffers.applied, false);
+  assert.match(noOfferLogs.join('\n'), /1 detected; left untouched/);
+  assert.match(noOfferLogs.join('\n'), /No new missing tools to offer/);
+  assert.doesNotMatch(noOfferLogs.join('\n'), /Optional tool Herdr|installed or occupied|browser downloads/);
   assert.equal(await read(f.history), beforeHistory);
   // A later pushed catalog is read by a fresh run, without schema/version machinery.
   const catalog = JSON.parse(await read(f.catalog));

@@ -17,10 +17,17 @@ export function updateCheckout({ root = checkout, env = process.env, log = conso
   let upstream;
   try { upstream = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']); }
   catch { throw new Error('No tracking upstream is configured. Set the intended remote/branch before updating; setup will not choose one for you.'); }
-  log(`Updating ${root} from ${upstream} (fast-forward only).`);
-  const result = spawnSync('git', ['-C', root, 'pull', '--ff-only', '--no-rebase'], { env, stdio: 'inherit' });
+  const before = git(['rev-parse', '--short', 'HEAD']);
+  log(`\nUpdate source\n  Checkout: ${root}\n  Pulling ${upstream} (fast-forward only).`);
+  const result = spawnSync('git', ['-C', root, 'pull', '--ff-only', '--no-rebase'], { env, encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error('Git update stopped. Resolve the reported remote or history issue yourself; no stash, reset or rebase was attempted.');
+  if (result.status !== 0) {
+    if (result.stdout?.trim()) log(result.stdout.trim());
+    throw new Error('Git update stopped. Resolve the reported remote or history issue yourself; no stash, reset or rebase was attempted.');
+  }
+  const after = git(['rev-parse', '--short', 'HEAD']);
+  log(before === after ? `  Already up to date at ${after}.` : `  Updated: ${before} → ${after}.`);
+  log('  Existing resource links now use this checkout. Cancelling setup does not undo the pull.\n  Reload idle Pi sessions when ready if source changed.');
   return { root, upstream };
 }
 
