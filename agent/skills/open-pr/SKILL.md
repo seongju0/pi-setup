@@ -1,99 +1,38 @@
 ---
 name: open-pr
-description: Create or refresh a pull request with an easy-to-digest reviewer primer, using illustrations to explain the change with less prose. Verify the description against the current diff. Safe to rerun for refinements. Use when the user asks to open, submit, update, shorten, clarify, or refine a PR or its description.
+description: Create or refine a pull request with detailed illustrations and fewer words so reviewers can grasp the changeset. Verify the description against the current diff and read back the published result.
 ---
 
 # Open PR
 
-A PR description is a primer for someone who has not followed the implementation discussion. Give the reviewer a clear mental model of the problem, the change, and the important boundaries so they can judge the diff. Reduce cognitive load through plain language, visual structure, and selective detail—not by hiding consequential complexity.
+**Leverage detailed illustrations and fewer words so it is easier for the reviewer to grasp the changeset.** Write for someone who has not followed the implementation discussion. Make the problem, the change and its important boundaries clear; do not turn the PR into an implementation report.
 
-This skill is self-contained. Do not require another explanation or visualization skill to write the description.
+## Create or refresh
 
-## Every invocation: create or refresh
+Invoking this skill updates the actual PR unless the user requests a preview. Repeated invocations refine the same PR, not duplicates or appended summaries.
 
-Running this skill means updating the actual PR, not merely suggesting wording, unless the user explicitly requests a preview. Repeated invocations refine the same PR; they do not create duplicates or append another summary.
+1. Confirm the repository/branch and find its existing PR. Read the title, body, base and draft/ready state, plus the repository's template and contribution guidance.
+2. Inspect the current diff against the PR base and connected code needed to verify behavior. Distinguish local work from published changes; do not describe unpublished work as delivered.
+3. Write an outcome-focused title and the illustrated description below, using the exact repository template headings. Keep an existing title if it still fits. Preserve valid human context, links, required fields and material caveats; replace stale claims and duplicated explanation throughout the body.
+4. Check the draft, then update the existing PR or create a **draft** through the repository's normal CLI flow. Preserve an existing PR's base, draft/ready state and unrelated metadata. Do not commit, push or change implementation solely to refine its description. If the description already fits the current diff, leave it unchanged.
+5. Read back the actual saved title/body and verify metadata is unchanged except as intended. Return the PR link and a brief account of the refinement.
 
-1. Confirm the repository and current branch. Find its existing PR, if any, and read its title, body, base branch, and draft/ready state. Follow the repository's PR template and contribution guidance.
-2. Read the current diff against the PR's base and the connected code needed to verify the flow. Do not reuse an earlier summary as evidence of current behavior. Check local versus published changes; do not claim unpublished work is in the PR or push it without authorization.
-3. If a PR exists, refresh its description in place. Otherwise, create a **draft** using the repository's normal CLI flow. Preserve an existing PR's draft/ready state, base, and unrelated metadata. Do not commit, push, or change implementation solely to refine the description.
-4. Use an outcome-focused title. Write the body as the reviewer primer described below, within the repository's exact template headings.
-5. On refinements, apply the user's latest direction to the whole description, not an appended addendum. Preserve still-valid human-authored context, links, required template fields, and material caveats; remove stale claims and duplicated explanations. If the existing description already meets these requirements and the diff has not changed, leave it unchanged.
-6. Before publishing, run the publication gate below. After publishing, read the PR back to verify the actual saved body. Return the PR link and a brief account of what changed, or say it was already current.
+## Make illustrations carry the explanation
 
-## Write a reviewer primer
+- **Orient briefly.** Start with one or two plain-English sentences: the problem or prior limitation, then the outcome. Do not assume the reviewer knows the ticket or implementation names.
+- **Show the substantive changes.** Organize around the few things the reviewer needs to understand, not files or coding steps. For nontrivial changes, lead each explanation with a useful illustration. Use before/after for a changed flow, a table for independent conditions/outcomes, or a concrete example for identity, state or lifecycle behavior. For trivial changes, short bullets may be clearer.
+- **Put detail in the visuals.** Show concrete actors, operations, ownership, identity and consequential branches or side effects—not vague boxes such as “same behavior.” Make the changed versus preserved behavior visible. Prefer several complementary views over one overloaded diagram; each should answer a different review question.
+- **Use the clearest format.** Fenced `text` diagrams, tables, Mermaid and focused code/request examples are all valid. Choose for readability, not decoration. Keep labels concise and arrow meanings consistent; distinguish current behavior from planned integrations.
+- **Use prose only where it adds meaning.** Explain motivation, trade-offs or caveats the illustration cannot convey. Do not narrate the diagram again. Remove repeated summaries, file inventories, boilerplate and setup recipes; link reusable documentation instead. Keep essential review context in the PR. Less prose does not mean hiding consequential complexity or shrinking useful illustrations.
+- **Keep testing factual and compact.** A small check → verified outcome table often replaces a long test narrative. Separate checks run for the current change from earlier evidence and suggested manual steps. Do not invent seeded walkthroughs or imply full-suite, CI or live-service certification. State material verification gaps once; never include credentials, PHI or client identifiers.
 
-### Orient before explaining
+## Final check
 
-Lead with the outcome and only the context needed to understand it, usually one or two plain-English sentences. Explain the problem or prior limitation before introducing implementation names. Do not assume the reviewer has read the ticket, chat, or design discussion.
+Before publishing, ask:
 
-Then make these distinctions easy to see, wherever relevant:
+- Can a reviewer quickly grasp the problem, the delta and important compatibility/failure/rollout boundaries without reading the chat?
+- Does each illustration explain a concrete relationship or outcome, and is every claim/arrow grounded in the actual diff and connected code? A code fence alone is not visual explanation.
+- Can any prose be deleted because a visual or another sentence already says it? Keep detail that helps judge the change; do not optimize for a word count.
+- Are testing claims accurate, required template fields and material caveats preserved, and publication within the user's permissions?
 
-- **What changes:** the behavior, relationship, or responsibility introduced by this diff.
-- **What stays unchanged:** the existing contract or protected behavior a reviewer might otherwise think is affected.
-- **Why this approach:** a consequential design choice or trade-off, not a narration of coding steps.
-- **Where it stops:** compatibility paths, failure behavior, rollout constraints, and explicitly deferred scope.
-
-These are review questions, not mandatory section headings. Keep repository template headings verbatim; do not add a fixed inventory of TL;DR, architecture, guards, rollout, and caveat sections.
-
-### Let illustrations carry the explanation
-
-For nontrivial changes, use visuals proactively to expose relationships that prose makes harder to grasp. A diagram should do explanatory work, not decorate a paragraph or turn bullets into arrows.
-
-Choose the view around the reviewer's question:
-
-| Reviewer needs to understand | Useful view |
-| --- | --- |
-| How behavior or ownership changes | Aligned before/after comparison |
-| Where a decision branches or paths converge | Flow diagram with the consequential branches |
-| When reads, writes, or side effects happen | Sequence or timeline with transaction/async boundaries |
-| Which component owns or delegates work | Boundary or responsibility diagram |
-| What a policy or data relationship means | Small concrete domain example or decision table |
-| How an API contract or code shape changes | Focused request/response example, pseudocode, or diff |
-
-Prefer fenced `text` diagrams for simple views readable in raw Markdown and GitHub. Use Mermaid when its rendering makes a richer flow, sequence, or architecture easier to understand. Tables and focused code sketches are also illustrations; ASCII art is not mandatory.
-
-Let the material determine depth. A complex change may need a richer diagram or several complementary views—for example, ownership plus runtime sequence. Each view must answer a distinct review question. Do not force everything into one tiny diagram, or repeat the same explanation in multiple forms. For trivial changes, short bullets can be clearer than a visual.
-
-### Make the visual precise
-
-- Make the delta obvious. Use before/after when comparing existing behavior; do not invent a "before" flow for a new foundation. Label prepared versus connected behavior explicitly.
-- Show concrete operations when they explain the changed responsibility, ordering, or boundary. Labels like "booking mechanics" or "same behavior" are insufficient if they hide the central distinction.
-- Include consequential validation, side effects, failure paths, and compatibility behavior. Omit incidental calls and exhaustive file inventories.
-- Keep labels short, consistent, and in the project's domain language. Include code symbols only when they help locate an owning boundary.
-- Keep arrow meanings consistent: control flow, data flow, and identity/reference are different relationships. Label them or use separate views rather than mixing them silently.
-- Distinguish implemented behavior from future extension points. Never draw a planned integration as active.
-
-For example, a data-identity change can be clearer as:
-
-```text
-Replacement by B:
-  Bundle 1 → A's request [historical] ─┐
-                                     ├→ SAME Journey
-  Bundle 2 → B's request [current] ────┘
-```
-
-This makes replacement versus retained identity visible; it is not a runtime sequence. Use examples from the actual PR rather than copying this domain into unrelated descriptions.
-
-### Keep prose selective
-
-Put each illustration next to the short explanation it supports. Add prose for motivation, constraints, or trade-offs the visual cannot communicate well; do not narrate the diagram again.
-
-- **One fact, one place.** Remove repeated summaries, implementation inventories, boilerplate, and speculative follow-ups.
-- **Plain language first.** Define unfamiliar concepts briefly; do not substitute vague abstractions for meaningful detail.
-- **Progressive detail.** Make the main change understandable in a quick scan, then include the depth needed to review it. Roughly 150–300 prose words is a useful range for a typical PR, not a quota or ceiling. Richer illustrations are welcome when they reduce reading effort; avoid sprawling diagrams that merely relocate the complexity.
-- **Preserve meaning.** Keep domain names explicit and distinguish related concepts rather than shortening them into ambiguous labels. Preserve exact code identifiers when quoting them.
-- **Link reusable detail.** Link handbook explanations and environment/setup recipes rather than reproducing them. Keep changed behavior and essential review context in the PR itself. Add or update durable documentation only within the task's authorized scope; otherwise flag the gap.
-- **Evidence, not reassurance.** State material caveats once, with verified evidence. Use counts, dates, or aggregates only when useful; never include PHI or client identifiers. Mark uncertainty explicitly.
-- **Testing stays factual.** Distinguish checks actually run against the relevant revision from suggested, unrun manual steps. Keep test instructions focused on changed behavior.
-
-## Publication gate
-
-Do not publish until all are true:
-
-- **Grounded:** Every behavior claim, diagram arrow, and before/after comparison is supported by the published diff and connected code. Testing claims match checks actually run against the relevant revision.
-- **Self-contained:** A reviewer unfamiliar with the implementation conversation can understand the problem, the change, and the important boundaries without reconstructing context elsewhere.
-- **Semantically useful:** Identify what the reviewer must understand to judge each substantive change, then locate where the description explains it. For a responsibility split, check ownership and delegation; for ordering or side effects, check timing and transaction boundaries; for an API change, check externally visible behavior. Keep this reasoning internal, not as another PR section.
-- **Visually explanatory:** Ask, "What relationship does this view make easier to see?" If there is no answer, redraw it or use bullets. A code fence or before/after heading alone does not pass. Richer views earn their space by answering distinct review questions.
-- **Easy to scan:** The main delta is apparent quickly. Concrete labels and visual grouping reduce the effort needed to follow it. Important failure, compatibility, and rollout distinctions remain visible.
-- **No redundant explanation:** Perform a subtraction pass. Remove prose already conveyed by a visual, repeated facts, and details unnecessary to judge this diff. Allow added depth when it fixes an omission or makes the explanation easier to grasp; do not optimize for word count at the expense of understanding.
-- **Publication verified:** Required template fields and material caveats are preserved. Read back the saved body and confirm the intended metadata is unchanged. Saved-body equality verifies publication, not explanation quality.
+After publishing, saved-body equality confirms the update—not its explanatory quality. Judge both.
