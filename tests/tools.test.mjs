@@ -68,11 +68,12 @@ test('tool offers: approved install, update discovery/history, install revisits 
     assert.deepEqual(offers.map(tool => tool.id), f.ids);
     assert.equal(await exists(f.history), false);
     assert.equal(await exists(f.calls), false);
-    return ['herdr'];
+    return ['herdr', 'zed'];
   }, ask: async (key, message, fallback) => {
     if (key === 'apply') {
       assert.equal(fallback, false);
       assert.ok(f.logs.some(line => line === 'COMMAND brew install herdr'));
+      assert.ok(f.logs.some(line => line === 'COMMAND brew install --cask zed'));
       assert.ok(f.logs.some(line => line.includes('REMEMBER')));
       assert.equal(await exists(f.history), false);
       assert.equal(await exists(f.calls), false);
@@ -80,7 +81,10 @@ test('tool offers: approved install, update discovery/history, install revisits 
     return f.ask(key, message, fallback);
   } });
   assert.equal(installed.applied, true);
-  assert.deepEqual(JSON.parse((await read(f.calls)).trim()), { owner: 'brew', args: ['install', 'herdr'] });
+  assert.deepEqual((await read(f.calls)).trim().split('\n').map(JSON.parse), [
+    { owner: 'brew', args: ['install', 'herdr'] },
+    { owner: 'brew', args: ['install', '--cask', 'zed'] },
+  ]);
   assert.deepEqual(JSON.parse(await read(f.history)).seen, f.ids);
   assert.equal((await fs.stat(f.history)).mode & 0o777, 0o600);
   assert.equal((await fs.stat(path.dirname(f.history))).mode & 0o777, 0o700);
@@ -89,7 +93,7 @@ test('tool offers: approved install, update discovery/history, install revisits 
   const noOfferLogs = [];
   const noOffers = await f.setup({ log: line => noOfferLogs.push(line), toolsMode: 'new', selectTools: async () => assert.fail('seen declines/installed tools must not be reoffered'), ask: async (key, message, fallback) => { assert.notEqual(key, 'apply'); return f.ask(key, message, fallback); } });
   assert.equal(noOffers.applied, false);
-  assert.match(noOfferLogs.join('\n'), /1 detected; left untouched/);
+  assert.match(noOfferLogs.join('\n'), /2 detected; left untouched/);
   assert.match(noOfferLogs.join('\n'), /No new missing tools to offer/);
   assert.doesNotMatch(noOfferLogs.join('\n'), /Optional tool Herdr|installed or occupied|browser downloads/);
   assert.equal(await read(f.history), beforeHistory);
@@ -110,7 +114,7 @@ test('tool offers: approved install, update discovery/history, install revisits 
   assert.ok(JSON.parse(await read(f.history)).seen.includes('new-tool'));
   await f.setup({ selectTools: async offers => {
     selectionCalls++;
-    assert.deepEqual(offers.map(tool => tool.id), [...f.ids.filter(id => id !== 'herdr'), 'new-tool']);
+    assert.deepEqual(offers.map(tool => tool.id), [...f.ids.filter(id => !['herdr', 'zed'].includes(id)), 'new-tool']);
     assert.ok(offers.every(tool => !tool.selected));
     return [];
   } });
@@ -121,16 +125,17 @@ test('tool offers: approved install, update discovery/history, install revisits 
   assert.equal(await read(f.sentinel), 'local-only');
   const check = await checkSetup({ root: f.root, env: f.env });
   assert.ok(check.some(line => line.startsWith('optional tool installed: Herdr')));
+  assert.ok(check.some(line => line.startsWith('optional tool installed: Zed editor')));
   assert.ok(check.some(line => line.includes('agent-browser') && line.includes('previously offered')));
 
   // A fresh consumer can explicitly select gh and its dependent extension/skills
   // in one run. Existing CLIs do not hide missing companion skill offers.
   const fresh = await fixture(t);
-  for (const name of ['herdr', 'agent-browser']) await fresh.executable(name, 'process.exit(0);');
+  for (const name of ['herdr', 'zed', 'agent-browser']) await fresh.executable(name, 'process.exit(0);');
   await fs.mkdir(path.dirname(fresh.history), { recursive: true });
   await fs.writeFile(fresh.history, JSON.stringify({ seen: ['herdr', 'agent-browser'] }));
   await fresh.setup({ toolsMode: 'new', selectTools: async offers => {
-    assert.ok(!offers.some(tool => ['herdr', 'agent-browser'].includes(tool.id)));
+    assert.ok(!offers.some(tool => ['herdr', 'zed', 'agent-browser'].includes(tool.id)));
     assert.ok(offers.some(tool => tool.id === 'herdr-skill'));
     assert.deepEqual(offers.find(tool => tool.id === 'gh-stack').requires, ['gh']);
     return ['gh', 'gh-stack', 'gh-stack-skill', 'herdr-skill', 'agent-browser-skill'];
@@ -154,6 +159,7 @@ test('tool offers: approved install, update discovery/history, install revisits 
 test('tool boundaries: dry run/cancel/prerequisites stay read-only and failed approved native install remains retryable', async t => {
   const f = await fixture(t);
   await f.setup({ dryRun: true, ask: () => assert.fail('dry run prompt'), selectTools: () => assert.fail('dry run checklist') });
+  assert.ok(f.logs.some(line => line === 'OPTIONAL COMMAND brew install --cask zed'));
   assert.ok(f.logs.some(line => line === 'OPTIONAL COMMAND npm install -g agent-browser'));
   assert.ok(f.logs.some(line => line === 'OPTIONAL COMMAND agent-browser install'));
   assert.equal(await exists(f.history), false);

@@ -36,8 +36,8 @@ Setup does not change shell startup files.
 - [Global instructions](agent/AGENTS.md) and an optional
   [preference template](agent/settings.base.json).
 - Optional [Pi packages](manifests/packages.json) and
-  [tools/companion skills](manifests/tools.json), including gh-stack, Herdr, and
-  agent-browser. These are installed from upstream, not bundled here.
+  [tools/companion skills](manifests/tools.json), including gh-stack, Herdr, Zed,
+  and agent-browser. These are installed from upstream, not bundled here.
 
 [No-sleep](agent/extensions/no-sleep/README.md) keeps macOS from idle-system sleep
 for each Pi session by default. Use `/no-sleep off` to disable it or

@@ -45,6 +45,15 @@
     "commands": [{ "executable": "gh", "args": ["skill", "install", "herdrdev/herdr", "herdr", "--dir", "{skillsDir}"] }]
   },
   {
+    "id": "zed",
+    "name": "Zed editor",
+    "executable": "zed",
+    "prerequisite": "brew",
+    "instructions": "Install Homebrew yourself using https://brew.sh, then rerun install.",
+    "source": "https://zed.dev/docs/installation",
+    "commands": [{ "executable": "brew", "args": ["install", "--cask", "zed"] }]
+  },
+  {
     "id": "agent-browser",
     "name": "agent-browser (CLI + Chrome for Testing download)",
     "executable": "agent-browser",
