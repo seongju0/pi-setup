@@ -47,6 +47,22 @@ Use the global AGENTS.md delegation contract: assign a bounded outcome with the 
 
 The delegating agent remains responsible for checking returned work against those constraints before incorporating it. A child's confidence, severity label, or code citation does not establish that additional behavior is required. No findings or no additional changes is a valid outcome.
 
+## Code clarity and responsibility
+
+**Optimize for comprehension, not minimum line count or maximum abstraction.** A reader should be able to identify the main path, decisions, data ownership, and side effects without reconstructing scattered implementation details. Prefer the fewest concepts needed to express the supported behavior clearly.
+
+- **Make the main path read as meaningful steps.** Keep orchestration at a consistent level of abstraction. Avoid interleaving domain decisions, payload manipulation, persistence, and presentation details when it obscures the operation. Prefer named intermediate values and straightforward branches over dense expressions.
+- **Give each rule one clear owner.** Keep validation, eligibility, state transitions, and persistence decisions with the responsible component; callers should not partially reimplement them. Separate responsibilities that change independently, not every verb into a class.
+- **Make data flow explicit.** Prefer deliberate inputs and explicit outputs over building broad argument hashes, deleting keys for special cases, or changing their meaning. Avoid hidden mutation and helper ordering that readers must infer. Use the smallest clear representation; do not automatically introduce result objects or interfaces.
+- **Name the domain distinction.** Prefer names such as `referral_level_availability_windows` over `general_availability_windows` when scope is the distinction. A vague `process_data` helper does not reduce cognitive load. Comments explain why, constraints, or non-obvious decisions; they should not translate confusing code.
+- **Compose real variation at its boundary.** Keep workflow-specific choices near the caller that owns them; do not teach shared components every consuming workflow. Repeated source/type/boolean checks across layers invite an ownership review, not an automatic strategy hierarchy.
+- **Extract only when total comprehension improves.** A helper or class should provide a coherent responsibility, meaningful name, useful reuse, or isolation of genuinely complex logic. Count the indirection it introduces. A single-use helper can be worthwhile; a reused abstraction can still be wrong. Do not extract merely to meet a size metric.
+- **Prefer cohesive duplication over false unification.** Share the same rule or operation, not merely similar syntax with different lifecycle semantics. Conversely, do not duplicate an ordinary workflow solely because its origin or contextual metadata differs.
+
+Use **SOLID as diagnostic reasoning, not a compliance checklist**: separate independently changing responsibilities (SRP); compose actual variation without speculative extension points (OCP); preserve the shared contract without caller-specific exceptions (LSP); keep dependency contracts focused and direction appropriate where a real boundary warrants it (ISP/DIP). None requires an interface for every class or a generic framework.
+
+Apply this to the touched path, preserving behavior and required trust-boundary protections. It does not authorize unrelated refactoring, new requirements, or reopening settled architecture.
+
 ## Ground the specification
 
 1. Read project instructions and the actual code/tests affected. Trace entry points, shared functions and their callers, data flow, persistence, permissions, and existing patterns. Validate research assumptions against the live code; reports are starting evidence, not a substitute for inspection. Carry forward non-requirements and accepted trade-offs from the checkpoint, the conversation and any durable todo decisions; do not silently reinstate them.
@@ -60,7 +76,7 @@ Make the spec self-contained: repository/worktree, objective, current behavior, 
 
 Give ordered, actionable steps. For each substantial step, specify:
 - Exact existing or proposed files and symbols; what to add, change, remove, or reuse, and what must remain unchanged.
-- Inputs/outputs, type or interface shapes, state transitions, and how callers and components connect. Use small code-shape sketches, pseudocode, or diagrams where they clarify more than prose; do not dump a speculative full implementation.
+- Inputs/outputs, type or interface shapes, state transitions, and how callers and components connect. For consequential structural choices, name responsibility owners, distinguish what genuinely varies from the ordinary flow, and show a small code-shape sketch or diagram. Resolve the structure without prescribing every local helper or dumping a speculative full implementation.
 - Required branches, invariants, boundary validation, error handling, and relevant edge cases. Each guard, fallback or recovery path names the real flow that triggers it. Cover concurrency, cancellation, retries, compatibility, or migrations only when the actual change needs them.
 - Which **Test plan** scenario proves the step. Do not plan a spec file per step or per new class.
 - Dependencies on earlier steps and a clear completion condition.

@@ -8,8 +8,9 @@ description: Review a code change for correctness, regressions, conventions, mai
 Review the requested change. If none is specified, review staged and unstaged changes against `HEAD`.
 
 - Establish intended behavior before judging: read the diff and relevant surrounding code, then consult the implementation plan/spec and docs explicitly referenced in the request or session. Find applicable repository guidance in the changed files' directory ancestry. Follow relevant references only; don't read unrelated docs broadly. Trace affected callers and behavior, and check tests against the intended requirements.
-- Report only confirmed, actionable findings. For each, include severity, `file:line`, impact, and a minimal fix. Do not invent stylistic findings. If none, say so and name any material unreviewed risk.
+- Report only confirmed, actionable findings. For each, include severity, `file:line`, impact, and a minimal fix. Do not invent taste-based stylistic findings. Readability findings must identify a concrete reasoning burden, its maintenance impact, and a smaller clear alternative—not merely invoke clean code or SOLID. Calibrate severity to the impact; no readability findings is a valid outcome. If none, say so and name any material unreviewed risk.
 - Focus on correctness, regressions, missing behavior-protecting tests, conventions, and complexity that materially obscures the main path.
+- **Inspect readability in the first pass, unasked.** Apply **Code clarity and responsibility** below to the changed path: trace the ordinary flow, rule ownership, data transformations, and side effects. Look for parallel workflow implementations, scattered mode checks, misleading names, and indirection that hides rather than clarifies. Do not turn the review into unrelated cleanup or request architectural changes merely to satisfy a principle.
 - **Unjustified complexity is a finding.** Flag added guards, locks, re-checks, recovery paths, duplicate policy checks and abstractions that no real flow triggers, or that an owning component already covers. Treat the spec's non-requirements as settled.
 - **A missing-guard finding must name the supported sequence**, not merely a caller name, and explain why existing validation, policy ownership, or retained coverage is insufficient. If unconfirmed, label it *needs flow confirmation* with a concrete scenario question, not a blocker or required change.
 - **Challenge the mechanism before repairing it.** When a safeguard causes another failure, first ask whether that safeguard is required. Recommend removing unnecessary complexity rather than adding exceptions around it; do not remove explicit requirements or necessary trust-boundary protections.
@@ -17,6 +18,22 @@ Review the requested change. If none is specified, review staged and unstaged ch
 - **Output a "Spec review" section**: for each added or changed spec file, *keep* / *merge into X* / *delete (covered by Y)* / *repair stub*, with one-line reason, then the proposed net delta (files, scenarios). Say "no test changes" if none.
 - Identify unnecessary abstraction or scope; prefer the smallest complete change that meets the requirements. For relevant React/Next changes, apply `/skill:vercel-react-best-practices` and read `/skill:vercel-composition-patterns` when component API or composition design is involved.
 - Do not edit files.
+
+## Code clarity and responsibility
+
+**Optimize for comprehension, not minimum line count or maximum abstraction.** A reader should be able to identify the main path, decisions, data ownership, and side effects without reconstructing scattered implementation details. Prefer the fewest concepts needed to express the supported behavior clearly.
+
+- **Make the main path read as meaningful steps.** Keep orchestration at a consistent level of abstraction. Avoid interleaving domain decisions, payload manipulation, persistence, and presentation details when it obscures the operation. Prefer named intermediate values and straightforward branches over dense expressions.
+- **Give each rule one clear owner.** Keep validation, eligibility, state transitions, and persistence decisions with the responsible component; callers should not partially reimplement them. Separate responsibilities that change independently, not every verb into a class.
+- **Make data flow explicit.** Prefer deliberate inputs and explicit outputs over building broad argument hashes, deleting keys for special cases, or changing their meaning. Avoid hidden mutation and helper ordering that readers must infer. Use the smallest clear representation; do not automatically introduce result objects or interfaces.
+- **Name the domain distinction.** Prefer names such as `referral_level_availability_windows` over `general_availability_windows` when scope is the distinction. A vague `process_data` helper does not reduce cognitive load. Comments explain why, constraints, or non-obvious decisions; they should not translate confusing code.
+- **Compose real variation at its boundary.** Keep workflow-specific choices near the caller that owns them; do not teach shared components every consuming workflow. Repeated source/type/boolean checks across layers invite an ownership review, not an automatic strategy hierarchy.
+- **Extract only when total comprehension improves.** A helper or class should provide a coherent responsibility, meaningful name, useful reuse, or isolation of genuinely complex logic. Count the indirection it introduces. A single-use helper can be worthwhile; a reused abstraction can still be wrong. Do not extract merely to meet a size metric.
+- **Prefer cohesive duplication over false unification.** Share the same rule or operation, not merely similar syntax with different lifecycle semantics. Conversely, do not duplicate an ordinary workflow solely because its origin or contextual metadata differs.
+
+Use **SOLID as diagnostic reasoning, not a compliance checklist**: separate independently changing responsibilities (SRP); compose actual variation without speculative extension points (OCP); preserve the shared contract without caller-specific exceptions (LSP); keep dependency contracts focused and direction appropriate where a real boundary warrants it (ISP/DIP). None requires an interface for every class or a generic framework.
+
+Apply this to the touched path, preserving behavior and required trust-boundary protections. It does not authorize unrelated refactoring, new requirements, or reopening settled architecture.
 
 ## Requirements you don't have
 
