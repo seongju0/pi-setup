@@ -21,8 +21,8 @@ Use `subagent`, not Herdr research tools or independent handoffs. This skill coo
 
 Call `subagent` with `action: "spawn"`, a unique `name`, a self-contained `message` and persistent research `instructions`. Public web search is enabled by default. Preserve each returned child ID alongside its report path.
 
-- `message`: assigned question, relevant context/references, supported flow, settled decisions, exclusions, permissions, report path, and stop condition.
-- `instructions`: research execution rules below plus applicable stage-specific skills, following the tool's skill-injection guidance. The worker does not inherit the parent conversation.
+- `message`: assigned question, relevant context/references, supported flow, settled decisions, exclusions, permissions, report path, and stop condition. Identify required stage skills, preferably by absolute `SKILL.md` path, and require full reads before applicable work per the global delegation contract.
+- `instructions`: research execution rules below and task-specific boundaries and quality gates, not routine skill-body copies. The worker does not inherit the parent conversation.
 - Web search: use the default-enabled `web_search` directly; it returns a search-backed answer and native source URLs. Use the `agent-browser` skill for inspecting pages when needed. Cite authoritative public sources and never send private code, credentials, PHI, or sensitive records to public search/browser services.
 - `mcpServers`: omit by default. Include only explicitly authorized, configured servers needed for the question. An allowlist is not permission to mutate data or bypass research's operational/PHI exclusions. Unknown/disabled servers fail rather than enabling everything.
 

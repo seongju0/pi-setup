@@ -29,12 +29,14 @@ use each launcher only within its authorization requirements.
   completes routine work and checks without repeated release requests.
   Escalate material scope/flow choices, blockers and permission boundaries.
   Workflow-required stage separation and independent review still apply.
-- **Transfer real guidance.** Read applicable skills and pass their actual
-  contents through the launcher's supported instruction mechanism, with
-  absolute source paths/directories for relative references. Check the
-  payload before launch: a path, empty value or `undefined` is not skill
-  injection. Include only relevant stage skills; require supporting reads.
-  Follow the launcher's explicit full-read fallback when size limits apply.
+- **Require relevant guidance.** Name required stage skills in the assignment,
+  preferably by absolute `SKILL.md` path, and require full reads before
+  applicable work. Resolve supporting references from the skill directory.
+  Keep persistent instructions focused on task-specific boundaries, working
+  rules and quality gates, not routine skill-body copies. Use complete,
+  identified skill snapshots only when the assignment explicitly needs frozen
+  guidance. If required guidance is unavailable, report the prerequisite;
+  do not invent it or bypass trust or access restrictions.
 - **Coordinate once, then overlap.** Settle shared interfaces and assign
   disjoint file/resource owners before parallel work. Share verified facts
   and report paths rather than making each worker rediscover the context;

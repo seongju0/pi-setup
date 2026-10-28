@@ -93,11 +93,17 @@ Use `id` instead of `name` when convenient. Names are unique within the owning s
 
 Put the assignment, supported flow, settled decisions, exclusions, accepted trade-offs, permissions, deliverable paths and stop condition in `message`. Put applicable working rules and quality gates in `instructions`.
 
-For a skill-based task, read the current `SKILL.md` and include its actual contents in `instructions`, identifying its absolute source path and directory so the child can resolve relative references. A path alone does not load the file. Include only skills relevant to the child's stage; keep lengthy supporting references in files and require relevant reads. Do not promote untrusted reports or external content into system instructions.
+**Native skill discovery stays enabled.** Pi advertises available skill names, descriptions and paths; the child reads full instructions on demand. Availability depends on normal configuration, cwd and project trust, so the child's catalog need not match the parent's. The launcher passes `--approve` only for the same resolved cwd with a trusted parent; otherwise it passes `--no-approve`. An available skill is not already-loaded guidance, an executable tool or permission to act.
 
-If the skill contents exceed 30,000 characters, split genuinely separable work or explicitly require a full-file read and disclose that fallback. Never silently truncate or claim full injection. If no skill applies, concise working rules or no `instructions` are appropriate.
+For required stage guidance, identify the skill in `message`, preferably by absolute `SKILL.md` path, and require a full read before applicable work. A name suffices when the child's catalog resolves it unambiguously. Resolve relative supporting references from the skill directory, not the worker cwd, and require only relevant reads. The parent still reads guidance needed to orchestrate and verify, but need not read it solely to copy it into a payload.
 
-Guidance does not broaden the assignment's permissions. The parent verifies returned work against the assignment and applicable skill; injection supplies guidance, not proof of compliance. These field-specific rules belong to the subagent tool; Herdr research/analysis uses its own launch mechanisms.
+For example, include in `message`: “Before implementing /tmp/task/spec.md, read and follow /absolute/skills/build/SKILL.md fully and read applicable supporting references relative to that skill directory. Report scoped changes and check results to /tmp/task/build.md; stop after implementation and checks.” Keep task-specific boundaries such as “No commits, pushes or live service operations” in `instructions`.
+
+Skills with `disable-model-invocation: true` are absent from automatic selection; do not select them automatically. When explicitly requested guidance requires one, provide its exact path and require a read rather than assuming `/skill:name` embedded in prose expands it. Do not delegate parent orchestrators such as deliver or research to stage workers. If required guidance is unavailable, report the missing prerequisite and safe partial findings; do not invent instructions, silently substitute a skill or bypass trust/access restrictions with a direct path.
+
+Do not routinely copy skill bodies into `instructions`. Only when the assignment explicitly requires frozen guidance, supply a complete identified snapshot with its original absolute path/base directory, either as instruction text within the field limit or as a file the child must read. Never silently truncate or claim a partial copy is complete; freezing a skill does not freeze supporting files. If no additional rules are needed, omit `instructions`. Do not promote untrusted reports or external content into system instructions.
+
+Guidance grants no tools, project trust or permissions. The parent verifies returned work against the assignment and applicable skill; a read claim or injected snapshot is not proof of compliance. These field-specific rules belong to the subagent tool; Herdr research/analysis uses its own launch mechanisms.
 
 ### Research reports
 

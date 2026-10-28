@@ -30,7 +30,7 @@ This skill orchestrates existing skills; it does not replace them. Read their ac
 
 ## 2. Build
 
-Delegate to a build subagent per **Subagents by stage**, injecting the build skill through `instructions` using the global delegation convention. Implement the smallest complete change, including affected callers, tests, config and generated contracts. The parent stays responsible for the integrated result: inspect the diff, its "possible gaps not handled" list and its test delta (push back on per-class spec files or internal stubs), and run or confirm verification itself.
+Delegate to a build subagent per **Subagents by stage**, requiring a full read of the build skill using the global delegation convention. Implement the smallest complete change, including affected callers, tests, config and generated contracts. The parent stays responsible for the integrated result: inspect the diff, its "possible gaps not handled" list and its test delta (push back on per-class spec files or internal stubs), and run or confirm verification itself.
 
 Run relevant verification as the change develops. Honor environment ownership, database isolation, external-service mocks and other repository safety rules before tests or generation. An unsafe test environment is a blocker, not permission to use shared or real data. Report checks actually run and their results; never equate a command starting, an error response or a worker's claim with verified behavior.
 
@@ -40,7 +40,7 @@ Use one fresh review subagent by default after the integrated change is coherent
 
 - The intended behavior, specification path, exclusions, non-requirements/accepted trade-offs and repository/worktree.
 - An exact review target: base commit/range plus relevant staged, unstaged and task-owned untracked files. Do not let the review skill's default HEAD diff accidentally omit committed work or new files.
-- The review skill injected through `instructions` using the global delegation convention, plus instructions to read applicable project guidance and supporting references; inspect connected callers and tests, not only the diff.
+- The review skill's absolute `SKILL.md` path and a requirement to read it fully using the global delegation convention, plus applicable project guidance and supporting references; inspect connected callers and tests, not only the diff.
 - Read-only permission: no edits, commits, pushes, external writes or runtime commands against shared environments. Parent runs tests by default; separately authorized safe checks must not race with other DB users.
 - Required output: actionable findings with severity, file/line, impact and minimal fix; the review skill's "Spec review" section (keep/merge/delete/repair per spec file); material unreviewed risks; exact reviewed revision/diff scope.
 
@@ -51,7 +51,7 @@ Do not coach the reviewer toward a clean verdict. A second reviewer is justified
 - Inspect every finding against the code and intended behavior. Fix valid issues; record a concise evidence-backed reason for declining a finding. Do not change product scope just to satisfy a reviewer.
 - **Do not auto-fix new safeguards.** A finding that proposes a guard, lock, re-check, fallback or recovery path the spec does not include is a flow question for the user, not a fix. Decline it outright when it contradicts a stated non-requirement. Apply the "Requirements you don't have" rules from the build and review skills.
 - **Apply spec consolidation by default.** Merge, delete-as-covered and stub-repair findings are normal fixes when a named retained test still protects the behavior. Requests for added tests must meet the review skill's missing-test bar.
-- After recording the review report and your disposition, launch a fresh remediation subagent. Give it the approved spec, build report, full review report and accepted findings with exact scope; inject the build skill through `instructions` using the global delegation convention. It implements only accepted fixes, reports what changed and leaves publication to the PR stage. Do not resume the builder or let the reviewer edit. Skip remediation when no fixes are accepted.
+- After recording the review report and your disposition, launch a fresh remediation subagent. Give it the approved spec, build report, full review report and accepted findings with exact scope; require a full read of the build skill using the global delegation convention. It implements only accepted fixes, reports what changed and leaves publication to the PR stage. Do not resume the builder or let the reviewer edit. Skip remediation when no fixes are accepted.
 - Rerun affected checks after fixes. One review round by default; request focused fresh review when remediation materially changes behavior, security boundaries or architecture. Trivial corrections do not require restarting the entire review loop.
 - Review the final integrated diff and generated outputs yourself. Ensure the review scope still covers the delivered change; identify any meaningful post-review delta.
 - Do not silently publish with a known correctness/security defect or failed required check. Resolve it, or report the blocker and ask whether an explicitly disclosed incomplete draft is wanted. Optional/unavailable checks must be stated honestly; a PR is not test or CI certification.
@@ -59,7 +59,7 @@ Do not coach the reviewer toward a clean verdict. A second reviewer is justified
 
 ## 5. Open a draft PR
 
-After parent verification, launch a fresh PR subagent. Give it the accepted final diff scope, intended base, exact verification receipts, review disposition and scoped publication permission. Inject the open-pr skill through `instructions` using the global delegation convention; require reads of repository-specific commit/PR instructions and relevant supporting references. Use the exact repository template, intended target branch and ticket conventions. Confirm the final diff contains only the task's work before staging/committing. Use repository stack tooling when applicable; do not mutate another owner's stack.
+After parent verification, launch a fresh PR subagent. Give it the accepted final diff scope, intended base, exact verification receipts, review disposition and scoped publication permission. Require a full read of the open-pr skill using the global delegation convention; require reads of repository-specific commit/PR instructions and relevant supporting references. Use the exact repository template, intended target branch and ticket conventions. Confirm the final diff contains only the task's work before staging/committing. Use repository stack tooling when applicable; do not mutate another owner's stack.
 
 The PR child creates the scoped commits and pushes needed to open the draft PR; it must not change implementation. If a task PR already exists, update it rather than create a duplicate. Do not overwrite unrelated PR content or change draft/ready status contrary to the request. If publishing fails or a response is lost, inspect remote state before retrying.
 
@@ -85,15 +85,15 @@ Use a fresh subagent for each applicable stage when the session has coding-subag
 | Stage | Owner | Notes |
 |---|---|---|
 | Prepare | Parent | Establish scope, permissions and handoff. |
-| Design (rough input only) | Fresh child | Inject design skill; returns direction checkpoint + spec. Parent resolves material questions before build. |
-| Build | Fresh child | Inject build skill; returns implementation and test delta. |
-| Review | Fresh child | Inject review skill; read-only. Second reviewer only for a distinct material risk. |
-| Remediation (accepted fixes only) | Fresh child | Inject build skill; reads prior reports; never the builder or reviewer. |
+| Design (rough input only) | Fresh child | Require full design skill read; returns direction checkpoint + spec. Parent resolves material questions before build. |
+| Build | Fresh child | Require full build skill read; returns implementation and test delta. |
+| Review | Fresh child | Require full review skill read; read-only. Second reviewer only for a distinct material risk. |
+| Remediation (accepted fixes only) | Fresh child | Require full build skill read; reads prior reports; never the builder or reviewer. |
 | Verification | Parent | Inspect the integrated diff and run or independently confirm checks. |
-| Draft PR | Fresh child | Inject open-pr skill; scoped commit/push/PR permission only after parent verification. |
+| Draft PR | Fresh child | Require full open-pr skill read; scoped commit/push/PR permission only after parent verification. |
 | PR audit + notification | Parent | Read the actual PR, check against the open-pr skill and report to the user. |
 
-- Give each subagent a self-contained brief: worktree, spec path, outcome, supported user flow, settled decisions, non-requirements, accepted trade-offs, constraints, permissions and expected deliverable. Inject the applicable skill using the global AGENTS.md delegation convention: the parent reads its current contents and supplies them through the child's `instructions`, with the absolute source path and directory. Require explicit reads of relevant supporting references. Put the task-specific brief and handoff paths in `message`; do not inject the entire deliver workflow into each child. Workers cannot inherit permissions beyond the task's authorization.
+- Give each subagent a self-contained brief: worktree, spec path, outcome, supported user flow, settled decisions, non-requirements, accepted trade-offs, constraints, permissions and expected deliverable. Identify the applicable stage skill by absolute `SKILL.md` path and require a full read before applicable work using the global AGENTS.md delegation convention. Require explicit reads of relevant supporting references, resolved from the skill directory. Put the task-specific brief, skill references and handoff paths in `message`; keep `instructions` focused on task-specific boundaries, working rules and quality gates. Do not delegate the deliver orchestrator to stage workers. Workers cannot inherit permissions beyond the task's authorization.
 - Never run subagents concurrently against shared databases, competing branch operations or the same files. Never let agents independently reset, migrate or seed shared data.
 - Worker completion alone does not prove correctness; check output against the integrated code. The parent owns the result, review disposition and publication.
 - Do not substitute independent Herdr sessions or research/analysis launchers for coding subagents. If subagents are unavailable, do the stage in the parent and say so (and label review as parent-only).

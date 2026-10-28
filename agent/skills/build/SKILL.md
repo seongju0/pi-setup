@@ -37,7 +37,7 @@ If a proposed fix creates another edge case, first reconsider the original mecha
 
 ## Delegation contract
 
-Use the global AGENTS.md delegation contract: assign a bounded outcome with the supported flow, settled decisions, non-requirements, accepted trade-offs and permissions. Read and inject the actual relevant stage skill through the launcher's supported mechanism; a skill path or instruction to read it is not a substitute, except for the launcher's explicit size-limit fallback. This does not authorize work beyond the request or override workflow-required stage separation.
+Use the global AGENTS.md delegation contract: assign a bounded outcome with the supported flow, settled decisions, non-requirements, accepted trade-offs and permissions. Identify required stage skills and require full reads per the global delegation contract. This does not authorize work beyond the request or override workflow-required stage separation.
 
 The delegating agent remains responsible for checking returned work against those constraints before incorporating it. A child's confidence, severity label, or code citation does not establish that additional behavior is required. No findings or no additional changes is a valid outcome.
 

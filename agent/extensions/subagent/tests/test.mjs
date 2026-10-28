@@ -143,6 +143,7 @@ try {
   assert.equal((await snapshot(parent, first.id)).thinkingLevel, 'high');
   const firstLaunch = (await logs()).find((line) => line.type === 'launch');
   for (const flag of ['--no-extensions', '--no-mcp', '--approve']) assert(firstLaunch.args.includes(flag));
+  assert(!firstLaunch.args.includes('--no-skills'), 'native skill discovery remains enabled');
   assert.equal(firstLaunch.subagent, '1');
   assert.equal(firstLaunch.args[firstLaunch.args.indexOf('--extension') + 1], 'builtin:codemode');
   assert.equal(first.web, true, 'all new subagents have web search by default');
