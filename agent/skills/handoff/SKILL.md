@@ -12,6 +12,8 @@ Turn the user's request and only the relevant conversation context into a brief 
 
 Resolve the objective, repository/worktree, authoritative references, current state, settled decisions, permissions, forbidden actions, ordered work, and acceptance checks from the conversation. Keep only details that affect execution. Prefer paths and identifiers over copied background. Separate confirmed facts from assumptions; ask the user only if an unresolved conflict or ambiguity changes the destination, permissions, or work. Never infer permission to commit, push, change a PR, update Linear, or make other external changes.
 
+Reserve persistent system instructions (`appendSystemPrompt`) for rules that should remain binding throughout the receiving session. Keep temporary assumptions and phase-specific choices in the brief, with their scope and end condition. Reconcile carried-over constraints when the task changes; surface conflicts rather than silently overriding higher-priority instructions.
+
 Write a unique Markdown file under `/tmp/handoffs/`. Use these headings as needed; omit empty sections:
 
 ```md

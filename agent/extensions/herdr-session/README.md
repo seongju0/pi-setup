@@ -28,7 +28,12 @@ configured local read-only workflows.
 ## Guidance, models and launch acknowledgement
 
 - `handoff` and `appendSystemPrompt` accept non-empty files, resolved against
-  the caller's cwd, not the destination directory.
+  the caller's cwd, not the destination directory. They have different authority:
+  `handoff` delivers a task brief as user instructions; `appendSystemPrompt` adds
+  session-wide system instructions that later user messages cannot override.
+  Keep temporary task/phase choices in the brief, with their scope and end condition.
+  Reloading or changing tasks does not remove appended system instructions.
+  Independent handoffs do not automatically inherit the parent's appended guidance.
 - Independent sessions use Pi defaults when no model is supplied. Reporting
   workers inherit the parent model when omitted.
 - Explicit models must be available physical models. No virtual routing or
@@ -76,11 +81,14 @@ preparation and call them through `ctx.executeTool()`:
 ```ts
 const outcome = await ctx.executeTool("herdr_new_session", {
   handoff: briefPath,
-  appendSystemPrompt: guidancePath,
   model: selectedPhysicalModel,
 });
 return { ...outcome.result, isError: outcome.isError };
 ```
+
+Only add `appendSystemPrompt` when the supplied rules should remain binding for
+that session's lifetime. Do not promote a whole task brief or historical execution
+choices into system instructions merely to preserve them across compaction.
 
 For explicitly requested reporting, call `herdr_research_start` with the task,
 persistent guidance and a dedicated `reportDirectory`. Keep independent handoff

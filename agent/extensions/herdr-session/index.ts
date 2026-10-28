@@ -155,8 +155,8 @@ const createSessionTool = defineTool({
     cwd: Type.Optional(Type.String({ description: "Working directory; defaults to the current directory" })),
     label: Type.Optional(Type.String({ description: "New tab label" })),
     model: Type.Optional(Type.String({ description: "Optional provider/model override, e.g. openai/gpt-6-sol" })),
-    handoff: Type.Optional(Type.String({ description: "Optional handoff brief path for the new Pi agent to read" })),
-    appendSystemPrompt: Type.Optional(Type.String({ minLength: 1, description: "Non-empty guidance file appended to the child system prompt; survives conversation compaction. Relative paths resolve from the caller cwd." })),
+    handoff: Type.Optional(Type.String({ description: "Optional task brief path, delivered as user instructions. Put temporary task or phase guidance here, not in appendSystemPrompt." })),
+    appendSystemPrompt: Type.Optional(Type.String({ minLength: 1, description: "Non-empty file of session-wide system instructions. Remains binding across task changes, compaction and reload; later user messages cannot override it. Use handoff for temporary task or phase guidance. Relative paths resolve from the caller cwd." })),
   }),
   async execute(_id, params, signal, _update, ctx) {
     try {
