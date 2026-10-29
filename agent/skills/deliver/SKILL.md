@@ -6,109 +6,83 @@ disable-model-invocation: true
 
 # Deliver
 
-Own the complete delivery loop for the supplied specification, rough plan or sufficiently explicit request. The parent prepares, integrates reports, verifies, approves publication scope and notifies; fresh subagents do each applicable stage (see **Subagents by stage**).
+Own the delivery loop for a specification, rough plan or sufficiently explicit request. The parent integrates and verifies; fresh subagents perform each applicable stage. This skill orchestrates, not replaces, the stage skills.
 
-```text
-parent: prepare
-  → child: design (if rough) → parent: record + accept
-  → child: build            → parent: record + inspect + verify
-  → child: review           → parent: record + disposition findings
-  → child: remediate (if needed) → parent: record + inspect + verify
-  → child: draft PR         → parent: record + audit PR + notify → stop
-```
+## 1. Prepare and accept the approach
 
-This skill orchestrates existing skills; it does not replace them. Read their actual `SKILL.md` files when entering each stage, using the paths advertised by the session. For these user-installed skills, the default paths relative to this directory are `../design/SKILL.md`, `../build/SKILL.md`, `../review/SKILL.md` and `../open-pr/SKILL.md`. If a required skill is unavailable, report the missing prerequisite instead of inventing its instructions.
+- Read the request, specification, repository instructions and relevant code/tests. Establish the outcome, supported flow, exclusions, accepted trade-offs, checks, branch/worktree, dependencies and permissions. Preserve settled product decisions; ask only about material ambiguity or unsafe prerequisites.
+- Explicit invocation authorizes scoped implementation, review/remediation, commits, push and a draft PR. More restrictive instructions still apply. Do not stage unrelated work, force-push, merge, deploy, enable flags or alter external trackers without separate authorization. Preserve credentials, data and other owners' work.
+- Stay in the current session/worktree unless requested otherwise. For a requested new worktree, follow repository guidance, refresh/verify the base and use an unoccupied branch/path. Never reset or steal another owner's checkout.
+- **Check readiness and necessity before build.** A build-ready spec resolves behavior, implementation locations, non-requirements and checks. For rough input, delegate design first. Before accepting either a supplied spec or the design report, identify the ordinary operation, actual variation and rule owners. Challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.
+- Track substantial work with session tasks. If a durable work item is supplied, preserve its scope/dependencies and record meaningful progress under its rules; do not create one without user intent.
+- Establish the file-backed handoff below before launching children.
 
-## 1. Prepare
+## 2. Build and verify
 
-- Read the request, referenced specification, repository instructions and relevant code/tests. Establish the outcome, exclusions, non-requirements/accepted trade-offs, acceptance checks, base/branch/worktree, dependency state, safety constraints and publication permissions. Preserve settled product decisions; pause only for a material ambiguity or unsafe prerequisite.
-- Explicit invocation of this workflow requests implementation, review/remediation, scoped commits, push and a draft PR. More restrictive user or repository instructions still apply. Do not stage unrelated changes, force-push, merge, deploy, change live flags or alter external trackers without separate authorization. Preserve existing credentials, data and other owners' work.
-- Stay in the current session and worktree unless the request specifies otherwise. If a new worktree is requested, follow the repository's worktree guidance, refresh/verify the requested base and create an unoccupied branch/path before editing. Never steal or reset another owner's checkout.
-- **Check spec readiness.** A build-ready spec names files/symbols, behavior, non-requirements and checks. If the input is a rough plan or idea instead, run a design pass (design skill, via a subagent) before building. If its direction checkpoint raises flow questions or a material direction choice, stop and ask the user before building; otherwise continue with its stated defaults.
-- Track substantial work with the session task tool. If an existing durable work item is supplied, preserve its scope/dependencies and record meaningful progress and receipts under its rules; do not create new durable work items without user intent.
-- Before the first child starts, establish the file-backed handoff described below. Every stage reports to the parent; the parent records its disposition before launching the next stage.
+Delegate the accepted scope to a build child. Inspect the integrated diff, confirmed gaps/spec conflicts and test delta against the build skill's necessity, design and test policies. Worker confidence or completion alone is not verification.
 
-## 2. Build
-
-Delegate to a build subagent per **Subagents by stage**, requiring a full read of the build skill using the global delegation convention. Implement the smallest complete change, including affected callers, tests, config and generated contracts. The parent stays responsible for the integrated result: inspect the diff, its "possible gaps not handled" list and its test delta (push back on per-class spec files or internal stubs), and run or confirm verification itself.
-
-Run relevant verification as the change develops, including affected retained acceptance specs before publication—even when only shared copy/components changed. Honor environment ownership, database isolation, external-service mocks and other repository safety rules before tests or generation. Distinguish mocked regression coverage from separately authorized real integration acceptance; neither substitutes silently for the other. An unsafe test environment is a blocker, not permission to use shared or real data. Report checks actually run and their results; never equate a command starting, an error response or a worker's claim with verified behavior.
+Run or independently confirm relevant checks, including affected retained acceptance specs before publication, even for shared copy/components. Honor environment ownership, DB isolation and external-service mocks. Never run children concurrently against shared databases, competing branch operations or the same files; never let them independently reset, migrate or seed shared data. An unsafe test environment is a blocker, not permission to use shared or real data. Distinguish mocked regressions from separately authorized real integration acceptance. Report commands actually run and results, not merely starts or worker claims.
 
 ## 3. Review independently
 
-Use one fresh review subagent by default after the integrated change is coherent. Supply:
+Use one fresh, read-only review child after integration. Supply:
 
-- The intended behavior, specification path, exclusions, non-requirements/accepted trade-offs and repository/worktree.
-- An exact review target: base commit/range plus relevant staged, unstaged and task-owned untracked files. Do not let the review skill's default HEAD diff accidentally omit committed work or new files.
-- The review skill's absolute `SKILL.md` path and a requirement to read it fully using the global delegation convention, plus applicable project guidance and supporting references; inspect connected callers and tests, not only the diff.
-- Read-only permission: no edits, commits, pushes, external writes or runtime commands against shared environments. Parent runs tests by default; separately authorized safe checks must not race with other DB users.
-- Required output: actionable findings with severity, file/line, impact and minimal fix; the review skill's "Spec review" section (keep/merge/delete/repair per spec file); material unreviewed risks; exact reviewed revision/diff scope.
+- Intended behavior, spec, supported flow, exclusions and accepted trade-offs.
+- Exact base commit/range plus relevant staged, unstaged and task-owned untracked files. Do not let a default HEAD diff omit committed work or new files.
+- Repository/worktree, applicable guidance and connected callers/tests. Require review of mechanisms and responsibility boundaries as well as spec conformance; do not coach toward a clean verdict.
+- No edits, commits, publication, external writes or runtime commands against shared environments. Parent runs tests by default; separately authorized safe checks must not race with other DB users.
+- Actionable findings with severity, file/line, impact and smallest correction; the review skill's exception-based **Test review**; material unreviewed risks and exact revision/diff scope.
 
-Do not coach the reviewer toward a clean verdict. A second reviewer is justified only for a distinct material risk or required project review, not automatic fan-out. If subagents are unavailable, perform and clearly label a parent-only review; do not claim independence. Ask before publication if independent review is an explicit project/user prerequisite that cannot be met.
+Use a second reviewer only for a distinct material risk or required project review, not automatic fan-out.
 
-## 4. Remediate and verify
+## 4. Disposition, remediate and verify
 
-- Inspect every finding against the code and intended behavior. Fix valid issues; record a concise evidence-backed reason for declining a finding. Do not change product scope just to satisfy a reviewer.
-- **Do not auto-fix new safeguards.** A finding that proposes a guard, lock, re-check, fallback or recovery path the spec does not include is a flow question for the user, not a fix. Decline it outright when it contradicts a stated non-requirement. Apply the "Requirements you don't have" rules from the build and review skills.
-- **Apply spec consolidation by default.** Merge, delete-as-covered and stub-repair findings are normal fixes when a named retained test still protects the behavior. Requests for added tests must meet the review skill's missing-test bar.
-- After recording the review report and your disposition, launch a fresh remediation subagent. Give it the approved spec, build report, full review report and accepted findings with exact scope; require a full read of the build skill using the global delegation convention. It implements only accepted fixes, reports what changed and leaves publication to the PR stage. Do not resume the builder or let the reviewer edit. Skip remediation when no fixes are accepted.
-- Rerun affected checks after fixes. One review round by default; request focused fresh review when remediation materially changes behavior, security boundaries or architecture. Trivial corrections do not require restarting the entire review loop.
-- Review the final integrated diff and generated outputs yourself. Ensure the review scope still covers the delivered change; identify any meaningful post-review delta.
-- Do not silently publish with a known correctness/security defect or failed required check. Resolve it, or report the blocker and ask whether an explicitly disclosed incomplete draft is wanted. Optional/unavailable checks must be stated honestly; a PR is not test or CI certification.
-- Stop cycling if a finding requires a product decision or the same issue remains unresolved after remediation. Explain the specific blocker rather than churning edits.
+- Check every finding against code, supported behavior and existing protection. Fix confirmed defects in specified behavior at their existing owner and behavior-preserving clarity problems. Record concise evidence-backed reasons for declining findings. No accepted fixes is a valid result.
+- **New behavior still needs a scope decision.** New guarantees, policies, recovery behavior, storage or architectural contracts are not routine corrections. Ask the user before accepting them; decline proposals contradicting settled non-requirements. A security label does not expand permissions: preserve required trust-boundary protections and escalate changes that materially alter approved behavior or conflict with an accepted trade-off.
+- Apply justified test consolidation and stub repairs while retaining distinct regression protection. Added tests must meet review's missing-test bar, not merely cover another branch.
+- Record the report and disposition, then delegate accepted fixes to a fresh remediation child—not the builder or reviewer. Supply the spec, prior reports and exact accepted scope. Skip this stage when no fixes are accepted.
+- Rerun affected checks. One review round by default; use focused fresh review when remediation materially changes behavior, security boundaries or architecture, not for trivial corrections. Inspect the final integrated diff/generated outputs and disclose meaningful post-review deltas.
+- Do not silently publish with a known correctness/security defect or failed required check. Resolve it or ask whether an explicitly disclosed incomplete draft is wanted. State optional/unavailable checks honestly; a PR does not certify CI.
+- Stop cycling when a finding needs a product decision or remains unresolved after remediation. Explain the blocker rather than churning edits.
 
-## 5. Open a draft PR
+## 5. Publish a draft PR
 
-After parent verification, launch a fresh PR subagent. Give it the accepted final diff scope, intended base, exact verification receipts, review disposition and scoped publication permission. Require a full read of the open-pr skill using the global delegation convention; require reads of repository-specific commit/PR instructions and relevant supporting references. Use the exact repository template, intended target branch and ticket conventions. Confirm the final diff contains only the task's work before staging/committing. Use repository stack tooling when applicable; do not mutate another owner's stack.
+After parent verification, give a fresh PR child the final diff scope, intended base, verification receipts, review disposition and scoped commit/push/draft-PR permission. It follows the open-pr skill and repository commit/PR instructions, uses required stack tooling and confirms task-only changes before staging. It must not change implementation or mutate another owner's stack.
 
-The PR child creates the scoped commits and pushes needed to open the draft PR; it must not change implementation. If a task PR already exists, update it rather than create a duplicate. Do not overwrite unrelated PR content or change draft/ready status contrary to the request. If publishing fails or a response is lost, inspect remote state before retrying.
+Update an existing task PR rather than duplicate it. Preserve unrelated content/metadata and draft/ready state as instructed. After a failed or lost publication response, inspect remote state before retrying.
 
-The child returns the PR URL, base/head commit IDs, final title/body and publication receipts. The parent independently reads the diff before judging the description, identifies the consequential relationships and behavior changes, then checks whether the published visuals expose them. Do not accept "illustration-first" merely because a code fence, before/after layout or diagram exists. If surrounding prose is needed to reveal the central change, request a revision. Check the actual PR against the open-pr skill's publication gate and repository instructions: correct diff/base/state, concise illustration-first explanation, accurate implemented flow, and verified testing claims. Also cut duplicated explanation and reusable setup recipes that belong in linked documentation. Do not accept only the child's summary. If corrections are needed, record them and use a fresh, narrowly scoped PR child, then recheck.
-
-The PR must accurately explain delivered behavior, important preserved/failure paths, verification and limits. Distinguish tests run from suggested manual steps. Surface unresolved nonblocking review risks. Do not infer permission to merge, deploy, enable flags, edit Linear or start the next slice.
+Require the PR URL, base/head IDs, final title/body and publication receipts. The parent reads the diff first, then audits the actual PR against open-pr's final check, repository requirements, intended base/state and verification claims—not just the child's summary. If correction is needed, record it, use a fresh narrowly scoped PR child and recheck. Surface unresolved nonblocking risks; distinguish tests run from suggested manual checks.
 
 ## 6. Notify and stop
 
-Verify the PR exists and targets the intended base. Report to the user in this session:
+Verify the PR exists and targets the intended base. Report its URL and draft state, concise outcome/boundaries, checks/results and material gaps, fixed/declined findings with reasons, and remaining risks. If blocked, state where and what is needed; do not claim completion. Use external notification only if requested. Do not wait indefinitely for user/CI or infer permission to merge, deploy, enable flags, edit trackers or start another slice.
 
-- PR URL, marked draft and ready for the user's review.
-- Concise outcome and important boundaries preserved.
-- Tests/checks run and results; unavailable checks and CI state if checked.
-- Review findings fixed, declined findings with reasons, and remaining risks.
+## Stage ownership and guidance
 
-If delivery is blocked, report where it stopped and what is needed; do not claim completion. Use an external notification channel only if requested. Do not wait indefinitely for the user or remote CI. Stop after the report; no merge, rollout or additional feature work.
-
-## Subagents by stage
-
-Use a fresh subagent for each applicable stage when the session has coding-subagent tools; the user should not need to ask. Each child reports to the parent, never launches the next stage. The parent records the report and its own disposition in context and in the handoff before proceeding. Do not reuse a previous stage's child or bypass this sequence for trivial stage work.
-
-| Stage | Owner | Notes |
+| Stage | Owner | Required skill / result |
 |---|---|---|
-| Prepare | Parent | Establish scope, permissions and handoff. |
-| Design (rough input only) | Fresh child | Require full design skill read; returns direction checkpoint + spec. Parent resolves material questions before build. |
-| Build | Fresh child | Require full build skill read; returns implementation and test delta. |
-| Review | Fresh child | Require full review skill read; read-only. Second reviewer only for a distinct material risk. |
-| Remediation (accepted fixes only) | Fresh child | Require full build skill read; reads prior reports; never the builder or reviewer. |
-| Verification | Parent | Inspect the integrated diff and run or independently confirm checks. |
-| Draft PR | Fresh child | Require full open-pr skill read; scoped commit/push/PR permission only after parent verification. |
-| PR audit + notification | Parent | Read the actual PR, check against the open-pr skill and report to the user. |
+| Prepare + spec acceptance | Parent | Scope, permissions and handoff; validate mechanism necessity. |
+| Design (rough input) | Fresh child | Design; direction checkpoint + build-ready spec. |
+| Build | Fresh child | Build; implementation, confirmed gaps/conflicts and test delta. |
+| Review | Fresh child | Review; read-only findings, Test review and exact scope. |
+| Remediation (accepted fixes) | Fresh child | Build; only accepted fixes and verification report. |
+| Verification | Parent | Inspect integrated diff and run/independently confirm checks. |
+| Draft PR | Fresh child | Open-pr; scoped publication receipts, no implementation edits. |
+| PR audit + notification | Parent | Inspect actual PR and report to user. |
 
-- Give each subagent a self-contained brief: worktree, spec path, outcome, supported user flow, settled decisions, non-requirements, accepted trade-offs, constraints, permissions and expected deliverable. Identify the applicable stage skill by absolute `SKILL.md` path and require a full read before applicable work using the global AGENTS.md delegation convention. Require explicit reads of relevant supporting references, resolved from the skill directory. Put the task-specific brief, skill references and handoff paths in `message`; keep `instructions` focused on task-specific boundaries, working rules and quality gates. Do not delegate the deliver orchestrator to stage workers. Workers cannot inherit permissions beyond the task's authorization.
-- Never run subagents concurrently against shared databases, competing branch operations or the same files. Never let agents independently reset, migrate or seed shared data.
-- Worker completion alone does not prove correctness; check output against the integrated code. The parent owns the result, review disposition and publication.
-- Do not substitute independent Herdr sessions or research/analysis launchers for coding subagents. If subagents are unavailable, do the stage in the parent and say so (and label review as parent-only).
+Use a fresh child for each applicable stage when coding-subagent tools are available, even for small stage work. Each reports to the parent, never launches the next stage. Do not substitute Herdr sessions or research/analysis launchers. If subagents are unavailable, do the work in the parent and label review parent-only; ask before publication when independent review is an explicit prerequisite that cannot be met.
 
-## File-backed stage handoff
+Read each stage's actual SKILL.md on entering it and require the child to read it fully, plus relevant supporting references resolved from its directory. Use session-advertised absolute paths; default sibling paths are ../design/SKILL.md, ../build/SKILL.md, ../review/SKILL.md and ../open-pr/SKILL.md. Report missing prerequisites rather than inventing guidance. Do not delegate the deliver orchestrator itself.
 
-Use one task-specific handoff directory outside the repository (for example, a unique directory under `/tmp`). Prefer an existing task artifact location when it provides better persistence. Temporary files survive context compaction, not guaranteed cleanup or machine loss; use durable artifact storage when longer retention is required. Do not store credentials, PHI or sensitive payloads in handoff files.
+Follow the global AGENTS.md delegation contract. Give a self-contained brief with worktree, outcome, supported flow, spec, settled decisions, non-requirements, permissions, required skills and report paths. Put task context in `message` and task-specific boundaries/quality gates in `instructions`; delegation never expands authority.
 
-- The parent owns one current `handoff.md`: objective, repository/worktree, supported flow, settled decisions, exclusions, accepted trade-offs, permissions, current stage, exact revision/diff scope, report paths, accepted/declined findings with reasons, verification receipts, blockers and next action. Link the approved spec instead of copying it into every report.
-- Give each child the handoff path, relevant full prior report paths and a unique output report path. Require it to read them before working, save its detailed stage report and return the report path plus a short summary. Reports preserve affected files, decisions, unresolved issues, verification commands/results and revision scope; do not overwrite earlier stage reports.
-- On completion, the parent reads the full report, checks it against scope/code, then updates `handoff.md` and records a concise checkpoint with report paths in its session context. A child report alone does not authorize the next stage. No child-to-child handoff bypasses the parent.
-- After compaction or interruption, read the current handoff and relevant reports, then reconcile with actual worktree and remote state before continuing. Do not repeat edits or publication solely because conversation details were lost.
+## File-backed handoff
 
-## Handoff composition
+Use one task-specific directory outside the repository, preferably an existing artifact location or a unique /tmp directory. Temporary files survive compaction, not guaranteed cleanup/machine loss; use durable artifacts for longer retention. Never store credentials, PHI or sensitive payloads.
 
-Starting a fresh parent session is separate from these file-backed stage handoffs and from delivery. If the user requests a fresh session, the handoff skill should launch it with a brief explicitly instructing it to read and follow this deliver skill. Do not start another session merely because this skill was invoked.
+- Parent owns handoff.md: objective/worktree, supported flow, settled decisions, exclusions/trade-offs, permissions, current stage, exact revision/diff scope, spec/report paths, accepted/declined findings and reasons, verification receipts, blockers and next action. Link the spec rather than copying it into every report.
+- Each child reads the handoff and relevant full prior reports, writes a unique stage report and returns its path plus a short summary. Preserve affected files, decisions, unresolved issues, commands/results and revision scope; never overwrite prior reports.
+- Parent reads the full report, checks it against code/scope, updates handoff.md and records a concise context checkpoint before launching the next stage. No child-to-child bypass.
+- After interruption/compaction, read handoff/relevant reports and reconcile actual worktree/remote state before continuing. Never replay edits or publication solely because context was lost.
 
-Example request: `/skill:handoff — have the new session read /skill:deliver and deliver this spec in a new worktree off main.`
+A user-requested fresh parent session is separate from these stage handoffs. Use the handoff skill with a brief requiring it to read/follow deliver; do not start another session merely because deliver was invoked.

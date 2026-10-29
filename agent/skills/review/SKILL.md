@@ -9,54 +9,30 @@ Review the requested change. If none is specified, review staged and unstaged ch
 
 - Establish intended behavior before judging: read the diff and relevant surrounding code, then consult the implementation plan/spec and docs explicitly referenced in the request or session. Find applicable repository guidance in the changed files' directory ancestry. Follow relevant references only; don't read unrelated docs broadly. Trace affected callers and behavior, and check tests against the intended requirements.
 - Report only confirmed, actionable findings. For each, include severity, `file:line`, impact, and a minimal fix. Do not invent taste-based stylistic findings. Readability findings must identify a concrete reasoning burden, its maintenance impact, and a smaller clear alternative—not merely invoke clean code or SOLID. Calibrate severity to the impact; no readability findings is a valid outcome. If none, say so and name any material unreviewed risk.
-- Focus on correctness, regressions, missing behavior-protecting tests, conventions, and complexity that materially obscures the main path.
-- **Inspect readability in the first pass, unasked.** Apply **Code clarity and responsibility** below to the changed path: trace the ordinary flow, rule ownership, data transformations, and side effects. Look for parallel workflow implementations, scattered mode checks, misleading names, and indirection that hides rather than clarifies. Do not turn the review into unrelated cleanup or request architectural changes merely to satisfy a principle.
+- **Inspect the whole changed flow in the first pass, unasked.** Apply **Necessity and design** below: trace the ordinary operation, rule owners, data transformations and side effects. Check correctness and conventions alongside parallel workflows, scattered mode checks, misleading names and obscuring indirection. Keep findings within the change.
+- **Review the mechanism, not just spec conformance.** Preserve approved outcomes, but challenge prescribed mechanisms that contradict non-requirements or only support unnecessary machinery. Being specified does not justify complexity; identify the conflict rather than silently changing the requirement.
 - **Unjustified complexity is a finding.** Flag added guards, locks, re-checks, recovery paths, duplicate policy checks and abstractions that no real flow triggers, or that an owning component already covers. Treat the spec's non-requirements as settled.
 - **A missing-guard finding must name the supported sequence**, not merely a caller name, and explain why existing validation, policy ownership, or retained coverage is insufficient. If unconfirmed, label it *needs flow confirmation* with a concrete scenario question, not a blocker or required change.
-- **Challenge the mechanism before repairing it.** When a safeguard causes another failure, first ask whether that safeguard is required. Recommend removing unnecessary complexity rather than adding exceptions around it; do not remove explicit requirements or necessary trust-boundary protections.
-- **Always run the required spec review below** on any change that adds or edits tests, in the first pass, unasked. Hunt bloat as hard as gaps: per-class spec files, internal stubs, duplicated guarantees, permutation matrices. Missing direct assertions are not automatically a defect; new tests are not automatically useful.
-- **Output a "Spec review" section**: for each added or changed spec file, *keep* / *merge into X* / *delete (covered by Y)* / *repair stub*, with one-line reason, then the proposed net delta (files, scenarios). Say "no test changes" if none.
-- Identify unnecessary abstraction or scope; prefer the smallest complete change that meets the requirements. For relevant React/Next changes, apply `/skill:vercel-react-best-practices` and read `/skill:vercel-composition-patterns` when component API or composition design is involved.
+- **Always audit changed tests in the first pass, unasked**, using the required spec review below. Hunt duplicate guarantees, bypassing stubs, non-discriminating assertions and permutation matrices as hard as missing coverage.
+- **Output a short "Test review" section:** list only actionable merge/delete/repair recommendations, naming retained coverage for deletions, and justified missing-test findings. State the proposed net delta (files/scenarios); if none, say no test changes recommended. Do not produce rows merely saying "keep". Say "no test changes to review" when applicable.
+- For relevant React/Next changes, apply `/skill:vercel-react-best-practices` and read `/skill:vercel-composition-patterns` when component API or composition design is involved. Follow the global AGENTS.md contract for delegated work; a worker's severity or confidence is not justification for added behavior.
 - Do not edit files.
 
-## Code clarity and responsibility
+## Necessity and design
 
-**Optimize for comprehension, not minimum line count or maximum abstraction.** A reader should be able to identify the main path, decisions, data ownership, and side effects without reconstructing scattered implementation details. Prefer the fewest concepts needed to express the supported behavior clearly.
+**Build for supported behavior, not constructible states.** Before adding or requesting a guard, fallback, recovery path, compatibility behavior, storage or abstraction, establish the real caller sequence, consequential outcome, and why the existing owner does not already protect it. A code citation, spec prescription or reviewer recommendation alone does not establish necessity. If a fix creates another edge case, reconsider the original mechanism before adding exceptions.
 
-- **Make the main path read as meaningful steps.** Keep orchestration at a consistent level of abstraction. Avoid interleaving domain decisions, payload manipulation, persistence, and presentation details when it obscures the operation. Prefer named intermediate values and straightforward branches over dense expressions.
-- **Give each rule one clear owner.** Keep validation, eligibility, state transitions, and persistence decisions with the responsible component; callers should not partially reimplement them. Separate responsibilities that change independently, not every verb into a class.
-- **Make data flow explicit.** Prefer deliberate inputs and explicit outputs over building broad argument hashes, deleting keys for special cases, or changing their meaning. Avoid hidden mutation and helper ordering that readers must infer. Use the smallest clear representation; do not automatically introduce result objects or interfaces.
-- **Name the domain distinction.** Prefer names such as `referral_level_availability_windows` over `general_availability_windows` when scope is the distinction. A vague `process_data` helper does not reduce cognitive load. Comments explain why, constraints, or non-obvious decisions; they should not translate confusing code.
-- **Compose real variation at its boundary.** Keep workflow-specific choices near the caller that owns them; do not teach shared components every consuming workflow. Repeated source/type/boolean checks across layers invite an ownership review, not an automatic strategy hierarchy.
-- **Extract only when total comprehension improves.** A helper or class should provide a coherent responsibility, meaningful name, useful reuse, or isolation of genuinely complex logic. Count the indirection it introduces. A single-use helper can be worthwhile; a reused abstraction can still be wrong. Do not extract merely to meet a size metric.
-- **Prefer cohesive duplication over false unification.** Share the same rule or operation, not merely similar syntax with different lifecycle semantics. Conversely, do not duplicate an ordinary workflow solely because its origin or contextual metadata differs.
+Hypothetical callers, states only tests construct, rare user-action races, brief staleness and upstream re-checks are non-requirements unless the task says otherwise. Leave speculative extras out; ask one concrete question with a recommended default only when the answer materially changes behavior, scope or safety. Respect settled non-requirements and surface conflicts with approved requirements rather than silently changing them.
 
-Use **SOLID as diagnostic reasoning, not a compliance checklist**: separate independently changing responsibilities (SRP); compose actual variation without speculative extension points (OCP); preserve the shared contract without caller-specific exceptions (LSP); keep dependency contracts focused and direction appropriate where a real boundary warrants it (ISP/DIP). None requires an interface for every class or a generic framework.
+**Non-negotiable:** authorization, rejecting malformed input at a trust boundary, data loss, money and PHI exposure. Default non-requirements do not waive these consequences. "The UI never sends it" does not dismiss authorization, privacy, money or data-integrity risks at a trust boundary. Boundary validation rejects bad input; it need not handle every well-formed combination.
 
-Apply this to the touched path, preserving behavior and required trust-boundary protections. It does not authorize unrelated refactoring, new requirements, or reopening settled architecture.
+**Optimize for comprehension, not minimum lines or maximum abstraction.** On the changed flow:
+- Give each rule one owner; consume its decision at every real enforcement boundary. Central navigation is not command authorization.
+- Make the main path, domain names, inputs/outputs and side effects explicit; avoid hidden mutation and ordering dependencies.
+- Compose actual variation at its owning boundary. Shared components should not enumerate consuming workflows or duplicate their policy.
+- Extract when a coherent responsibility or simpler reasoning outweighs indirection, not to meet size metrics. Share the same rule or operation, not merely similar syntax with different lifecycle semantics.
 
-## Requirements you don't have
-
-You lack the product context to decide which edge cases matter; the user has it. Knowing what the change does **not** need to handle is part of the job.
-
-- **Build for the real flow.** Name the actual caller, UI or job that produces each input or state. Not requirements: inputs no current client sends, flows behind an off flag or UI hold, flows a later slice owns, states only a test can construct, hypothetical future callers.
-- **Default non-requirements** unless the user or spec says otherwise: rare races between near-simultaneous user actions, brief staleness, re-checking data already checked upstream.
-- **Smells — stop before adding:** locks, snapshots or fingerprints, mid-request re-checks, after-commit plumbing, uniqueness-error recovery, queue/worker fencing, a policy check outside the component that owns it, new wrapper/finder/registry classes, storage kept "in case".
-- **Ask; don't encode.** If you believe one is needed, ask with one concrete scenario: how it arises in the real workflow, its consequence, its cost (lines/files) and your recommendation. Batch at most 3 such questions, each with a default. Until answered, leave it out.
-- **Non-negotiable:** authorization, rejecting malformed input at a trust boundary, data loss, money and PHI exposure. Boundary validation rejects bad input; it does not handle every well-formed combination.
-- **Small relevant simplifications are fine** when they directly serve the affected path and preserve behavior. Defer unrelated cleanup.
-
-## Necessity gate
-
-Before adding or requesting a guard, fallback, recovery path, compatibility behavior, abstraction, or test, establish the supported caller, the realistic sequence that reaches the failure, its consequential outcome, and why the existing owner does not already cover it. A constructible state or code citation alone does not establish a requirement. Respect explicit requirements and settled non-requirements; surface conflicts rather than silently expanding scope. Apply this reasoning internally; explain it for disputed or consequential additions, not as a mandatory report template.
-
-If a proposed fix creates another edge case, first reconsider the original mechanism rather than adding exceptions around it. "The UI never sends it" does not dismiss authorization, privacy, money, or data-integrity risks at a trust boundary.
-
-## Delegation contract
-
-Use the global AGENTS.md delegation contract: assign a bounded outcome with the supported flow, settled decisions, non-requirements, accepted trade-offs and permissions. Identify required stage skills and require full reads per the global delegation contract. This does not authorize work beyond the request or override workflow-required stage separation.
-
-The delegating agent remains responsible for checking returned work against those constraints before incorporating it. A child's confidence, severity label, or code citation does not establish that additional behavior is required. No findings or no additional changes is a valid outcome.
+Use SOLID to diagnose current responsibility, contract and dependency problems, not to demand interfaces or future extension points. This guidance does not authorize unrelated refactoring, new requirements or reopening settled architecture. Report broader changes separately.
 
 ## Required spec review: smallest useful correction
 
