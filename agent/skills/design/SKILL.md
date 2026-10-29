@@ -86,6 +86,7 @@ Give ordered, actionable steps. For each substantial step, specify:
 Plan tests once for the whole change, from the user-visible flow inward. Build follows this plan and adds nothing beyond it.
 
 - **Scenarios, not files.** List the few caller-level scenarios (request/system/job/integration spec) that prove the outcome end to end with real internal collaborators. Stub only external HTTP/vendor boundaries. For each: spec file (extend an existing one first), setup, trigger, asserted outcome or readback, and the regression it catches.
+- **Choose the workflow owner.** For substantial browser-facing features, prefer one representative existing Playwright/system scenario spanning navigation, actions and persisted outcome; keep backend-only contracts and detailed permutations in focused integration tests. Name real/stubbed boundaries and optional same-run capture.
 - **Default budget:** new classes covered by a scenario get no spec file of their own. A unit spec is allowed only for complex pure logic, named with its reason.
 - **Deliberately not tested:** list what stays out (log/metric shape, permutation matrices, guarantees another layer already owns) so build does not add it.
 - **Consolidate:** name existing specs the new scenarios make redundant, and whether to merge or delete them.

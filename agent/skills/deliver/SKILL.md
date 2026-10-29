@@ -32,7 +32,7 @@ This skill orchestrates existing skills; it does not replace them. Read their ac
 
 Delegate to a build subagent per **Subagents by stage**, requiring a full read of the build skill using the global delegation convention. Implement the smallest complete change, including affected callers, tests, config and generated contracts. The parent stays responsible for the integrated result: inspect the diff, its "possible gaps not handled" list and its test delta (push back on per-class spec files or internal stubs), and run or confirm verification itself.
 
-Run relevant verification as the change develops. Honor environment ownership, database isolation, external-service mocks and other repository safety rules before tests or generation. An unsafe test environment is a blocker, not permission to use shared or real data. Report checks actually run and their results; never equate a command starting, an error response or a worker's claim with verified behavior.
+Run relevant verification as the change develops, including affected retained acceptance specs before publication—even when only shared copy/components changed. Honor environment ownership, database isolation, external-service mocks and other repository safety rules before tests or generation. Distinguish mocked regression coverage from separately authorized real integration acceptance; neither substitutes silently for the other. An unsafe test environment is a blocker, not permission to use shared or real data. Report checks actually run and their results; never equate a command starting, an error response or a worker's claim with verified behavior.
 
 ## 3. Review independently
 
