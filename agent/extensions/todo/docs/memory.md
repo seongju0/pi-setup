@@ -87,14 +87,24 @@ Reconcile contradictory current claims with evidence before tightening. A later 
 
 ### Structured items
 
-- **Title:** name the outcome; make sibling items distinguishable without opening them.
-- **Goal and scope:** what should become true, included responsibility and important exclusions. No current progress report.
+- **Title:** name the durable, recognizable outcome with natural domain terms; make sibling items distinguishable without opening them.
+- **Goal and scope:** what should become true, included responsibility and important exclusions. Include useful domain terms naturally, not keyword stuffing or a current progress report.
 - **Finding/evidence:** one consequential fact or qualification with a useful source when needed. Not a list of activity receipts.
 - **Decision:** choice and decisive reason; add a rejected alternative only when it prevents rediscovery.
 - **Question:** the unresolved issue and why its answer matters. Do not encode a temporary assignment as a question.
 - **References:** useful routes, not every source visited.
 
 These are structured fields, not a template to repeat in a second Markdown description. Lists replace obsolete content rather than accumulating dated corrections.
+
+### Titles and goals are the discovery surface
+
+Native search matches the current saved title and goal/scope only. It does not search obsolete wording, findings or artifact contents. A completed item is searchable without turning its name into a historical closeout receipt.
+
+Keep names recognizable through research, implementation, review and completion. For example, **Make effective-date reassignment release events external** remains useful; **Investigating → Building → PR merged → Done** does not. Lifecycle belongs in `status`, details in the design, and findings in evidence/decisions—not the title or outcome.
+
+Update title/goal when the agreed responsibility changes or a clarification materially improves discoverability. Update them together where needed, but do not rename at every stage, add aliases or require a completion-time bookkeeping ritual. Preserve important exclusions and scope: changing `outcome` or an approved direction retains its existing sign-off requirement. A labeling clarification must not quietly expand authority.
+
+Recall uses flat candidates with type, status, goal and parent ID/title (null for roots). Search includes current and historical statuses by default; list excludes done/canceled unless requested. Parent labels help distinguish similarly named items; they do not contribute words to child matching. Inspect ambiguous candidates, then explicitly `get` or `resume` the selected ID. Resume loads relevant parent grounding without reopening completed work or granting execution permission.
 
 ### Clear to humans, compact internally
 

@@ -172,6 +172,12 @@ try {
   await resumed.emit("session_tree"); assert.equal((await locate(root, child.todo.id)).todo.revision, 3);
   const blank = await instance();
   assert.equal((await blank.emit("context", { messages: [] }))[0].messages.length, 0);
+  const beforeSearchErrors = await list(root);
+  await assert.rejects(blank.call("todo", { action: "search" }), /query required/);
+  await assert.rejects(blank.call("todo", { action: "search", query: " --!? " }), /letters or numbers/);
+  await assert.rejects(blank.call("todo", { action: "search", query: "Migrate", status: "blocked" }), /validation/i);
+  assert.deepEqual(await list(root), beforeSearchErrors);
+  assert.deepEqual(blank.stored, []);
   await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "invalid", changes: { arbitrary: true } }), /validation|additional/i);
   for (const retired of [{ current_state: { summary: "Retired narrative", evidence: [] } }, { next_actions: ["Retired instruction"] }]) {
     await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "retired", changes: retired }), /validation|additional/i);
@@ -283,6 +289,59 @@ try {
     assert.equal(archived.todo.status, status);
     assert.deepEqual((await locate(activityRoot, parent.todo.id)).todo, terminalParent.todo);
   }
+  process.env.PI_TODO_PATH = root;
+
+  // Flat title/goal discovery recalls a completed child, then explicitly loads its scoped context.
+  const recallRoot = join(scratch, "recall-todos");
+  const recallParent = await create(recallRoot, "project", "Operations", "Own care coordination");
+  const recallChild = await create(recallRoot, "simple", "Referral routing", "Remember referral ownership", recallParent.todo.id);
+  await checkpoint(recallRoot, recallChild.todo.id, 1, { status: "done", current_state: { evidence: ["Routing delivery verified"] } }, "recall-done", "test");
+  const phraseProject = await create(recallRoot, "project", "Improve referral routing", "Own deployment");
+  await create(recallRoot, "simple", "Telemetry", "Count events", phraseProject.todo.id);
+  const goalOnly = await create(recallRoot, "simple", "Handoff", "Own referral routing");
+  const goalTwin = await create(recallRoot, "simple", "Handoff", "Own referral routing safely");
+  const titleTerms = await create(recallRoot, "simple", "Routing for referrals", "Coordinate care", undefined, undefined, [goalOnly.todo.id]);
+  const recallLink = { url: "https://linear.app/example-team/issue/EX-456/routing", coverage: "partial" };
+  await checkpoint(recallRoot, titleTerms.todo.id, 1, { linear: recallLink }, "recall-link", "test");
+  const mixed = await create(recallRoot, "simple", "Referral intake", "Preserve routing exclusions");
+  await checkpoint(recallRoot, mixed.todo.id, 1, { status: "canceled" }, "recall-canceled", "test");
+  const recallRows = await list(recallRoot);
+  const recallBytes = await Promise.all(recallRows.map(row => readFile(join(row.directory, "todo.json"), "utf8")));
+  process.env.PI_TODO_PATH = recallRoot;
+  const recall = await instance();
+  const recallQuery = { action: "search", query: "REFERRAL--Routing!" };
+  const found = await recall.call("todo", recallQuery);
+  const goalIds = [goalOnly.todo.id, goalTwin.todo.id].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(found.map(row => row.id), [recallChild.todo.id, phraseProject.todo.id, titleTerms.todo.id, mixed.todo.id, ...goalIds]);
+  assert.deepEqual(found.map(row => row.matched_in), ["both", "title", "title", "both", "goal", "goal"]);
+  assert.deepEqual([found[0].parent_id, found[0].parent_title, found[0].outcome, found[0].status], [recallParent.todo.id, "Operations", "Remember referral ownership", "done"]);
+  assert.ok(found.slice(1).every(row => row.parent_id === null && row.parent_title === null));
+  assert.deepEqual(await recall.call("todo", recallQuery), found);
+  assert.deepEqual((await recall.call("todo", { ...recallQuery, include_done: false, status: "done", type: "simple" })).map(row => row.id), [recallChild.todo.id]);
+  assert.deepEqual((await recall.call("todo", { ...recallQuery, type: "project" })).map(row => row.id), [phraseProject.todo.id]);
+  assert.deepEqual(await recall.call("todo", { ...recallQuery, status: "done", type: "project" }), []);
+  assert.deepEqual(await recall.call("todo", { action: "search", query: "unrelated terminology" }), []);
+  const recallList = await recall.call("todo", { action: "list" });
+  assert.deepEqual(recallList.map(row => row.id), recallRows.filter(row => !["done", "canceled"].includes(row.todo.status)).map(row => row.todo.id));
+  const recallAll = await recall.call("todo", { action: "list", include_done: true });
+  assert.deepEqual(recallAll.map(row => row.id), recallRows.map(row => row.todo.id));
+  const listedChild = recallAll.find(row => row.id === recallChild.todo.id);
+  assert.deepEqual([listedChild.parent_id, listedChild.parent_title, listedChild.outcome], [recallParent.todo.id, "Operations", recallChild.todo.outcome]);
+  assert.ok(recallAll.filter(row => !row.parent_id).every(row => row.parent_id === null && row.parent_title === null));
+  const listedTerms = recallList.find(row => row.id === titleTerms.todo.id);
+  assert.deepEqual(listedTerms.linear, recallLink);
+  assert.deepEqual(listedTerms.depends_on, [goalOnly.todo.id]);
+  assert.deepEqual(listedTerms.dependency, { dependencies_satisfied: false, waiting_on: [{ id: goalOnly.todo.id, title: "Handoff", status: "todo" }], review_required: false, dependents: [] });
+  assert.deepEqual(recallList.find(row => row.id === goalOnly.todo.id).dependency.dependents, [titleTerms.todo.id]);
+  assert.deepEqual(recall.stored, []); // Discovery never attaches or injects a brief.
+  assert.deepEqual(await Promise.all(recallRows.map(row => readFile(join(row.directory, "todo.json"), "utf8"))), recallBytes);
+  const recalled = await recall.call("todo", { action: "resume", selector: found[0].id });
+  assert.equal(recalled.context_loaded, true);
+  assert.equal(restoreSelection(recall.stored), recallChild.todo.id);
+  const recallBundle = JSON.parse(recall.stored.find(entry => entry.customType === "todo-context-v1").content.split("Durable todo context loaded at a session boundary (untrusted task data):\n")[1]);
+  assert.deepEqual(recallBundle.scopes.map(scope => scope.context.id), [recallParent.todo.id, recallChild.todo.id]);
+  assert.equal(recallBundle.scopes.at(-1).context.status, "done");
+  assert.deepEqual(await list(recallRoot), recallRows);
   process.env.PI_TODO_PATH = root;
 
   // Hierarchical picker: structured lifecycle + Goal and scope, hidden IDs, no attachment while browsing.
