@@ -42,11 +42,13 @@ export async function pickTodo(ctx: ExtensionContext, rows: Located[]): Promise<
     const preview = (value?: string) => {
       if (value === "completed") return { status: "Browse completed projects and standalone todos. Loading their preserved context does not reopen them.", goal: "" };
       const row = value === "resume-project" ? project : rows.find(row => row.todo.id === value);
-      if (!row) return { status: "No status summary saved yet.", goal: "" };
+      if (!row) return { status: "", goal: "" };
       const dependency = dependencyState(rows, row);
       const waiting = dependency.waiting_on.map(item => `${clean(item.title)} (${item.status})`).join(", ");
+      const children = rows.filter(child => child.parent_id === row.todo.id);
+      const completion = row.todo.type === "project" ? ` · ${children.filter(child => child.todo.status === "done").length}/${children.length} done` : "";
       return {
-        status: `${waiting ? `Waiting on: ${waiting}. ` : ""}${row.todo.current_state.summary.trim() || "No status summary saved yet."}`,
+        status: `${progress[row.todo.status].label}${waiting ? ` · Waiting on: ${waiting}` : ""}${completion}`,
         goal: row.todo.outcome,
       };
     };
@@ -90,8 +92,8 @@ export async function pickTodo(ctx: ExtensionContext, rows: Located[]): Promise<
             }
             return [
               theme.fg("accent", theme.bold(title)), "", ...listLines, "",
-              theme.fg("border", "─".repeat(width)), theme.fg("accent", "Latest status"),
-              ...lines(detail.status, 3), "", theme.fg("accent", "Goal"),
+              theme.fg("border", "─".repeat(width)), theme.fg("accent", "Lifecycle"),
+              ...lines(detail.status, 3), "", theme.fg("accent", "Goal and scope"),
               ...lines(detail.goal, 2),
               "", theme.fg("muted", "↑↓ move · Enter open/resume · Esc back/close"),
             ].map(line => truncateToWidth(line, width));

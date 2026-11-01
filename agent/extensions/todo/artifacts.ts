@@ -6,6 +6,7 @@ import { validate, type Artifact } from "./state.ts";
 
 export type ArtifactInput = Omit<Artifact, "id" | "path"> & { id?: string; body?: string };
 export async function saveArtifact(root: string, id: string, revision: number, input: ArtifactInput, signal?: AbortSignal): Promise<Located> {
+  if (!["research", "design"].includes(input.kind)) throw new Error("Artifact kind must be research or design");
   root = await rootPath(root);
   return mutate(root, id, revision, async (todo, item) => {
     const existing = todo.artifacts.find(row => row.id === input.id);

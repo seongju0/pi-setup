@@ -1,7 +1,7 @@
 // Run from the repository root: npm test. Direct: node agent/extensions/todo/tests/test.mjs
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, mkdir, symlink, writeFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, symlink, writeFile, stat, readdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -69,13 +69,14 @@ async function instance(branch = [], interactive = false, deferMessages = false,
     }
     return withTasks && type === "context" ? [{ messages }] : results;
   };
-  const call = async (name, params, context = ctx) => {
+  const callRaw = async (name, params, context = ctx) => {
     const tool = loaded.extensions.find(owner => owner.tools.has(name)).tools.get(name).definition;
     const args = validateToolArguments(tool, { id: "check", name, arguments: params });
-    return (await tool.execute("check", args, undefined, undefined, context)).structuredContent;
+    return tool.execute("check", args, undefined, undefined, context);
   };
+  const call = async (...args) => (await callRaw(...args)).structuredContent;
   await emit("session_start");
-  return { call, emit, stored, flush, warnings, statuses, confirmations, selects, inputs, editors, panels, customSteps, ctx, extension };
+  return { call, callRaw, emit, stored, flush, warnings, statuses, confirmations, selects, inputs, editors, panels, customSteps, ctx, extension };
 }
 try {
   delete process.env.PI_TODO_PATH;
@@ -83,6 +84,8 @@ try {
   process.env.PI_TODO_PATH = root;
   assert.equal(configuredRoot(), root);
   const project = await create(root, "project", "Rollout", "Complete the rollout");
+  assert.deepEqual(project.todo.current_state, { evidence: [] });
+  assert.equal("next_actions" in project.todo, false);
   const child = await create(root, "simple", "Migrate", "Convert unresolved work", project.todo.id);
   const sibling = await create(root, "simple", "Observe", "Validate operations", project.todo.id);
   await assert.rejects(create(root, "project", "Nested", "No", project.todo.id), /Only root/);
@@ -91,7 +94,7 @@ try {
   const interrupted = join(project.directory, "todos", `${createTodo("simple", "Interrupted", "No").id}.creating`);
   await mkdir(interrupted);
   assert.equal((await list(root)).length, 3);
-  const changes = { current_state: { summary: "Converter tested", evidence: ["https://example.com/pr/1"] }, next_actions: ["Run a dry run"], decisions: [{ summary: "Preserve IDs", rationale: "Avoid duplicate work", approval: "draft", evidence: [] }] };
+  const changes = { current_state: { evidence: ["Converter tested", "https://example.com/pr/1"] }, decisions: [{ summary: "Preserve IDs", rationale: "Avoid duplicate work", approval: "draft", evidence: [] }] };
   const updated = await checkpoint(root, child.todo.id, 1, changes, "checkpoint-1", "test-session");
   assert.equal(updated.todo.revision, 2);
   assert.equal(updated.todo.status, "in_progress");
@@ -119,6 +122,7 @@ try {
   const childArtifact = await saveArtifact(root, child.todo.id, 2, { ...metadata, applies_to: [], required: false });
   assert.match(await readArtifact(root, childArtifact, childArtifact.todo.artifacts[0].id), /Preserve IDs/);
   const beforeInvalid = await readFile(join(child.directory, "todo.json"), "utf8");
+  await assert.rejects(saveArtifact(root, child.todo.id, 3, { ...metadata, kind: "runbook", applies_to: [] }), /research or design/);
   await assert.rejects(saveArtifact(root, child.todo.id, 3, { ...metadata, applies_to: [], lifecycle: "superseded", required: true }), /Only current/);
   assert.equal(await readFile(join(child.directory, "todo.json"), "utf8"), beforeInvalid);
 
@@ -158,14 +162,10 @@ try {
   await pi.emit("agent_settled");
   assert.equal(pi.warnings.length, warningCount); // Pure discussion causes no UI nag or extra model turn.
   assert.equal((await locate(root, child.todo.id)).todo.revision, savedRevision);
-  assert.match(context.messages.at(-1).content, /Batch related routine findings/);
-  assert.match(context.messages.at(-1).content, /normal word spacing, progress first/);
-  assert.match(pi.extension.tools.get("todo_checkpoint").definition.description, /normal word spacing: progress first/);
-  assert.match(context.messages.at(-1).content, /no checkpoint or acknowledgement ritual/);
   const [reminderContext] = await pi.emit("context", { messages: [{ role: "custom", customType: checkpointMessage, content: "Old forced reminder" }] });
   assert.ok(!reminderContext.messages.some(message => message.customType === checkpointMessage));
   await pi.extension.commands.get("todo").handler("checkpoint", pi.ctx);
-  assert.match(pi.stored.at(-1).content, /Checkpoint the active todo now/);
+  assert.equal(pi.stored.at(-1).type, "user_request");
   await pi.call("todo_ack", { id: child.todo.id, reason: "no_change", explanation: "Only inspected context" });
   const resumed = await instance(pi.stored);
   assert.equal(restoreSelection(resumed.stored), child.todo.id);
@@ -173,6 +173,12 @@ try {
   const blank = await instance();
   assert.equal((await blank.emit("context", { messages: [] }))[0].messages.length, 0);
   await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "invalid", changes: { arbitrary: true } }), /validation|additional/i);
+  for (const retired of [{ current_state: { summary: "Retired narrative", evidence: [] } }, { next_actions: ["Retired instruction"] }]) {
+    await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "retired", changes: retired }), /validation|additional/i);
+    await assert.rejects(blank.call("todo_tighten", { id: child.todo.id, revision: 3, reason: "Maintenance", ...retired }), /validation|additional/i);
+    assert.throws(() => applyChanges(updated.todo, retired), /unknown/);
+  }
+  await assert.rejects(blank.call("todo_artifact", { action: "upsert", id: child.todo.id, revision: 3, ...metadata, kind: "runbook", applies_to: [] }), /validation/i);
   await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "unapproved", changes: { outcome: "New outcome" } }), /sign-off/);
   await assert.rejects(pi.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "declined", changes: { outcome: "New outcome" } }), /sign-off/);
   pi.confirmations.push(true);
@@ -187,7 +193,10 @@ try {
   const activityRoot = join(scratch, "activity-todos");
   process.env.PI_TODO_PATH = activityRoot;
   const activity = await instance([], true);
-  const activityProject = await activity.call("todo", { action: "create", type: "project", title: "Activity", outcome: "Track real work" });
+  const createdRaw = await activity.callRaw("todo", { action: "create", type: "project", title: "Activity", outcome: "Track real work" });
+  const activityProject = createdRaw.structuredContent;
+  assert.deepEqual(JSON.parse(createdRaw.content[0].text), { saved: true, id: activityProject.todo.id, revision: 1 });
+  assert.deepEqual(createdRaw.details, activityProject);
   const prerequisite = await activity.call("todo", { action: "create", type: "simple", parent: activityProject.todo.id, title: "Prerequisite", outcome: "Prepare delivery" });
   const activityChild = await activity.call("todo", { action: "create", type: "simple", parent: activityProject.todo.id, title: "Working child", outcome: "Save findings", depends_on: [prerequisite.todo.id] });
   await activity.call("todo", { action: "resume", selector: activityChild.todo.id });
@@ -196,15 +205,35 @@ try {
   const empty = await activity.call("todo_checkpoint", { id: activityChild.todo.id, revision: 1, key: "empty", changes: {} });
   assert.equal(empty.todo.status, "todo");
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.revision, 1);
-  const activityChanges = { current_state: { summary: "Research saved. Delivery still depends on preparation.", evidence: [] } };
-  const started = await activity.call("todo_checkpoint", { id: activityChild.todo.id, revision: 2, key: "first-finding", changes: activityChanges });
+  const activityChanges = {
+    current_state: { evidence: ["Research saved. Delivery still depends on preparation.", "Native report: preparation remains unverified"] },
+    decisions: [{ summary: "Preserve exact owner IDs", rationale: "Avoid routing to an unrelated owner", approval: "draft", evidence: ["Discovery: ID spelling is significant"] }],
+    questions: [{ text: "Does preparation cover the revised scope?" }],
+  };
+  const startedRaw = await activity.callRaw("todo_checkpoint", { id: activityChild.todo.id, revision: 2, key: "first-finding", changes: activityChanges });
+  const started = startedRaw.structuredContent;
+  assert.deepEqual(startedRaw.details, started);
+  assert.deepEqual(started.todo, (await locate(activityRoot, activityChild.todo.id)).todo);
+  const startedReceipt = JSON.parse(startedRaw.content[0].text);
+  assert.deepEqual(startedReceipt, {
+    saved: true, revision: 3, decision_ids: [started.todo.decisions[0].id], question_ids: [started.todo.open_questions[0].id], status: "in_progress",
+    updated_parent: { id: activityProject.todo.id, revision: 2, status: "in_progress" }, dependency: started.dependency, affected_dependents: started.affected_dependents,
+  });
+  assert.ok(startedRaw.content[0].text.length < JSON.stringify(started).length / 2);
+  const routineRaw = await activity.callRaw("todo_checkpoint", { id: prerequisite.todo.id, revision: 1, key: "routine-empty", changes: {} });
+  assert.deepEqual(JSON.parse(routineRaw.content[0].text), { saved: true, revision: 2 });
   assert.equal(started.todo.status, "in_progress");
   assert.equal(started.dependency.dependencies_satisfied, false);
   assert.equal(started.dependency.review_required, false);
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.status, "in_progress");
   assert.equal((await locate(activityRoot, prerequisite.todo.id)).todo.status, "todo");
-  const replay = await activity.call("todo_checkpoint", { id: activityChild.todo.id, revision: 2, key: "first-finding", changes: activityChanges });
+  const replayRaw = await activity.callRaw("todo_checkpoint", { id: activityChild.todo.id, revision: 2, key: "first-finding", changes: activityChanges });
+  const replay = replayRaw.structuredContent;
   assert.deepEqual(replay.todo, started.todo);
+  assert.deepEqual(replayRaw.details, replay);
+  assert.deepEqual(JSON.parse(replayRaw.content[0].text), {
+    saved: true, revision: startedReceipt.revision, decision_ids: startedReceipt.decision_ids, question_ids: startedReceipt.question_ids,
+  });
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.revision, 2);
   await activity.emit("context", { messages: activity.stored.filter(entry => entry.type === "custom_message") });
   assert.equal(activity.stored.filter(entry => entry.customType === "todo-context-v1").length, 1);
@@ -225,7 +254,20 @@ try {
   await activity.call("todo", { action: "resume", selector: activityProject.todo.id });
   const artifactChild = await activity.call("todo", { action: "create", type: "simple", parent: activityProject.todo.id, title: "Artifact owner", outcome: "Write a plan" });
   const activityMetadata = { title: "Plan", kind: "design", description: "Draft plan", lifecycle: "current", required: false, applies_to: [], body: "# Draft plan" };
-  const artifactStarted = await activity.call("todo_artifact", { action: "upsert", id: artifactChild.todo.id, revision: 1, ...activityMetadata });
+  const artifactRaw = await activity.callRaw("todo_artifact", { action: "upsert", id: artifactChild.todo.id, revision: 1, ...activityMetadata });
+  const artifactStarted = artifactRaw.structuredContent;
+  assert.deepEqual(artifactRaw.details, artifactStarted);
+  assert.deepEqual(artifactStarted.todo, (await locate(activityRoot, artifactChild.todo.id)).todo);
+  assert.deepEqual(JSON.parse(artifactRaw.content[0].text), {
+    saved: true, revision: 2, artifact_id: artifactStarted.todo.artifacts[0].id, path: artifactStarted.todo.artifacts[0].path, status: "in_progress",
+    updated_parent: { id: activityProject.todo.id, revision: 4, status: "in_progress" },
+  });
+  assert.ok(artifactRaw.content[0].text.length < JSON.stringify(artifactStarted).length / 2);
+  const metadataOnly = await activity.callRaw("todo_artifact", { action: "upsert", id: artifactChild.todo.id, revision: 2, artifact_id: artifactStarted.todo.artifacts[0].id, ...activityMetadata, body: undefined });
+  assert.equal(JSON.parse(metadataOnly.content[0].text).artifact_id, undefined);
+  assert.equal(JSON.parse(metadataOnly.content[0].text).path, undefined);
+  const artifactRead = await activity.callRaw("todo_artifact", { action: "read", id: artifactChild.todo.id, artifact_id: artifactStarted.todo.artifacts[0].id });
+  assert.deepEqual(JSON.parse(artifactRead.content[0].text), { body: "# Draft plan\n" });
   assert.equal(artifactStarted.todo.status, "in_progress");
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.status, "in_progress");
   assert.match(activity.statuses.at(-1), /Activity \[in_progress\]/);
@@ -236,19 +278,23 @@ try {
     const terminalParent = await activity.call("todo_checkpoint", { id: parent.todo.id, revision: parent.todo.revision, key: `parent-${status}`, changes: { status } });
     const child = await locate(activityRoot, artifactChild.todo.id);
     const terminalChild = await activity.call("todo_checkpoint", { id: child.todo.id, revision: child.todo.revision, key: `child-${status}`, changes: { status } });
-    const noted = await activity.call("todo_checkpoint", { id: child.todo.id, revision: terminalChild.todo.revision, key: `note-${status}`, changes: { next_actions: ["Keep historical notes"] } });
+    const noted = await activity.call("todo_checkpoint", { id: child.todo.id, revision: terminalChild.todo.revision, key: `note-${status}`, changes: { current_state: { evidence: ["Keep historical notes"] } } });
     const archived = await activity.call("todo_artifact", { action: "upsert", id: child.todo.id, revision: noted.todo.revision, ...activityMetadata, artifact_id: artifactStarted.todo.artifacts[0].id, body: `# ${status} notes` });
     assert.equal(archived.todo.status, status);
     assert.deepEqual((await locate(activityRoot, parent.todo.id)).todo, terminalParent.todo);
   }
   process.env.PI_TODO_PATH = root;
 
-  // Hierarchical picker: latest saved status + Goal, hidden IDs, no attachment while browsing.
+  // Hierarchical picker: structured lifecycle + Goal and scope, hidden IDs, no attachment while browsing.
   const pickerRoot = join(scratch, "picker-todos");
   const pickerProject = await create(pickerRoot, "project", "Rollout", "Complete a safe production rollout");
-  await checkpoint(pickerRoot, pickerProject.todo.id, 1, { status: "in_progress", current_state: { summary: "UAT complete; telemetry sign-off pending.", evidence: [] } }, "picker-status", "test");
+  const pickerSaved = await checkpoint(pickerRoot, pickerProject.todo.id, 1, { status: "in_progress", current_state: { evidence: ["UAT complete; telemetry sign-off pending."] } }, "picker-status", "test");
+  // An existing record may still carry retired fields; browsing must not render them as status or instructions.
+  pickerSaved.todo.current_state.summary = "LEGACY_NARRATIVE";
+  pickerSaved.todo.next_actions = ["LEGACY_INSTRUCTION"];
+  await writeFile(join(pickerSaved.directory, "todo.json"), JSON.stringify(pickerSaved.todo));
   const pickerChild = await create(pickerRoot, "simple", "Migrate 你好", "Convert unresolved work without replaying side effects", pickerProject.todo.id);
-  await checkpoint(pickerRoot, pickerChild.todo.id, 1, { current_state: { summary: "Dry run verified 你好. " + "Awaiting operator review. ".repeat(30), evidence: [] } }, "picker-child-status", "test");
+  await checkpoint(pickerRoot, pickerChild.todo.id, 1, { current_state: { evidence: ["Dry run verified 你好. " + "Awaiting operator review. ".repeat(30)] } }, "picker-child-status", "test");
   await create(pickerRoot, "simple", "Observe", "Verify runtime delivery", pickerProject.todo.id);
   for (const [title, status] of [["Waiting", "todo"], ["Old work", "done"], ["Dropped", "canceled"]]) {
     const item = await create(pickerRoot, "simple", title, "Historical or gated work", pickerProject.todo.id);
@@ -269,9 +315,10 @@ try {
     assert.doesNotMatch(view, /Projects & standalone|Project checklist/);
     assert.match(view, /▸ Rollout/); assert.match(view, /1\/5 done/);
     assert.match(view, /\[ \] Chore/); assert.match(view, /Complete a safe production rollout/);
-    assert.match(view, /Latest status/); assert.match(view, /UAT complete; telemetry sign-off pending/);
-    assert.match(view, /Goal/); assert.doesNotMatch(view, /Outcome/);
-    assert.ok(view.indexOf("Latest status") < view.indexOf("Goal"));
+    assert.match(view, /Lifecycle/); assert.match(view, /In progress/);
+    assert.doesNotMatch(view, /Latest status|UAT complete; telemetry sign-off pending|LEGACY_NARRATIVE|LEGACY_INSTRUCTION/);
+    assert.match(view, /Goal and scope/); assert.doesNotMatch(view, /Outcome/);
+    assert.ok(view.indexOf("Lifecycle") < view.indexOf("Goal"));
     assert.doesNotMatch(view, /Migrate|Observe|Waiting|Old work|Other child|[a-f0-9]{8}-[a-f0-9-]{27}/);
     assert.equal(restoreSelection(picker.stored), undefined);
     component.handleInput("\r");
@@ -281,11 +328,11 @@ try {
     assert.match(view, /\[✓\] Old work/); assert.match(view, /\[-\] Dropped/);
     assert.doesNotMatch(view, /Chore|Other child|[a-f0-9]{8}-[a-f0-9-]{27}/);
     assert.equal(restoreSelection(picker.stored), undefined);
-    assert.match(view, /UAT complete; telemetry sign-off pending/); // Project overview shares the preview.
+    assert.match(view, /In progress/); // Project overview shares structured lifecycle.
     component.handleInput("\x1b[B");
     view = panelText(component);
     assert.match(view, /Convert unresolved work without replaying side effects/);
-    assert.match(view, /Dry run verified 你好/); assert.match(view, /…/);
+    assert.match(view, /In progress/); assert.doesNotMatch(view, /Dry run verified 你好/);
     assert.doesNotMatch(view, /UAT complete/);
     terminal.rows = 24;
     assert.ok(component.render(40).length <= Math.floor(terminal.rows * 0.85));
@@ -296,7 +343,7 @@ try {
   const browse = await instance([], true);
   browse.customSteps.push(component => component.handleInput("\r"), component => {
     component.handleInput("\x1b[B"); component.handleInput("\x1b[B");
-    assert.match(panelText(component), /No status summary saved yet/);
+    assert.match(panelText(component), /Not started/);
     component.handleInput("\x1b[B");
     assert.match(panelText(component), /Waiting on: Migrate 你好/);
     component.handleInput("\x1b");
@@ -327,10 +374,10 @@ try {
   const activeRoot = await create(completedRoot, "simple", "Active work", "Keep active work separate");
   const doneProject = await create(completedRoot, "project", "Archived project", "Remember the delivery");
   const doneChild = await create(completedRoot, "simple", "Delivered child", "Remember implementation details", doneProject.todo.id);
-  await checkpoint(completedRoot, doneChild.todo.id, 1, { status: "done", current_state: { summary: "Child delivery verified. Retain the investigation notes.", evidence: [] } }, "done-child", "test");
-  await checkpoint(completedRoot, doneProject.todo.id, 2, { status: "done", current_state: { summary: "Project delivered. Preserved context is available for questions.", evidence: [] } }, "done-project", "test");
+  await checkpoint(completedRoot, doneChild.todo.id, 1, { status: "done", current_state: { evidence: ["Child delivery verified. Retain the investigation notes."] } }, "done-child", "test");
+  await checkpoint(completedRoot, doneProject.todo.id, 2, { status: "done", current_state: { evidence: ["Project delivered. Preserved context is available for questions."] } }, "done-project", "test");
   const doneStandalone = await create(completedRoot, "simple", "Saved answer", "Recall an earlier answer");
-  await checkpoint(completedRoot, doneStandalone.todo.id, 1, { status: "done", current_state: { summary: "Earlier answer verified and saved.", evidence: [] } }, "done-answer", "test");
+  await checkpoint(completedRoot, doneStandalone.todo.id, 1, { status: "done", current_state: { evidence: ["Earlier answer verified and saved."] } }, "done-answer", "test");
   const completedBefore = await list(completedRoot);
   process.env.PI_TODO_PATH = completedRoot;
   const completedPicker = await instance([], true);
@@ -351,7 +398,7 @@ try {
   }, component => {
     const view = panelText(component);
     assert.match(view, /Completed › Archived project/); assert.match(view, /Resume project overview/);
-    assert.match(view, /\[✓\] Delivered child/); assert.match(view, /Project delivered/);
+    assert.match(view, /\[✓\] Delivered child/); assert.match(view, /Done/); assert.doesNotMatch(view, /Project delivered/);
     component.handleInput("\r");
   });
   await completedPicker.extension.commands.get("todo").handler("", completedPicker.ctx);
@@ -424,7 +471,6 @@ try {
     for (const messages of [prep.messagesToSummarize, prep.turnPrefixMessages]) {
       assert.equal(messages.length, 2);
       assert.match(messages.at(-1).content[0].text, /pending.*true/);
-      assert.match(messages.at(-1).content[0].text, /Preserve discoveries/);
     }
     await compacting.emit("session_compact", { reason, willRetry: reason === "overflow" });
     assert.equal(pendingReconciliation(compacting.stored, sibling.todo.id).revision, written.todo.revision);
@@ -507,7 +553,6 @@ try {
   assert.ok(smallContext.messages.some(message => message.customType === "todo-context-v1"));
   assert.equal(smallModel.warnings.filter(text => text.includes("10%")).length, 1);
   assert.match(smallContext.messages.at(-1).content, /size warning.*nonblocking/);
-  assert.match(smallContext.messages.at(-1).content, /Preserve evidence and decision history/);
   const [repeatSmall] = await smallModel.emit("context", { messages: smallContext.messages });
   assert.equal(repeatSmall.messages.filter(message => message.customType === "todo-context-size-warning-v1").length, 1);
   assert.equal(smallModel.warnings.filter(text => text.includes("10%")).length, 1);
@@ -536,19 +581,24 @@ try {
   const autonomousTodo = await create(root, "simple", "Autonomous saving", "Original outcome");
   const auto = await instance();
   await auto.call("todo", { action: "resume", selector: autonomousTodo.todo.id });
-  const autoChanges = { outcome: "User-approved outcome", approval_evidence: "User: use the revised outcome", decisions: [{ summary: "Keep history readable", rationale: "Preserve evidence", approval: "approved", evidence: [] }] };
+  const autoChanges = { outcome: "User-approved outcome", approval_evidence: "User: use the revised outcome", decisions: [{ summary: "Keep history readable", rationale: "Preserve evidence", approval: "approved", evidence: [] }], questions: [{ text: "Exact owner ID is not yet verified" }, { text: "Was the old scope approved?", resolution: "No; user approved only the revised outcome" }] };
   const autoSaved = await auto.call("todo_checkpoint", { id: autonomousTodo.todo.id, revision: 1, key: "existing-approval", changes: autoChanges });
   assert.ok(autoSaved.todo.decisions[0].evidence.includes("User approval: User: use the revised outcome"));
   assert.ok(autoSaved.todo.current_state.evidence.includes("User approval: User: use the revised outcome"));
-  assert.deepEqual((await auto.call("todo_checkpoint", { id: autonomousTodo.todo.id, revision: 1, key: "existing-approval", changes: autoChanges })).todo, autoSaved.todo);
+  const approvalReplay = await auto.callRaw("todo_checkpoint", { id: autonomousTodo.todo.id, revision: 1, key: "existing-approval", changes: autoChanges });
+  assert.deepEqual(approvalReplay.structuredContent.todo, autoSaved.todo);
+  assert.deepEqual(approvalReplay.details, approvalReplay.structuredContent);
+  assert.deepEqual(JSON.parse(approvalReplay.content[0].text), {
+    saved: true, revision: autoSaved.todo.revision, decision_ids: autoSaved.todo.decisions.map(row => row.id), question_ids: autoSaved.todo.open_questions.map(row => row.id),
+  });
+  assert.deepEqual((await locate(root, autonomousTodo.todo.id)).todo, autoSaved.todo);
   await assert.rejects(auto.call("todo_checkpoint", { id: autonomousTodo.todo.id, revision: 2, key: "no-approval", changes: { outcome: "Unapproved outcome" } }), /sign-off/);
-  assert.match(auto.stored.find(m => m.customType === "todo-context-v1").content, /Explicit approval of a minor tweak is not by itself a durable decision/);
 
   // Tightening changes durable orientation without rewriting the current conversation.
   const optional = await auto.call("todo_artifact", { action: "upsert", id: autonomousTodo.todo.id, revision: 2, title: "Old implementation detail", kind: "research", description: "No longer needed to orient", lifecycle: "current", required: false, applies_to: [], body: "HISTORICAL_DETAIL" });
-  const hide = { id: autonomousTodo.todo.id, revision: 3, reason: "Verified progress makes earlier detail redundant; active outcome retained", consult_on_demand_decisions: [autoSaved.todo.decisions[0].id], consult_on_demand_artifacts: [optional.todo.artifacts[0].id], current_state: { summary: "Verified progress. Next: review results.", evidence: [] }, next_actions: ["Review results"], references: [] };
+  const hide = { id: autonomousTodo.todo.id, revision: 3, reason: "Verified progress makes earlier detail redundant; active outcome retained", consult_on_demand_decisions: [autoSaved.todo.decisions[0].id], consult_on_demand_artifacts: [optional.todo.artifacts[0].id], current_state: { evidence: ["Verified progress"] }, references: [] };
   const tightened = await auto.call("todo_tighten", hide);
-  assert.equal(tightened.revision, 4); assert.equal(tightened.history_retained, true);
+  assert.equal(tightened.revision, 4);
   assert.equal(tightened.todo, undefined); assert.equal(tightened.context_refreshed, false);
   const history = await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id });
   assert.equal(history.todo.decisions.length, 1);
@@ -556,10 +606,23 @@ try {
   assert.deepEqual(changedHiddenDecision.context_policy.consult_on_demand_decisions, []);
   assert.equal(history.todo.context_policy.consult_on_demand_decisions.length, 1); // Input remains immutable.
   assert.equal(history.todo.outcome, "User-approved outcome");
-  const snapshot = history.todo.artifacts.find(a => a.kind === "context-history");
-  assert.match((await auto.call("todo_artifact", { action: "read", id: autonomousTodo.todo.id, artifact_id: snapshot.id })).body, /User approval/);
+  assert.deepEqual(history.todo.artifacts, optional.todo.artifacts);
+  assert.deepEqual(await readdir(join(history.directory, "artifacts")), [optional.todo.artifacts[0].path.split("/").at(-1)]);
   assert.match((await auto.call("todo_artifact", { action: "read", id: autonomousTodo.todo.id, artifact_id: optional.todo.artifacts[0].id })).body, /HISTORICAL_DETAIL/);
+  const bytesBeforeActive = await readFile(join(history.directory, "todo.json"), "utf8");
+  const activeView = await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "active" });
+  assert.equal(activeView.todo.decisions.length, 0);
+  assert.equal(activeView.todo.artifacts.length, 0);
+  assert.deepEqual(activeView.todo.open_questions, history.todo.open_questions.filter(q => !q.resolution));
+  assert.deepEqual(activeView.todo.current_state, history.todo.current_state);
+  assert.equal("next_actions" in activeView.todo, false);
+  assert.deepEqual(activeView.dependency, history.dependency);
+  assert.equal(activeView.todo.context_policy, undefined);
+  assert.equal(activeView.todo.last_checkpoint, undefined);
+  assert.deepEqual(await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "full" }), history);
+  assert.equal(await readFile(join(history.directory, "todo.json"), "utf8"), bytesBeforeActive);
   const hiddenBundle = await resumeBundle(root, autonomousTodo.todo.id);
+  assert.deepEqual(activeView.todo, hiddenBundle.scopes[0].context);
   assert.equal(hiddenBundle.scopes[0].context.decisions.length, 0); assert.equal(hiddenBundle.scopes[0].context.artifacts.length, 0);
   const [tightenedContext] = await auto.emit("context", { messages: auto.stored.filter(m => m.type === "custom_message") });
   assert.equal(tightenedContext.messages.filter(m => m.customType === "todo-context-v1").length, 1);
@@ -572,8 +635,11 @@ try {
   await assert.rejects(auto.call("todo_tighten", { ...hide, revision: 4, consult_on_demand_decisions: [project.todo.id] }), /existing record IDs/);
   const restored = await auto.call("todo_tighten", { id: autonomousTodo.todo.id, revision: 4, reason: "Earlier decision is relevant again", restore_decisions: [autoSaved.todo.decisions[0].id], restore_artifacts: [optional.todo.artifacts[0].id] });
   assert.equal(restored.revision, 5);
+  const restoredActive = await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "active" });
+  assert.deepEqual(restoredActive.todo.decisions, autoSaved.todo.decisions); // Rationale, evidence and approval retained verbatim.
+  assert.deepEqual(restoredActive.todo.artifacts, optional.todo.artifacts);
   assert.equal((await resumeBundle(root, autonomousTodo.todo.id)).scopes[0].context.decisions.length, 1);
-  assert.equal((await resumeBundle(root, autonomousTodo.todo.id)).scopes[0].context.artifacts.length, 1); // Reference snapshot remains on demand.
+  assert.equal((await resumeBundle(root, autonomousTodo.todo.id)).scopes[0].context.artifacts.length, 1);
   const required = await auto.call("todo_artifact", { action: "upsert", id: autonomousTodo.todo.id, revision: 5, title: "Active constraints", kind: "design", description: "Required safety boundary", lifecycle: "current", required: true, applies_to: [], body: "Required constraints" });
   await assert.rejects(auto.call("todo_tighten", { id: autonomousTodo.todo.id, revision: 6, reason: "Cannot hide required context", consult_on_demand_decisions: [], consult_on_demand_artifacts: [required.todo.artifacts.at(-1).id] }), /Required artifacts/);
   assert.equal((await locate(root, autonomousTodo.todo.id)).todo.revision, 6);
@@ -599,8 +665,15 @@ try {
   assert.match((await auto.call("todo_artifact", { action: "read", id: autonomousTodo.todo.id, artifact_id: requiredRow.id })).body, /Required constraints/);
   const activeAgain = await auto.call("todo_artifact", { action: "upsert", id: autonomousTodo.todo.id, revision: retired.revision, artifact_id: optional.todo.artifacts[0].id, title: "Updated current detail", kind: "research", description: "Now relevant", lifecycle: "current", required: false, applies_to: [], body: "Updated detail" });
   assert.deepEqual(activeAgain.todo.context_policy.consult_on_demand_artifacts, []);
+  const superseding = await auto.call("todo_checkpoint", { id: autonomousTodo.todo.id, revision: activeAgain.todo.revision, key: "replace-rule", changes: {
+    approval_evidence: "User: replace the earlier rule with a scoped draft for investigation",
+    decisions: [{ summary: "Investigate scoped_owner_id, not global_owner_id", rationale: "Global ownership may misroute; scope is still unverified", approval: "draft", evidence: ["Research synthesis: scoped ownership remains uncertain"], supersedes: autoSaved.todo.decisions[0].id }],
+  } });
+  const supersedingActive = await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "active" });
+  assert.deepEqual(supersedingActive.todo.decisions, [superseding.todo.decisions.at(-1)]);
+  assert.equal((await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id })).todo.decisions.length, 2);
   await auto.extension.commands.get("todo").handler("tighten", auto.ctx);
-  assert.match(auto.stored.at(-1).content, /use todo_tighten only if verified progress/);
+  assert.equal(auto.stored.at(-1).type, "user_request");
 
   // Boundary loads are retained once: no artifact rereads or full refreshes on ordinary/local-update requests.
   const boundaryTodo = await create(root, "simple", "Boundary efficiency", "Read once and preserve foreground updates");
@@ -621,14 +694,14 @@ try {
   const [refreshedBoundary] = await boundarySession.emit("context", { messages: boundarySession.stored.filter(entry => entry.type === "custom_message") });
   assert.equal(noteMessages().length, 2);
   assert.equal(refreshedBoundary.messages.filter(message => message.customType === "todo-context-v1").length, 1);
-  const external = await checkpoint(root, boundaryTodo.todo.id, 2, { current_state: { summary: "External finding", evidence: [] } }, "external-write", "other-session");
+  const external = await checkpoint(root, boundaryTodo.todo.id, 2, { current_state: { evidence: ["External finding"] } }, "external-write", "other-session");
   const [drift] = await boundarySession.emit("context", { messages: refreshedBoundary.messages });
   assert.match(drift.messages.at(-1).content, /changed outside this session/);
   assert.equal(noteMessages().length, 2);
   const driftCount = () => boundarySession.stored.filter(entry => entry.customType === "todo-context-drift-v1").length;
   await boundarySession.emit("context", { messages: drift.messages }); assert.equal(driftCount(), 1);
-  await boundarySession.call("todo", { action: "get", selector: boundaryTodo.todo.id });
-  const own = await boundarySession.call("todo_checkpoint", { id: boundaryTodo.todo.id, revision: external.todo.revision, key: "own-write", changes: { next_actions: ["Verify the finding"] } });
+  await boundarySession.call("todo", { action: "get", selector: boundaryTodo.todo.id, view: "active" });
+  const own = await boundarySession.call("todo_checkpoint", { id: boundaryTodo.todo.id, revision: external.todo.revision, key: "own-write", changes: { current_state: { evidence: ["Verify the finding"] } } });
   assert.equal(own.todo.revision, 4);
   const [ownContext] = await boundarySession.emit("context", { messages: drift.messages });
   assert.ok(ownContext.messages.some(message => message.customType === "todo-context-drift-v1")); // Reading/acknowledging does not erase delivered input.
@@ -682,12 +755,12 @@ try {
   assert.deepEqual((await providerPayload(secondCache.messages)).content.slice(0, firstPayload.content.length), firstPayload.content);
   assert.deepEqual(thinking(secondCache.messages), ["signature-1"]);
   assert.equal(cached.stored.filter(entry => entry.customType === "todo-context-size-warning-v1").length, 1);
-  const externalCache = await checkpoint(root, cacheTodo.todo.id, 1, { next_actions: ["External finding"] }, "cache-external", "other-session");
+  const externalCache = await checkpoint(root, cacheTodo.todo.id, 1, { current_state: { evidence: ["External finding"] } }, "cache-external", "other-session");
   const [withDrift] = await cached.emit("context", { messages: historyMessages(cached) });
   const driftPayload = await providerPayload(withDrift.messages);
   respond(cached, 2); cached.flush();
-  await cached.call("todo", { action: "get", selector: cacheTodo.todo.id });
-  await cached.call("todo_checkpoint", { id: cacheTodo.todo.id, revision: externalCache.todo.revision, key: "cache-local", changes: { next_actions: ["Verify external finding"] } });
+  await cached.call("todo", { action: "get", selector: cacheTodo.todo.id, view: "active" });
+  await cached.call("todo_checkpoint", { id: cacheTodo.todo.id, revision: externalCache.todo.revision, key: "cache-local", changes: { current_state: { evidence: ["Verify external finding"] } } });
   const [acknowledgedDrift] = await cached.emit("context", { messages: historyMessages(cached) });
   assert.deepEqual((await providerPayload(acknowledgedDrift.messages)).content.slice(0, driftPayload.content.length), driftPayload.content);
   assert.equal(cached.stored.filter(entry => entry.customType === "todo-context-v1").length, 1);
@@ -708,7 +781,7 @@ try {
   const [jointNext] = await joint.emit("context", { messages: historyMessages(joint) });
   assert.deepEqual((await providerPayload(jointNext.messages)).content.slice(0, jointFirstPayload.content.length), jointFirstPayload.content);
   assert.equal(joint.stored.filter(entry => entry.customType === "task-context-v1").length, 1);
-  await checkpoint(root, jointTodo.todo.id, 1, { next_actions: ["External finding"] }, "joint-external", "other-session");
+  await checkpoint(root, jointTodo.todo.id, 1, { current_state: { evidence: ["External finding"] } }, "joint-external", "other-session");
   // Reproduce the old task hook's ephemeral user tail. It must not become the new drift notice's anchor.
   const ephemeralTail = { role: "user", content: "Current session tasks (transient)", timestamp: 424242 };
   await joint.emit("context", { messages: [...historyMessages(joint), ephemeralTail] });
@@ -846,7 +919,10 @@ try {
   await depsSession.emit("context", { messages: depsSession.stored.filter(entry => entry.type === "custom_message") });
   assert.match(depsSession.stored.findLast(entry => entry.customType === "todo-context-drift-v1").content, /"dependencies_satisfied":true/);
   assert.equal(depsLoads().length, 1); // Prerequisite updates never reload artifacts/full context.
-  const cDone = await depsSession.call("todo_checkpoint", { id: c.todo.id, revision: 1, key: "c-done", changes: { status: "done" } });
+  const cDoneRaw = await depsSession.callRaw("todo_checkpoint", { id: c.todo.id, revision: 1, key: "c-done", changes: { status: "done" } });
+  const cDone = cDoneRaw.structuredContent;
+  assert.deepEqual(JSON.parse(cDoneRaw.content[0].text).dependency, cDone.dependency);
+  assert.equal(JSON.parse(cDoneRaw.content[0].text).status, "done");
   assert.equal(cDone.dependency.dependencies_satisfied, true);
   const bFile = await readFile(join(b.directory, "todo.json"), "utf8");
   const cFile = await readFile(join(c.directory, "todo.json"), "utf8");
@@ -857,7 +933,7 @@ try {
   await depsSession.emit("context", { messages: depsLoads() });
   assert.match(depsSession.stored.findLast(entry => entry.customType === "todo-context-drift-v1").content, /"review_required":true/);
   await assert.rejects(set(cDone, { status: "done" }, "reassert"), /waiting on/);
-  const note = await set(cDone, { next_actions: ["Review reopened prerequisite"] }, "note");
+  const note = await set(cDone, { current_state: { evidence: ["Review reopened prerequisite"] } }, "note");
   const aCanceled = await set(aReopened, { status: "canceled" }, "cancel");
   assert.ok(aCanceled.affected_dependents.every(row => !row.dependencies_satisfied && row.review_required));
   const bCanceled = await set(bDone, { status: "canceled" }, "cancel-dependent");
@@ -886,6 +962,9 @@ try {
 
   // Legacy constraints survive read compatibility, with stable IDs, without changing canonical files on read.
   const legacy = createTodo("simple", "Legacy", "Preserve constraints");
+  legacy.current_state.summary = "Preserved legacy narrative";
+  legacy.next_actions = ["Preserved legacy instruction"];
+  legacy.artifacts = [{ id: legacy.id, title: "Legacy runbook", kind: "runbook", path: `artifacts/${legacy.id}-1.md`, description: "Preserved document", lifecycle: "current", required: false, applies_to: [] }];
   delete legacy.depends_on; legacy.blockers = ["Obtain separate launch permission"]; legacy.status = "blocked";
   const migrated = validate(legacy);
   assert.deepEqual(migrated.depends_on, []); assert.equal(migrated.status, "todo");
@@ -894,16 +973,41 @@ try {
   assert.deepEqual(validate(legacy), migrated); assert.deepEqual(validate(migrated), migrated);
   assert.equal(legacy.status, "blocked"); assert.ok(legacy.blockers);
   const legacyRoot = join(scratch, "legacy-todos"); const legacyDirectory = join(legacyRoot, legacy.id);
-  await mkdir(legacyDirectory, { recursive: true }); const legacyFile = join(legacyDirectory, "todo.json");
+  await mkdir(join(legacyDirectory, "artifacts"), { recursive: true }); const legacyFile = join(legacyDirectory, "todo.json");
+  await writeFile(join(legacyDirectory, legacy.artifacts[0].path), "Preserved legacy document\n");
   const legacyBytes = JSON.stringify(legacy); await writeFile(legacyFile, legacyBytes);
   await list(legacyRoot); assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
-  const savedLegacy = await checkpoint(legacyRoot, legacy.id, 1, { next_actions: ["Model preserved prerequisites"] }, "legacy-context", "test");
+  const savedLegacy = await checkpoint(legacyRoot, legacy.id, 1, { current_state: { evidence: ["Model preserved prerequisites"] } }, "legacy-context", "test");
   assert.deepEqual(savedLegacy.todo.open_questions, migrated.open_questions);
   assert.equal("blockers" in JSON.parse(await readFile(legacyFile, "utf8")), false);
   assert.deepEqual(JSON.parse(await readFile(legacyFile, "utf8")).depends_on, []);
+  process.env.PI_TODO_PATH = legacyRoot;
+  const legacySession = await instance();
+  const legacyFull = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "full" });
+  assert.equal(legacyFull.todo.current_state.summary, legacy.current_state.summary);
+  assert.deepEqual(legacyFull.todo.next_actions, legacy.next_actions);
+  assert.equal(legacyFull.todo.artifacts[0].kind, "runbook");
+  assert.equal((await legacySession.call("todo_artifact", { action: "read", id: legacy.id, artifact_id: legacy.id })).body, "Preserved legacy document\n");
+  const legacyActive = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "active" });
+  const legacyResumed = await resumeBundle(legacyRoot, legacy.id);
+  for (const context of [legacyActive.todo, legacyResumed.scopes[0].context]) {
+    assert.equal("summary" in context.current_state, false);
+    assert.equal("next_actions" in context, false);
+  }
+  await legacySession.call("todo_tighten", { id: legacy.id, revision: savedLegacy.todo.revision, reason: "Consolidate knowledge", current_state: { evidence: ["Verified knowledge"] } });
+  const legacyTightened = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "full" });
+  assert.equal(legacyTightened.todo.current_state.summary, legacy.current_state.summary);
+  assert.deepEqual(legacyTightened.todo.next_actions, legacy.next_actions);
+  await assert.rejects(legacySession.call("todo_artifact", { action: "upsert", id: legacy.id, revision: legacyTightened.todo.revision, artifact_id: legacy.id, ...metadata, kind: "runbook", applies_to: [], body: undefined }), /validation/i);
+  const reclassified = await legacySession.call("todo_artifact", { action: "upsert", id: legacy.id, revision: legacyTightened.todo.revision, artifact_id: legacy.id, ...metadata, kind: "research", required: false, applies_to: [], body: undefined });
+  assert.equal(reclassified.todo.artifacts[0].kind, "research");
+  assert.equal(reclassified.todo.artifacts[0].path, legacy.artifacts[0].path);
+  assert.equal(reclassified.todo.current_state.summary, legacy.current_state.summary);
+  assert.deepEqual(reclassified.todo.next_actions, legacy.next_actions);
+  process.env.PI_TODO_PATH = root;
 
   // Both former character ceilings accept full context, including reopen/refresh/compaction and updates.
-  const largeState = { summary: "Large orientation", evidence: Array.from({ length: 12 }, (_, i) => `${i}:${"e".repeat(1900)}`) };
+  const largeState = { evidence: Array.from({ length: 12 }, (_, i) => `${i}:${"e".repeat(1900)}`) };
   const largeChild = await checkpoint(root, child.todo.id, 4, { current_state: largeState }, "large-orientation", "test-session");
   const largeBody = "x".repeat(50000);
   await saveArtifact(root, project.todo.id, 4, { ...metadata, body: largeBody });
@@ -923,8 +1027,8 @@ try {
   await largeSession.emit("session_compact", { reason: "manual" });
   await largeSession.emit("context", { messages: largeContext.messages });
   assert.equal(largeSession.ctx.aborted, undefined);
-  const repaired = await largeSession.call("todo_checkpoint", { id: child.todo.id, revision: largeChild.todo.revision, key: "repair-large-context", changes: { current_state: { summary: "Consolidated", evidence: [] } } });
-  assert.equal(repaired.todo.current_state.summary, "Consolidated");
+  const repaired = await largeSession.call("todo_checkpoint", { id: child.todo.id, revision: largeChild.todo.revision, key: "repair-large-context", changes: { current_state: { evidence: ["Consolidated"] } } });
+  assert.deepEqual(repaired.todo.current_state.evidence, ["Consolidated"]);
   const largeAttach = await instance();
   assert.equal((await largeAttach.call("todo", { action: "resume", selector: child.todo.id })).context_loaded, true);
   await largeSession.call("todo_ack", { id: child.todo.id, reason: "no_change", explanation: "Inspection complete" });

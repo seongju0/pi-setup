@@ -9,14 +9,15 @@ export type ContextPolicy = { consult_on_demand_decisions: string[]; consult_on_
 export type Todo = {
   version: 1; id: string; type: "simple" | "project"; title: string; outcome: string;
   status: Status; revision: number; created_at: string; updated_at: string;
-  current_state: { summary: string; evidence: string[] };
-  decisions: Decision[]; open_questions: Question[]; depends_on: string[]; next_actions: string[];
+  current_state: { evidence: string[]; summary?: string }; // Legacy summary is read-only.
+  decisions: Decision[]; open_questions: Question[]; depends_on: string[]; next_actions?: string[]; // Legacy actions are read-only.
   references: string[]; artifacts: Artifact[];
   context_policy?: ContextPolicy;
   linear?: { url: string; coverage: "whole" | "partial"; status?: string; status_type?: string; refreshed_at?: string };
   last_checkpoint?: { key: string; digest: string; session_id: string; at: string };
 };
-export type Changes = Partial<Pick<Todo, "title" | "outcome" | "status" | "current_state" | "depends_on" | "next_actions" | "references">> & {
+export type Changes = Partial<Pick<Todo, "title" | "outcome" | "status" | "depends_on" | "references">> & {
+  current_state?: { evidence: string[] };
   decisions?: Array<Omit<Decision, "id"> & { id?: string }>;
   questions?: Array<{ id?: string; text: string; resolution?: string }>;
   linear?: { url: string; coverage: "whole" | "partial" };
@@ -64,8 +65,9 @@ export function validate(todo: Todo): Todo {
   text(todo.title, 300); text(todo.outcome, 3000);
   if (!Number.isSafeInteger(todo.revision) || todo.revision < 1) throw new Error("Invalid revision");
   for (const value of [todo.created_at, todo.updated_at]) if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new Error("Invalid timestamp");
-  keys(todo.current_state, ["summary", "evidence"]); text(todo.current_state.summary, 3000, true); strings(todo.current_state.evidence);
-  for (const list of [todo.next_actions, todo.references]) strings(list);
+  keys(todo.current_state, ["summary", "evidence"]); if (todo.current_state.summary !== undefined) text(todo.current_state.summary, 3000, true); strings(todo.current_state.evidence);
+  if (todo.next_actions !== undefined) strings(todo.next_actions);
+  strings(todo.references);
   strings(todo.depends_on, 100); todo.depends_on.forEach(requireId);
   if (new Set(todo.depends_on).size !== todo.depends_on.length) throw new Error("Duplicate dependencies");
   if (!Array.isArray(todo.decisions) || todo.decisions.length > 80 || !Array.isArray(todo.open_questions) || todo.open_questions.length > 80 || !Array.isArray(todo.artifacts) || todo.artifacts.length > 200) throw new Error("Context list limit exceeded");
@@ -114,14 +116,16 @@ export function validate(todo: Todo): Todo {
 }
 export function createTodo(type: Todo["type"], title: string, outcome: string): Todo {
   const now = new Date().toISOString();
-  return validate({ version: 1, id: randomUUID(), type, title, outcome, status: "todo", revision: 1, created_at: now, updated_at: now, current_state: { summary: "", evidence: [] }, decisions: [], open_questions: [], depends_on: [], next_actions: [], references: [], artifacts: [] });
+  return validate({ version: 1, id: randomUUID(), type, title, outcome, status: "todo", revision: 1, created_at: now, updated_at: now, current_state: { evidence: [] }, decisions: [], open_questions: [], depends_on: [], references: [], artifacts: [] });
 }
 export function applyChanges(todo: Todo, changes: Changes): Todo {
-  keys(changes, ["title", "outcome", "status", "current_state", "depends_on", "next_actions", "references", "decisions", "questions", "linear", "approval_evidence"]);
+  keys(changes, ["title", "outcome", "status", "current_state", "depends_on", "references", "decisions", "questions", "linear", "approval_evidence"]);
   if (changes.approval_evidence !== undefined) text(changes.approval_evidence, 1000);
   if (changes.status !== undefined && !statuses.includes(changes.status)) throw new Error("Invalid status; waiting is derived from depends_on");
+  if (changes.current_state !== undefined) { keys(changes.current_state, ["evidence"]); strings(changes.current_state.evidence); }
   const next = structuredClone(todo);
-  for (const key of ["title", "outcome", "status", "current_state", "depends_on", "next_actions", "references"] as const) if (changes[key] !== undefined) (next as any)[key] = structuredClone(changes[key]);
+  if (changes.current_state !== undefined) next.current_state = { ...next.current_state, evidence: [...changes.current_state.evidence] };
+  for (const key of ["title", "outcome", "status", "depends_on", "references"] as const) if (changes[key] !== undefined) (next as any)[key] = structuredClone(changes[key]);
   if (changes.linear) next.linear = changes.linear.url === todo.linear?.url ? { ...todo.linear, ...changes.linear } : { ...changes.linear };
   for (const patch of changes.decisions ?? []) {
     const id = patch.id ?? randomUUID(); const index = next.decisions.findIndex(row => row.id === id);

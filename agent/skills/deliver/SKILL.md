@@ -15,7 +15,7 @@ Own the delivery loop for a specification, rough plan or sufficiently explicit r
 - Stay in the current session/worktree unless requested otherwise. For a requested new worktree, follow repository guidance, refresh/verify the base and use an unoccupied branch/path. Never reset or steal another owner's checkout.
 - **Check readiness and necessity before build.** A build-ready spec resolves behavior, implementation locations, non-requirements and checks. For rough input, delegate design first. Before accepting either a supplied spec or the design report, identify the ordinary operation, actual variation and rule owners. Challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.
 - Track substantial work with session tasks. If a durable work item is supplied, preserve its scope/dependencies and record meaningful progress under its rules; do not create one without user intent.
-- Establish the file-backed handoff below before launching children.
+- Establish the authoritative grounding below before launching children; do not maintain a second comprehensive handoff ledger when a durable todo already owns it.
 
 ## 2. Build and verify
 
@@ -74,15 +74,19 @@ Use a fresh child for each applicable stage when coding-subagent tools are avail
 
 Read each stage's actual SKILL.md on entering it and require the child to read it fully, plus relevant supporting references resolved from its directory. Use session-advertised absolute paths; default sibling paths are ../design/SKILL.md, ../build/SKILL.md, ../review/SKILL.md and ../open-pr/SKILL.md. Report missing prerequisites rather than inventing guidance. Do not delegate the deliver orchestrator itself.
 
-Follow the global AGENTS.md delegation contract. Give a self-contained brief with worktree, outcome, supported flow, spec, settled decisions, non-requirements, permissions, required skills and report paths. Put task context in `message` and task-specific boundaries/quality gates in `instructions`; delegation never expands authority.
+Follow the global AGENTS.md delegation contract. Give each child its assignment/worktree, authoritative context and spec/report pointers, relevant settled decisions and non-requirements, exact revision scope, scoped permissions, required skills and output path. Require it to read the relevant material rather than copy that material into every launch. Include any consequential unsaved delta. Put task context in `message` and task-specific boundaries/quality gates in `instructions`; delegation never expands authority.
 
-## File-backed handoff
+## Grounding and handoffs
 
-Use one task-specific directory outside the repository, preferably an existing artifact location or a unique /tmp directory. Temporary files survive compaction, not guaranteed cleanup/machine loss; use durable artifacts for longer retention. Never store credentials, PHI or sensitive payloads.
+Use one authoritative current grounding record:
 
-- Parent owns handoff.md: objective/worktree, supported flow, settled decisions, exclusions/trade-offs, permissions, current stage, exact revision/diff scope, spec/report paths, accepted/declined findings and reasons, verification receipts, blockers and next action. Link the spec rather than copying it into every report.
-- Each child reads the handoff and relevant full prior reports, writes a unique stage report and returns its path plus a short summary. Preserve affected files, decisions, unresolved issues, commands/results and revision scope; never overwrite prior reports.
-- Parent reads the full report, checks it against code/scope, updates handoff.md and records a concise context checkpoint before launching the next stage. No child-to-child bypass.
-- After interruption/compaction, read handoff/relevant reports and reconcile actual worktree/remote state before continuing. Never replay edits or publication solely because context was lost.
+- **With a supplied durable todo:** its state/decisions and relevant specifications own project grounding. Record only substantial outcomes, consequential discoveries/nuances, governing choices/reasons and unresolved questions under its saving rules. Do not also maintain a comprehensive `handoff.md`, authored progress/next-action summaries, or checkpoint solely because the stage changed. Only substantial research or design belongs in todo artifacts; stage reports stay with their native workflow, with consequential findings extracted when useful. Parent records hold shared conclusions; child detail stays with its deliverable.
+- **Without suitable durable grounding:** use a task-specific `handoff.md` outside the repository, preferably in an existing artifact location or a unique /tmp directory. It holds objective/worktree, supported flow, decisions, exclusions/trade-offs, permissions, stage, exact revision scope, spec/report paths, findings/disposition, blockers and next action. Link substantive detail rather than repeat it. Temporary files survive compaction, not guaranteed cleanup/machine loss; do not mistake them for long-term memory.
 
-A user-requested fresh parent session is separate from these stage handoffs. Use the handoff skill with a brief requiring it to read/follow deliver; do not start another session merely because deliver was invoked.
+Each child reads the relevant grounding and full prior reports, writes a unique stage report, and returns its path plus a short summary. Preserve affected files, decisions, unresolved issues, commands/results and exact revision scope; never overwrite prior reports. Keep detailed QA plans, fixtures, runs, recordings and results in QA Toolkit/native reports, not copied into todo. A discovered nuance or meaningful acceptance limitation can still earn a concise todo finding and evidence pointer.
+
+The parent reads the full report, checks it against code/scope, and decides whether to proceed. Update authoritative state only when meaningful progress or a consequential finding warrants it; replace stale claims and consolidate current understanding during that update. Do not add a mandatory checkpoint/compression cycle or extra bookkeeping turn. Preserve independent review, disposition, verification and scoped publication gates; no child-to-child bypass.
+
+After interruption/compaction, read current grounding/relevant reports and reconcile actual worktree/remote state before continuing. Never replay edits or publication solely because context was lost. Never store credentials, PHI or sensitive payloads in handoff files or todo.
+
+A user-requested fresh parent session is separate from stage delegation. Use the handoff skill with a brief requiring it to read/follow deliver; do not start another session merely because deliver was invoked.
