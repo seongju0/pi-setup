@@ -12,6 +12,7 @@ vendored Pi runtime is needed.
 | `task/` | Session-local task tracking |
 | `todo/` | Durable local work context; optional user-configured Linear integration |
 | `update-skills/` | Skill inventory and owner-native updates |
+| [`usage/`](usage/README.md) | `/usage [week\|month]`: local token usage and catalog cost comparison |
 | [`view/`](view/README.md) | Open a path in a configurable GUI editor; defaults to Zed |
 | `web-search/` | Native Anthropic/OpenAI public search |
 | `herdr-session/` | Independent guided sessions and session-bound report transport |

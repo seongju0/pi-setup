@@ -43,6 +43,10 @@ Setup does not change shell startup files.
 for each Pi session by default. Use `/no-sleep off` to disable it or
 `/no-sleep agent` for active agent runs only. The display may still sleep.
 
+[Usage](agent/extensions/usage/README.md) compares retained local session and
+subagent token usage with `/usage [week|month]`, including recorded catalog cost
+estimates. It needs no network access or extra credentials.
+
 [View](agent/extensions/view/README.md) opens the current directory or a supplied
 path with `/view [path]`. It defaults to Zed; set `view.editor` and `view.args` in
 personal Pi settings to choose another GUI editor. Zed is an optional,
