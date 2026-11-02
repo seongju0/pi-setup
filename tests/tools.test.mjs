@@ -68,11 +68,11 @@ test('tool offers: approved install, update discovery/history, install revisits 
     assert.deepEqual(offers.map(tool => tool.id), f.ids);
     assert.equal(await exists(f.history), false);
     assert.equal(await exists(f.calls), false);
-    return ['herdr', 'zed'];
+    return ['herdr-app', 'zed'];
   }, ask: async (key, message, fallback) => {
     if (key === 'apply') {
       assert.equal(fallback, false);
-      assert.ok(f.logs.some(line => line === 'COMMAND brew install herdr'));
+      assert.ok(f.logs.some(line => line === 'COMMAND brew install --cask herdr-app'));
       assert.ok(f.logs.some(line => line === 'COMMAND brew install --cask zed'));
       assert.ok(f.logs.some(line => line.includes('REMEMBER')));
       assert.equal(await exists(f.history), false);
@@ -82,7 +82,7 @@ test('tool offers: approved install, update discovery/history, install revisits 
   } });
   assert.equal(installed.applied, true);
   assert.deepEqual((await read(f.calls)).trim().split('\n').map(JSON.parse), [
-    { owner: 'brew', args: ['install', 'herdr'] },
+    { owner: 'brew', args: ['install', '--cask', 'herdr-app'] },
     { owner: 'brew', args: ['install', '--cask', 'zed'] },
   ]);
   assert.deepEqual(JSON.parse(await read(f.history)).seen, f.ids);
@@ -114,7 +114,7 @@ test('tool offers: approved install, update discovery/history, install revisits 
   assert.ok(JSON.parse(await read(f.history)).seen.includes('new-tool'));
   await f.setup({ selectTools: async offers => {
     selectionCalls++;
-    assert.deepEqual(offers.map(tool => tool.id), [...f.ids.filter(id => !['herdr', 'zed'].includes(id)), 'new-tool']);
+    assert.deepEqual(offers.map(tool => tool.id), [...f.ids.filter(id => !['herdr-app', 'zed'].includes(id)), 'new-tool']);
     assert.ok(offers.every(tool => !tool.selected));
     return [];
   } });
@@ -131,14 +131,16 @@ test('tool offers: approved install, update discovery/history, install revisits 
   // A fresh consumer can explicitly select gh and its dependent extension/skills
   // in one run. Existing CLIs do not hide missing companion skill offers.
   const fresh = await fixture(t);
-  for (const name of ['herdr', 'zed', 'agent-browser']) await fresh.executable(name, 'process.exit(0);');
+  for (const name of ['herdr-app', 'zed', 'agent-browser']) await fresh.executable(name, 'process.exit(0);');
   await fs.mkdir(path.dirname(fresh.history), { recursive: true });
-  await fs.writeFile(fresh.history, JSON.stringify({ seen: ['herdr', 'agent-browser'] }));
+  await fs.writeFile(fresh.history, JSON.stringify({ seen: ['herdr', 'herdr-skill', 'agent-browser'] }));
+  await fs.mkdir(path.join(fresh.target, 'skills/herdr'), { recursive: true });
+  await fs.writeFile(path.join(fresh.target, 'skills/herdr/SKILL.md'), 'client-owned legacy skill');
   await fresh.setup({ toolsMode: 'new', selectTools: async offers => {
-    assert.ok(!offers.some(tool => ['herdr', 'zed', 'agent-browser'].includes(tool.id)));
-    assert.ok(offers.some(tool => tool.id === 'herdr-skill'));
+    assert.ok(!offers.some(tool => ['herdr-app', 'zed', 'agent-browser'].includes(tool.id)));
+    assert.ok(offers.some(tool => tool.id === 'herdr-core-skill'));
     assert.deepEqual(offers.find(tool => tool.id === 'gh-stack').requires, ['gh']);
-    return ['gh', 'gh-stack', 'gh-stack-skill', 'herdr-skill', 'agent-browser-skill'];
+    return ['gh', 'gh-stack', 'gh-stack-skill', 'herdr-core-skill', 'agent-browser-skill'];
   } });
   const skillArgs = (repository, name) => ['skill', 'install', repository, name, '--dir', path.join(fresh.target, 'skills')];
   const nativeCalls = (await read(fresh.calls)).trim().split('\n').map(JSON.parse);
@@ -146,10 +148,11 @@ test('tool offers: approved install, update discovery/history, install revisits 
     { owner: 'brew', args: ['install', 'gh'] },
     { owner: 'gh', args: ['extension', 'install', 'github/gh-stack'] },
     { owner: 'gh', args: skillArgs('github/gh-stack', 'gh-stack') },
-    { owner: 'gh', args: skillArgs('herdrdev/herdr', 'herdr') },
+    { owner: 'gh', args: skillArgs('herdrdev/herdr-core', 'herdr-core') },
     { owner: 'gh', args: skillArgs('vercel-labs/agent-browser', 'agent-browser') },
   ]);
-  for (const name of ['gh-stack', 'herdr', 'agent-browser']) assert.equal(await read(path.join(fresh.target, 'skills', name, 'SKILL.md')), 'synthetic upstream skill');
+  for (const name of ['gh-stack', 'herdr-core', 'agent-browser']) assert.equal(await read(path.join(fresh.target, 'skills', name, 'SKILL.md')), 'synthetic upstream skill');
+  assert.equal(await read(path.join(fresh.target, 'skills/herdr/SKILL.md')), 'client-owned legacy skill');
   assert.equal(await exists(path.join(fresh.home, '.pi/agent/skills')), false);
   await fresh.setup({ selectTools: () => assert.fail('all selected choices already present') });
   assert.equal(await read(fresh.calls), nativeCalls.map(call => JSON.stringify(call)).join('\n') + '\n');
@@ -165,21 +168,21 @@ test('tool boundaries: dry run/cancel/prerequisites stay read-only and failed ap
   assert.equal(await exists(f.history), false);
   await assert.rejects(f.setup({ selectTools: async () => null }), /Cancelled/);
   await assert.rejects(f.setup({ selectTools: async () => ['not-a-tool'] }), /Invalid optional-tool selection/);
-  await assert.rejects(f.setup({ selectTools: async () => ['herdr-skill'] }), /requires selecting GitHub CLI.*nothing changed/);
-  await f.setup({ selectTools: async () => ['herdr'], ask: async (key, _message, fallback) => key === 'apply' ? false : fallback });
+  await assert.rejects(f.setup({ selectTools: async () => ['herdr-core-skill'] }), /requires selecting GitHub CLI.*nothing changed/);
+  await f.setup({ selectTools: async () => ['herdr-app'], ask: async (key, _message, fallback) => key === 'apply' ? false : fallback });
   await fs.unlink(path.join(f.bin, 'brew'));
   await f.setup({ selectTools: async offers => {
-    const herdr = offers.find(tool => tool.id === 'herdr');
+    const herdr = offers.find(tool => tool.id === 'herdr-app');
     assert.equal(herdr.available, false);
     assert.match(herdr.reason, /Missing brew.*Install Homebrew yourself/);
     return [];
   }, ask: async () => false });
-  await assert.rejects(f.setup({ selectTools: async () => ['herdr'] }), /Invalid optional-tool selection/);
+  await assert.rejects(f.setup({ selectTools: async () => ['herdr-app'] }), /Invalid optional-tool selection/);
   assert.equal(await exists(f.history), false);
   assert.equal(await exists(f.calls), false);
   assert.equal(await exists(path.dirname(f.history)), false);
   await f.executable('brew', f.ownerCode);
-  await assert.rejects(f.setup({ env: { ...f.env, TOOL_FAIL: '1' }, selectTools: async () => ['herdr'] }), /Setup stopped:.*failed.*Approved earlier changes may remain.*No rollback/);
+  await assert.rejects(f.setup({ env: { ...f.env, TOOL_FAIL: '1' }, selectTools: async () => ['herdr-app'] }), /Setup stopped:.*failed.*Approved earlier changes may remain.*No rollback/);
   assert.equal(await read(path.join(f.bin, 'partial')), 'approved partial');
   assert.equal(await exists(f.history), false);
   assert.equal(await read(f.settings), f.settingsBytes);
@@ -187,7 +190,7 @@ test('tool boundaries: dry run/cancel/prerequisites stay read-only and failed ap
   // Retry still offers the failed choice. One browser selection runs both
   // approved official steps in order, never a real install or download.
   await f.setup({ selectTools: async offers => {
-    assert.equal(offers.find(tool => tool.id === 'herdr').seen, false);
+    assert.equal(offers.find(tool => tool.id === 'herdr-app').seen, false);
     return ['agent-browser'];
   } });
   const calls = (await read(f.calls)).trim().split('\n').map(line => JSON.parse(line));
@@ -223,20 +226,20 @@ test('tool boundaries: dry run/cancel/prerequisites stay read-only and failed ap
   assert.equal(await read(f.settings), f.settingsBytes);
   await f.setup({ env: { ...f.env, GH_NO_SKILLS: '1' }, selectTools: async offers => {
     assert.ok(!offers.some(tool => ['gh', 'gh-stack', 'gh-stack-skill', 'agent-browser-skill'].includes(tool.id)));
-    const herdr = offers.find(tool => tool.id === 'herdr-skill');
+    const herdr = offers.find(tool => tool.id === 'herdr-core-skill');
     assert.equal(herdr.available, false);
     assert.match(herdr.reason, /no gh skill support/);
     return [];
   }, ask: async () => false });
   await f.setup({ selectTools: async offers => {
     assert.ok(!offers.some(tool => ['gh', 'gh-stack', 'gh-stack-skill', 'agent-browser-skill'].includes(tool.id)));
-    return ['herdr-skill'];
+    return ['herdr-core-skill'];
   } });
   assert.equal(await read(path.join(f.target, 'skills/gh-stack/SKILL.md')), 'client-owned');
   assert.equal(await fs.readlink(path.join(f.target, 'skills/agent-browser')), path.join(f.home, 'missing-owner-content'));
-  assert.equal(await read(path.join(f.target, 'skills/herdr/SKILL.md')), 'synthetic upstream skill');
+  assert.equal(await read(path.join(f.target, 'skills/herdr-core/SKILL.md')), 'synthetic upstream skill');
   assert.deepEqual(JSON.parse((await read(f.calls)).trim().split('\n').at(-1)), {
-    owner: 'gh', args: ['skill', 'install', 'herdrdev/herdr', 'herdr', '--dir', path.join(f.target, 'skills')],
+    owner: 'gh', args: ['skill', 'install', 'herdrdev/herdr-core', 'herdr-core', '--dir', path.join(f.target, 'skills')],
   });
   assert.equal(await read(f.settings), f.settingsBytes);
   const badHistory = '{bad';

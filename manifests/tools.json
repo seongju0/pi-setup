@@ -27,22 +27,22 @@
     "commands": [{ "executable": "gh", "args": ["skill", "install", "github/gh-stack", "gh-stack", "--dir", "{skillsDir}"] }]
   },
   {
-    "id": "herdr",
-    "name": "Herdr",
-    "executable": "herdr",
+    "id": "herdr-app",
+    "name": "Herdr App",
+    "executable": "herdr-app",
     "prerequisite": "brew",
-    "instructions": "Install Homebrew yourself using https://brew.sh, then rerun install.",
-    "source": "https://herdr.dev/docs/install/",
-    "commands": [{ "executable": "brew", "args": ["install", "herdr"] }]
+    "instructions": "Requires Apple Silicon macOS and Homebrew. Install Homebrew yourself using https://brew.sh, then rerun install. Open Herdr App to complete any required herdr-core (hc) setup.",
+    "source": "https://github.com/herdrdev/herdr-app#install",
+    "commands": [{ "executable": "brew", "args": ["install", "--cask", "herdr-app"] }]
   },
   {
-    "id": "herdr-skill",
-    "name": "Herdr companion skill (separate from the CLI)",
-    "skill": "herdr",
+    "id": "herdr-core-skill",
+    "name": "herdr-core companion skill (hc and Herdr App guidance)",
+    "skill": "herdr-core",
     "prerequisite": "gh",
-    "instructions": "Requires GitHub CLI with gh skill support. Select GitHub CLI above or update it yourself through its existing owner.",
-    "source": "https://herdr.dev/agent-guide.md",
-    "commands": [{ "executable": "gh", "args": ["skill", "install", "herdrdev/herdr", "herdr", "--dir", "{skillsDir}"] }]
+    "instructions": "Requires GitHub CLI with gh skill support. Select GitHub CLI above or update it yourself through its existing owner. This installs guidance only, not hc or Herdr App.",
+    "source": "https://github.com/herdrdev/herdr-core/tree/master/skills/herdr-core",
+    "commands": [{ "executable": "gh", "args": ["skill", "install", "herdrdev/herdr-core", "herdr-core", "--dir", "{skillsDir}"] }]
   },
   {
     "id": "zed",

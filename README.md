@@ -36,8 +36,9 @@ Setup does not change shell startup files.
 - [Global instructions](agent/AGENTS.md) and an optional
   [preference template](agent/settings.base.json).
 - Optional [Pi packages](manifests/packages.json) and
-  [tools/companion skills](manifests/tools.json), including gh-stack, Herdr, Zed,
-  and agent-browser. These are installed from upstream, not bundled here.
+  [tools/companion skills](manifests/tools.json), including gh-stack, Herdr App,
+  herdr-core guidance, Zed, and agent-browser. These are installed from upstream,
+  not bundled here.
 
 [No-sleep](agent/extensions/no-sleep/README.md) keeps macOS from idle-system sleep
 for each Pi session by default. Use `/no-sleep off` to disable it or
@@ -81,6 +82,14 @@ Update output separates the source revision, setup preview, and applied changes.
 Detected optional tools/skills are summarized and left untouched; detection does
 not verify their version or health. Use `pi-setup check` for paths and details.
 External packages and tools keep their own update mechanisms.
+
+Herdr offers target the current App/core workflow: `brew install --cask herdr-app`
+(Apple Silicon macOS) and the `herdr-core` skill from `herdrdev/herdr-core`.
+Open Herdr App to complete any required hc setup; installing the skill installs
+guidance only. The new offer IDs are distinct from legacy Herdr choices, so old
+choice history does not hide the replacements. Setup does not remove the legacy
+CLI or skill. Back up the old `herdr` skill outside active skill roots when
+replacing it; `/skills update` then follows the new skill's GitHub metadata.
 
 Use `PI_CODING_AGENT_DIR` for a custom Pi directory or `PI_SETUP_HOME` for another
 managed installation location.

@@ -21,6 +21,12 @@ Commands:
 
 `/skills update` only updates user-scoped GitHub skills and packages that provide currently listed skills. It reports the native updater output (including available versions/change notes when the owner provides them), reports skipped repository/tool/symlink/personal skills with their management instruction, and reloads only when output indicates a change. It never infers or runs an arbitrary command from a skill's frontmatter, adopts an untracked repository, or changes project skills.
 
+The current Herdr companion is `herdr-core` from `herdrdev/herdr-core`. Its
+GitHub metadata lets this updater follow the correct source normally; no
+Herdr-specific update logic is needed. The legacy `herdr` skill tracks a different
+repository. Replace it explicitly, moving any backup outside active skill roots;
+`/skills update` does not rename skills or migrate between repositories.
+
 GWS skills should remain tied to the installed `gws` tool. Update that tool first, then deliberately regenerate/select its skills; `gws generate-skills` writes a broad skill set in the current directory, so it is intentionally not called here.
 
 ## Checks

@@ -16,7 +16,7 @@ const original = process.env.PI_CODING_AGENT_DIR;
 async function skill(name, body) { const dir = join(agent, 'skills', name); await mkdir(dir, { recursive: true }); await writeFile(join(dir, 'SKILL.md'), body); return dir; }
 try {
   process.env.PI_CODING_AGENT_DIR = agent;
-  await skill('remote', '---\nname: remote\ndescription: remote\nmetadata:\n  github-repo: https://github.com/acme/remote\n---\n');
+  await skill('herdr-core', '---\nname: herdr-core\ndescription: hc and Herdr App guidance\nmetadata:\n  github-repo: herdrdev/herdr-core\n---\n');
   await skill('local', '---\nname: local\ndescription: local\n---\n');
   await skill('gws-docs', '---\nname: gws-docs\ndescription: generated\nmetadata:\n  version: 1\n---\n');
   const owner = join(scratch, 'terminal-browser-owner');
@@ -34,7 +34,7 @@ try {
   const ctx = { cwd: scratch, ui: { notify: (message, type) => notices.push({ message, type }), setStatus() {} }, waitForIdle: async () => {}, reload: async () => {} };
   await command.handler('', ctx);
   const list = notices.at(-1).message;
-  assert.match(list, /remote.*github.*acme\/remote/);
+  assert.match(list, /herdr-core.*github.*herdrdev\/herdr-core/);
   assert.match(list, /local.*personal.*local/);
   assert.match(list, /gws-docs.*tool.*googleworkspace\/cli/);
   assert.match(list, /terminal-browser.*symlink/);
