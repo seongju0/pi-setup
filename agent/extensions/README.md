@@ -27,7 +27,8 @@ policy. Local analysis guidance and MCP protections remain external additions.
 See their READMEs for composition and permission boundaries. The Herdr tools
 retain their public names but require `hc` and an interactive Pi TUI with a live
 `HC_TERMINAL_ID`; they do not use the legacy worker-control backend. The research
-skill continues to use RPC subagents, not these terminal launchers. Do not copy a
+skill uses these hc-backed workers and their session-bound report mailboxes.
+The RPC subagent extension remains available for other workflows. Do not copy a
 tool-managed Herdr integration into this directory.
 
 Source is not automatically installed or linked from this checkout.

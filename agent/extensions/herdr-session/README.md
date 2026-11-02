@@ -22,8 +22,8 @@ Do not copy a tool-generated Pi integration into this project.
 | `herdr_research_guide` | Queue follow-up guidance for a worker owned by this session |
 
 The existing research tool names and stored run/session bindings are retained.
-The research skill uses subagents; these Herdr tools also support separately
-configured local read-only workflows.
+The research skill uses these hc-backed tools with file-only reports and queued
+follow-up guidance. They also support separately configured local read-only workflows.
 
 `/herdr [workspace] [--cwd path] [--model provider/model] [--label text]
 [--handoff file] [--append-system-prompt file]` starts an independent session.

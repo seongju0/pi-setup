@@ -13,9 +13,7 @@ const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(jo
 const extensionsDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const extensionPath = join(extensionsDir, 'herdr-session/index.ts');
 const skillsDir = join(dirname(extensionsDir), 'skills');
-const handoffPath = join(skillsDir, 'handoff/SKILL.md');
-const researchPath = join(skillsDir, 'research/SKILL.md');
-const researchBefore = await readFile(researchPath, 'utf8');
+
 const adapterPath = join(scratch, 'local-workflow.ts');
 const realSetInterval = global.setInterval;
 const realClearInterval = global.clearInterval;
@@ -413,10 +411,9 @@ if (program === 'hc') {
   assert(partial.workers[0].error && partial.workers[1].session.deliveryState === 'accepted');
   assert(partial.workers[0].session.name && partial.workers[0].session.sessionPath);
   assert(!(await calls()).some(call => call.method === 'terminal.send'));
-  assert.equal(await readFile(researchPath, 'utf8'), researchBefore);
   const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = await import(pathToFileURL(join(packageRoot, 'dist/index.js')));
   const settingsManager = SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false }, retry: { enabled: false } });
-  const skillRoutes = [['handoff', 'herdr_new_session'], ['research', 'subagent']];
+  const skillRoutes = [['handoff', 'herdr_new_session'], ['research', 'herdr_research_start']];
   const skillPaths = skillRoutes.map(([name]) => join(skillsDir, name, 'SKILL.md'));
   const resourceLoader = new DefaultResourceLoader({ cwd: scratch, agentDir: scratch, settingsManager, appendSystemPrompt: [guidance], additionalSkillPaths: skillPaths, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
   await resourceLoader.reload();
@@ -454,7 +451,7 @@ if (program === 'hc') {
     for (const [name, tool] of skillRoutes) {
       const skill = loadedSkills.skills.find(skill => skill.name === name);
       assert(skill && skill.disableModelInvocation, `${name} must load as an explicitly invoked skill`);
-      if (name !== 'research') assert(parent.extension.tools.has(tool), `${name}'s launch tool must be registered`);
+      assert(parent.extension.tools.has(tool), `${name}'s launch tool must be registered`);
       await session.prompt(`/skill:${name} SYNTHETIC_REQUEST_${name}`);
       const user = requests.at(-1).messages.filter(message => message.role === 'user').at(-1);
       const expanded = typeof user.content === 'string' ? user.content : user.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
