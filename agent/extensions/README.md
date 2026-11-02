@@ -15,7 +15,7 @@ vendored Pi runtime is needed.
 | [`usage/`](usage/README.md) | `/usage [week\|month]`: local token usage and catalog cost comparison |
 | [`view/`](view/README.md) | Open a path in a configurable GUI editor; defaults to Zed |
 | `web-search/` | Native Anthropic/OpenAI public search |
-| `herdr-session/` | Independent guided sessions and session-bound report transport |
+| [`herdr-session/`](herdr-session/README.md) | hc-backed independent Pi tabs, parent-owned research terminals, and session-bound report transport |
 | `subagent/` | Parent-owned background workers and selected MCP capabilities |
 | `lib/models.ts` | Shared physical-model availability check; not an extension entry point |
 
@@ -24,7 +24,10 @@ The loader check also covers entry points without a dedicated suite.
 
 Herdr sessions and subagents share physical-model validation, not workflow
 policy. Local analysis guidance and MCP protections remain external additions.
-See their READMEs for composition and permission boundaries. Do not copy a
+See their READMEs for composition and permission boundaries. The Herdr tools
+retain their public names but require `hc` and an interactive Pi TUI with a live
+`HC_TERMINAL_ID`; they do not use the legacy worker-control backend. The research
+skill continues to use RPC subagents, not these terminal launchers. Do not copy a
 tool-managed Herdr integration into this directory.
 
 Source is not automatically installed or linked from this checkout.

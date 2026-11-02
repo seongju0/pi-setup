@@ -1,5 +1,3 @@
-// Run: node agent/extensions/herdr-session/tests/test.mjs
-// Uses Pi's actual extension loader and a fake Herdr CLI; no Herdr agents or provider calls.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const scratch = await mkdtemp(join(tmpdir(), 'herdr-research-test-'));
+const scratch = await mkdtemp(join(tmpdir(), 'hc-research-test-'));
 const environment = { ...process.env };
 process.env.PI_CODING_AGENT_DIR = scratch;
 const packageRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@earendil-works/pi-coding-agent');
@@ -16,7 +14,8 @@ const extensionsDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const extensionPath = join(extensionsDir, 'herdr-session/index.ts');
 const skillsDir = join(dirname(extensionsDir), 'skills');
 const handoffPath = join(skillsDir, 'handoff/SKILL.md');
-const handoffBefore = await readFile(handoffPath, 'utf8');
+const researchPath = join(skillsDir, 'research/SKILL.md');
+const researchBefore = await readFile(researchPath, 'utf8');
 const adapterPath = join(scratch, 'local-workflow.ts');
 const realSetInterval = global.setInterval;
 const realClearInterval = global.clearInterval;
@@ -27,8 +26,15 @@ global.setInterval = (callback) => { const timer = { callback, unref() {} }; tim
 global.clearInterval = (timer) => timers.delete(timer);
 
 async function instance(id, branch = [], worker) {
-  process.env.HERDR_RESEARCH_DIR = worker?.run ?? '';
-  process.env.HERDR_RESEARCH_WORKER = worker?.id ?? '';
+  const coreId = worker?.terminalId ?? 't1';
+  function activate() {
+    process.env.HC_TERMINAL_ID = coreId;
+    process.env.HERDR_RESEARCH_DIR = worker?.run ?? '';
+    process.env.HERDR_RESEARCH_WORKER = worker?.id ?? '';
+    if (worker) process.env.PI_HERDR_MANAGED = '1';
+    else delete process.env.PI_HERDR_MANAGED;
+  }
+  activate();
   const runtime = createExtensionRuntime();
   const state = { branch: structuredClone(branch), messages: [], queued: [], warnings: [], busy: false };
   runtime.appendEntry = (customType, data) => state.branch.push({ type: 'custom', customType, data: structuredClone(data) });
@@ -42,32 +48,34 @@ async function instance(id, branch = [], worker) {
   const extension = loaded.extensions[0];
   const tools = new Map(loaded.extensions.flatMap(extension => [...extension.tools]));
   assert.equal(runtime.pendingVirtualModelRegistrations.length, 0);
-  const models = [{ provider: 'test', id: 'chosen' }, { provider: 'anthropic', id: 'claude-sonnet-5-5' }, { provider: 'anthropic', id: 'claude-opus-5-5' }, { provider: 'openai', id: 'gpt-6.1-sol' }, { provider: 'openai', id: 'gpt-6-luna' }, { provider: 'anthropic', id: 'unsafe-router', api: 'pi-virtual' }];
+  const models = [{ provider: 'test', id: 'chosen' }, { provider: 'anthropic', id: 'claude-sonnet-5-5' }, { provider: 'anthropic', id: 'claude-opus-5-5' }, { provider: 'openai', id: 'gpt-6.1-sol' }, { provider: 'anthropic', id: 'unsafe-router', api: 'pi-virtual' }];
   const ctx = {
     cwd: scratch, mode: 'tui', model: models.find(model => model.provider === 'openai'),
-    sessionManager: { getSessionId: () => id, getBranch: () => state.branch },
+    sessionManager: { getSessionId: () => id, getSessionFile: () => join(scratch, `${id}.jsonl`), getBranch: () => state.branch },
     modelRegistry: { find: (provider, name) => models.find(model => provider === model.provider && name === model.id), getAvailable: () => models },
     ui: { notify: (message) => state.warnings.push(message) },
     hasPendingMessages: () => state.queued.length > 0,
   };
-  const emit = async (event) => { for (const extension of loaded.extensions) for (const handler of extension.handlers.get(event.type) ?? []) await handler(event, ctx); };
-  const call = (name, params, signal) => tools.get(name).definition.execute('test', params, signal, undefined, ctx);
+  const emit = async (event) => { activate(); for (const extension of loaded.extensions) for (const handler of extension.handlers.get(event.type) ?? []) await handler(event, ctx); };
+  const call = (name, params, signal) => { activate(); return tools.get(name).definition.execute('test', params, signal, undefined, ctx); };
   ctx.executeTool = async (name, args, options) => {
     const toolCall = { id: 'local-call', name, arguments: args };
     const result = await call(name, args, options?.signal);
     return { toolCall, result, isError: result.isError === true };
   };
   runtime.createContext = () => ctx;
-  const item = { ...state, state, ctx, call, emit, extension };
+  const item = { ...state, state, ctx, call, emit, extension, activate };
   instances.push(item);
   await emit({ type: 'session_start', reason: 'startup' });
   return item;
 }
 async function tick() { for (const timer of [...timers]) await timer.callback(); }
-async function calls() { return (await readFile(join(scratch, 'calls.jsonl'), 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse); }
+async function calls() { return (await readFile(join(scratch, 'calls.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse); }
+async function launches() { return (await calls()).filter(call => call.method === 'terminal.run').map(call => call.params); }
+async function coreState() { return JSON.parse(await readFile(join(scratch, 'state.json'), 'utf8')); }
+async function saveState(state) { await writeFile(join(scratch, 'state.json'), JSON.stringify(state)); }
 
 try {
-  // A synthetic LOCAL extension owns workflow guidance and model choice, not the foundation.
   await writeFile(adapterPath, `import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 export default function (pi) {
@@ -92,225 +100,223 @@ export default function (pi) {
     }
   });
 }`);
-  await writeFile(join(scratch, 'herdr'), `#!/usr/bin/env node
+  const fake = String.raw`#!/usr/bin/env node
 const fs = require('node:fs');
+const path = require('node:path');
+const root = process.env.TEST_HC_ROOT;
+const stateFile = path.join(root, 'state.json');
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.TEST_HERDR_LOG, JSON.stringify(args) + '\\n');
-let result = {};
-if (args[0] === 'workspace') result = { workspaces: [{ workspace_id: 'test-w', label: 'test' }] };
-if (args[0] === 'tab') { const n = fs.readFileSync(process.env.TEST_HERDR_LOG, 'utf8').split('\\n').length; result = { root_pane: { pane_id: 'test-w:p' + n }, tab: { tab_id: 'test-w:t' + n } }; }
-if (args[0] === 'agent' && args[1] === 'start' && process.env.TEST_BUSY_START === '1' && !fs.existsSync(process.env.TEST_HERDR_LOG + '.busy')) { fs.writeFileSync(process.env.TEST_HERDR_LOG + '.busy', '1'); console.error(JSON.stringify({ error: { code: 'agent_pane_busy' } })); process.exit(1); }
-if (args[0] === 'agent' && args[1] === 'start' && process.env.TEST_FAIL_ONCE === '1' && !fs.existsSync(process.env.TEST_HERDR_LOG + '.failed-once')) { fs.writeFileSync(process.env.TEST_HERDR_LOG + '.failed-once', '1'); console.error('simulated startup failure'); process.exit(1); }
-if (args[0] === 'agent' && args[1] === 'start' && process.env.TEST_FAIL_START === '1') { console.error('simulated startup failure'); process.exit(1); }
-if (args[0] === 'agent' && args[1] === 'start') {
-  const file = process.env.TEST_HERDR_LOG + '.' + args[2] + '.session';
-  const id = args[args.indexOf('--session-id') + 1];
-  const prompt = args.at(-1).startsWith('Read and follow') ? args.at(-1) : undefined;
-  const entries = [{ type: 'session', id: process.env.TEST_WRONG_SESSION === '1' ? 'wrong' : id }];
-  if (prompt && process.env.TEST_NO_ACCEPT !== '1') entries.push({ type: 'message', message: { role: 'user', content: [{ type: 'text', text: prompt }] } });
-  fs.writeFileSync(file + '.' + id, entries.map(JSON.stringify).join('\\n'));
-  fs.writeFileSync(file, file + '.' + id);
-  fs.writeFileSync(process.env.TEST_HERDR_LOG + '.' + args[args.indexOf('--pane') + 1] + '.session', file + '.' + id);
-  if (process.env.TEST_NOT_READY === '1') { console.error(JSON.stringify({ error: { code: 'agent_not_ready' } })); process.exit(1); }
-  if (process.env.TEST_START_TIMEOUT === '1') { console.error(JSON.stringify({ error: { code: 'timeout', message: 'timed out waiting for agent startup' } })); process.exit(1); }
+const program = path.basename(process.argv[1]);
+function load() { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); }
+function save(state) { fs.writeFileSync(stateFile, JSON.stringify(state)); }
+function log(call) { fs.appendFileSync(path.join(root, 'calls.jsonl'), JSON.stringify(call) + '\n'); }
+function terminal(state, address) { return Object.values(state.terminals).find(t => t.address === address || t.name === address); }
+if (program === 'hc') {
+  if (args[0] !== 'connect') throw new Error('Only hc connect is allowed in this fixture');
+  let input = '';
+  process.stdin.on('data', data => input += data);
+  process.stdin.on('end', () => {
+    const request = JSON.parse(input.trim());
+    const { method, params } = request;
+    log({ program, method, params });
+    const state = load();
+    let result;
+    let error;
+    if (method === 'terminal.run') {
+      const file = params.argv[params.argv.indexOf('--session') + 1];
+      const entries = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+      const originalId = entries[0].id;
+      if (process.env.TEST_WRONG_SESSION === '1') entries[0].id = 'wrong';
+      const prompt = params.argv.includes('--') ? params.argv.at(-1) : undefined;
+      if (prompt && process.env.TEST_NO_ACCEPT !== '1') entries.push({ type: 'message', id: 'initial-user', parentId: null, timestamp: new Date().toISOString(), message: { role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() } });
+      fs.writeFileSync(file, entries.map(JSON.stringify).join('\n') + '\n');
+      const address = 't' + state.next++;
+      result = { address, name: params.name, argv: params.argv, cwd: params.cwd, labels: { ...params.labels, 'pi.session-id': originalId }, parent: params.no_parent ? null : params.parent, keep: params.keep, notify: !params.no_notify, state: 'live', reported: true, status: { app: 'pi', state: 'idle' }, created_ms: Date.now(), screen: 'exact', cols: 100, rows: 40 };
+      state.terminals[address] = result;
+      if (params.labels?.['herdr.space']) {
+        const space = state.spaces.find(s => s.id === params.labels['herdr.space']);
+        for (const s of state.spaces) { s.active = false; for (const t of s.tabs) t.active = false; }
+        space.active = true;
+        const tab = { id: params.labels['herdr.tab'], name: 'new tab', active: true, terminals: [{ terminal: address, pane: 'p' + address, app: 'pi', status: 'idle' }] };
+        space.tabs.push(tab);
+        state.focus = { space: space.id, tab: tab.id, focused_pane: 'p' + address };
+      }
+      save(state);
+      if (process.env.TEST_LOST_ACK === '1') { console.error('connection lost after launch'); process.exit(1); }
+      if (process.env.TEST_FAIL_ONCE === '1' && !state.failedOnce) {
+        state.failedOnce = true; save(state); error = { code: -32000, message: 'simulated launch failure', data: { kind: 'spawn_failed' } };
+      }
+    } else if (method === 'terminal.get') {
+      result = terminal(state, params.terminal);
+      if (!result) error = { code: -32000, message: 'not found', data: { kind: 'not_found' } };
+    } else if (method === 'terminal.wait') {
+      result = { terminal: params.terminal, ended: true, reason: 'status', status: 'idle', turn: 0, children: [] };
+    } else if (method === 'terminal.label') {
+      result = terminal(state, params.terminal);
+      if (!result) throw new Error('Unknown label target');
+      Object.assign(result.labels, params.labels); save(state);
+    } else throw new Error('Unsupported method: ' + method);
+    console.log(JSON.stringify(error ? { jsonrpc: '2.0', id: request.id, error } : { jsonrpc: '2.0', id: request.id, result }));
+  });
+} else {
+  log({ program, args });
+  const state = load();
+  if (args[0] === 'ls') console.log(JSON.stringify({ spaces: state.spaces, recent: [] }));
+  else if (args[0] === 'status') console.log(JSON.stringify({ ...state.focus, errors: [] }));
+  else if (args[0] === 'do') {
+    const command = args[1];
+    let values;
+    if (args[2]?.startsWith('{')) values = JSON.parse(args[2]);
+    else { values = {}; for (let i = 2; i < args.length; i += 2) values[args[i].replace(/^--/, '')] = args[i + 1]; }
+    if (command === 'tab.rename') {
+      if (process.env.TEST_APP_FAILURE === '1') { console.log(JSON.stringify({ error: 'rename failed' })); process.exit(0); }
+      const tab = state.spaces.flatMap(s => s.tabs).find(t => t.id === values.id);
+      if (!tab) throw new Error('Unknown tab');
+      tab.name = values.name;
+    } else if (command === 'tab.select') {
+      for (const space of state.spaces) {
+        space.active = space.tabs.some(tab => tab.id === values.id);
+        for (const tab of space.tabs) {
+          tab.active = tab.id === values.id;
+          if (tab.active) state.focus = { space: space.id, tab: tab.id, focused_pane: tab.terminals[0].pane };
+        }
+      }
+    } else throw new Error('Unexpected app mutation: ' + command);
+    save(state); console.log(JSON.stringify({ ok: true }));
+  } else throw new Error('Unsupported app command');
 }
-if (args[0] === 'agent' && args[1] === 'get') {
-  const file = process.env.TEST_HERDR_LOG + '.' + args[2] + '.session';
-  if ((process.env.TEST_NO_AGENT_NAME === '1' && !args[2].startsWith('test-w:p')) ||
-      (process.env.TEST_DELAYED_DETECTION === '1' && !fs.existsSync(file + '.detected'))) {
-    fs.writeFileSync(file + '.detected', '1');
-    console.error(JSON.stringify({ error: { code: 'agent_not_found' } })); process.exit(1);
-  }
-  if (process.env.TEST_DELAYED_ACCEPT === '1' && !fs.existsSync(file + '.seen')) { fs.writeFileSync(file + '.seen', '1'); result = { agent: { agent_status: 'unknown' } }; }
-  else result = { agent: { agent_status: 'working', agent_session: { kind: 'path', value: fs.readFileSync(file, 'utf8') } } };
-}
-console.log(JSON.stringify({ result }));
-`, { mode: 0o700 });
+`;
+  for (const name of ['hc', 'herdr-app']) await writeFile(join(scratch, name), fake, { mode: 0o700 });
+  await writeFile(join(scratch, 'herdr'), '#!/bin/sh\necho "Legacy Herdr must not be called" >&2\nexit 99\n', { mode: 0o700 });
   process.env.PATH = `${scratch}:${process.env.PATH}`;
-  process.env.HERDR_ENV = '1';
-  process.env.HERDR_WORKSPACE_ID = 'test-w';
-  process.env.TEST_HERDR_LOG = join(scratch, 'calls.jsonl');
-  await writeFile(process.env.TEST_HERDR_LOG, '');
-
+  process.env.TEST_HC_ROOT = scratch;
+  delete process.env.HERDR_ENV;
+  delete process.env.HERDR_WORKSPACE_ID;
+  await writeFile(join(scratch, 'calls.jsonl'), '');
+  await saveState({ next: 2, terminals: { t1: { address: 't1', name: 'parent', state: 'live', labels: { 'herdr.space': 'test-space' }, status: { app: 'pi', state: 'idle' } } }, spaces: [
+    { id: 'test-space', name: 'test', machine: null, active: true, tabs: [{ id: 'parent-tab', name: 'parent', active: true, terminals: [{ terminal: 't1', pane: 'parent-pane' }] }] },
+    { id: 'other-space', name: 'other', machine: null, active: false, tabs: [] },
+    { id: 'remote/space', name: 'remote', machine: 'remote', active: false, tabs: [] },
+  ], focus: { space: 'test-space', tab: 'parent-tab', focused_pane: 'parent-pane' } });
   await mkdir(join(scratch, 'nested'));
   for (const file of ['brief with spaces.md', 'engineering.md', 'independent.md']) await writeFile(join(scratch, file), '# Synthetic handoff');
-  const parent = await instance('parent');
-  assert.equal(timers.size, 0, 'ordinary sessions must not watch research');
-  process.env.TEST_BUSY_START = '1';
-  await parent.call('herdr_new_session', { handoff: 'brief with spaces.md' });
-  delete process.env.TEST_BUSY_START;
-  assert.equal((await calls()).filter((args) => args[1] === 'start').length, 2, 'retry only pre-start shell readiness errors');
-  let history = await calls();
-  assert(history.find((args) => args[0] === 'tab').includes('--no-focus'));
-  assert(!history.find((args) => args[1] === 'start').includes('--model'), 'default launch must use Pi defaults');
-  assert(!history.find((args) => args[1] === 'start').includes('--append-system-prompt'), 'ordinary handoffs must not inject guidance');
-  assert(history.filter((args) => args[1] === 'start').at(-1).at(-1).includes('brief with spaces.md'));
-  assert(!history.some((args) => args[1] === 'prompt'), 'handoff must use native initial prompt, not terminal input');
-  const beforeBadPaths = (await calls()).length;
-  await assert.rejects(parent.call('herdr_new_session', { handoff: 'missing-brief.md' }), /ENOENT/);
-  await writeFile(join(scratch, 'empty-brief.md'), ' ');
-  await assert.rejects(parent.call('herdr_new_session', { handoff: 'empty-brief.md' }), /is empty/);
-  await assert.rejects(parent.call('herdr_new_session', { cwd: 'missing-directory' }), /ENOENT/);
-  await assert.rejects(parent.call('herdr_new_session', { cwd: 'brief with spaces.md' }), /not a directory/);
-  const cancelled = new AbortController();
-  cancelled.abort();
-  await assert.rejects(parent.call('herdr_new_session', {}, cancelled.signal), /abort/i);
-  assert.equal((await calls()).length, beforeBadPaths, 'preflight/cancellation must create no tabs');
-  process.env.TEST_DELAYED_ACCEPT = '1';
-  const delayed = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
-  delete process.env.TEST_DELAYED_ACCEPT;
-  assert.equal(delayed.details.deliveryState, 'accepted');
-  process.env.TEST_NOT_READY = '1';
-  const workingAtStartup = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
-  delete process.env.TEST_NOT_READY;
-  assert.equal(workingAtStartup.details.deliveryState, 'accepted', 'native prompt acceptance survives readiness failure without restarting');
-  process.env.TEST_START_TIMEOUT = '1';
-  const beforeTimeout = (await calls()).filter(args => args[1] === 'start').length;
-  process.env.TEST_NO_AGENT_NAME = '1';
-  process.env.TEST_DELAYED_DETECTION = '1';
-  const acceptedAfterTimeout = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
-  delete process.env.TEST_NO_AGENT_NAME;
-  delete process.env.TEST_DELAYED_DETECTION;
-  assert.equal(acceptedAfterTimeout.details.launchState, 'started');
-  assert.equal(acceptedAfterTimeout.details.deliveryState, 'accepted', 'pane acknowledgement survives a missing name and delayed agent detection');
-  assert.deepEqual((await calls()).filter(args => args[1] === 'get').slice(-2).map(args => args[2]),
-    [acceptedAfterTimeout.details.paneId, acceptedAfterTimeout.details.paneId], 'retry only the returned pane lookup, not the missing name');
-  assert.equal((await calls()).filter(args => args[1] === 'start').length, beforeTimeout + 1, 'timeout recovery must not relaunch');
-  process.env.TEST_NO_ACCEPT = '1';
-  const timeoutAbort = new AbortController();
-  const timeoutAbortTimer = setTimeout(() => timeoutAbort.abort(), 500);
-  const unacceptedAfterTimeout = await parent.call('herdr_new_session', { handoff: 'engineering.md' }, timeoutAbort.signal);
-  clearTimeout(timeoutAbortTimer);
-  delete process.env.TEST_NO_ACCEPT;
-  delete process.env.TEST_START_TIMEOUT;
-  assert.equal(unacceptedAfterTimeout.isError, true, 'timeout without prompt acceptance must remain a failure');
-  assert.equal(unacceptedAfterTimeout.details.session.deliveryState, 'unconfirmed');
-  assert(unacceptedAfterTimeout.details.session.tabId && unacceptedAfterTimeout.details.session.paneId);
-  assert.equal((await calls()).filter(args => args[1] === 'start').length, beforeTimeout + 2, 'unaccepted timeout must not relaunch either');
-  process.env.TEST_WRONG_SESSION = '1';
-  const wrongSession = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
-  delete process.env.TEST_WRONG_SESSION;
-  assert.equal(wrongSession.isError, true);
-  assert.equal(wrongSession.details.session.deliveryState, 'unconfirmed');
-  assert.match(wrongSession.details.message, /switched sessions/);
-  process.env.TEST_NO_ACCEPT = '1';
-  const beforeStalled = (await calls()).filter(args => args[1] === 'start').length;
-  const noReceipt = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
-  assert.equal(noReceipt.isError, true, 'CLI success without accepted prompt must not report launch success');
-  assert.equal(noReceipt.details.session.launchState, 'started');
-  assert.equal(noReceipt.details.session.deliveryState, 'unconfirmed');
-  assert.equal((await calls()).filter(args => args[1] === 'start').length, beforeStalled + 1, 'never relaunch or resend a stalled handoff');
-  const stopDelivery = new AbortController();
-  const stopTimer = setTimeout(() => stopDelivery.abort(), 500);
-  const stopped = await parent.call('herdr_new_session', { handoff: 'engineering.md' }, stopDelivery.signal);
-  clearTimeout(stopTimer);
-  delete process.env.TEST_NO_ACCEPT;
-  assert.equal(stopped.isError, true);
-  assert(stopped.details.session.tabId && stopped.details.session.paneId, 'cancelled launch retains recovery identifiers');
-  assert.equal(parent.state.branch.length, 0, 'handoff must not register research');
-  assert.equal(timers.size, 0);
-  await parent.call('herdr_new_session', { model: 'test/chosen', cwd: 'nested', workspace: 'test', label: 'handoff' });
-  history = await calls();
-  assert.deepEqual(history.filter((args) => args[1] === 'start').at(-1).slice(-2), ['--model', 'test/chosen']);
-  assert(history.filter((args) => args[0] === 'tab').at(-1).includes(join(scratch, 'nested')));
-
-  const engineering = (await parent.call('herdr_new_session', { model: 'openai/gpt-6.1-sol', handoff: 'engineering.md' })).details;
-  assert.equal(engineering.model, 'openai/gpt-6.1-sol');
-  assert.equal(parent.state.branch.length, 0, 'physical-model handoff remains independent');
-  assert.equal(engineering.deliveryState, 'accepted');
-  assert((await calls()).filter(args => args[1] === 'start').at(-1).includes('openai/gpt-6.1-sol'));
-
   const guidance = join(scratch, 'guidance with spaces.md');
   await writeFile(guidance, '# Analyst guidance\nDo not spawn agents; share files only.');
   await writeFile(join(scratch, 'empty-guidance.md'), '  \n');
-  const beforeInvalid = (await calls()).length;
-  await assert.rejects(parent.call('herdr_new_session', { appendSystemPrompt: 'missing-guidance.md' }), /ENOENT/);
-  await assert.rejects(parent.call('herdr_new_session', { appendSystemPrompt: 'empty-guidance.md' }), /is empty/);
-  assert.equal((await calls()).length, beforeInvalid, 'invalid guidance must fail before contacting Herdr');
-  const injected = (await parent.call('herdr_new_session', { appendSystemPrompt: 'guidance with spaces.md', cwd: 'nested' })).details;
-  assert.equal(injected.appendSystemPrompt, guidance, 'relative guidance resolves against caller, not destination cwd');
-  assert.deepEqual((await calls()).filter((args) => args[1] === 'start').at(-1).slice(-2), ['--append-system-prompt', guidance]);
-  await parent.extension.commands.get('herdr').handler('--model test/chosen --append-system-prompt "guidance with spaces.md"', parent.ctx);
-  assert.deepEqual((await calls()).filter((args) => args[1] === 'start').at(-1).slice(-4), ['--model', 'test/chosen', '--append-system-prompt', guidance]);
-
-  assert(!parent.extension.tools.has('herdr_analysis_start'), 'foundation must not register local workflow policy');
-  assert(!parent.extension.tools.has('local_workflow_start'));
-  const beforeModelFailure = (await calls()).length;
-  const available = parent.ctx.modelRegistry.getAvailable;
-  parent.ctx.modelRegistry.getAvailable = () => available().filter(model => model.id !== 'gpt-6.1-sol');
-  await assert.rejects(parent.call('herdr_research_start', { tasks: [{ label: 'Synthetic', brief: 'Inspect code.' }] }), /gpt-6.1-sol is unavailable/);
-  await assert.rejects(parent.call('herdr_new_session', { model: 'openai/gpt-6.1-sol' }), /gpt-6.1-sol is unavailable/);
-  parent.ctx.modelRegistry.getAvailable = available;
+  const parent = await instance('parent');
+  assert.equal(timers.size, 0);
+  const beforePreflight = (await launches()).length;
+  await assert.rejects(parent.call('herdr_new_session', { handoff: 'missing.md' }), /ENOENT/);
+  await assert.rejects(parent.call('herdr_new_session', { appendSystemPrompt: 'empty-guidance.md' }), /empty/);
+  await assert.rejects(parent.call('herdr_new_session', { cwd: 'missing-directory' }), /ENOENT/);
+  await assert.rejects(parent.call('herdr_new_session', { cwd: 'engineering.md' }), /not a directory/);
   for (const model of ['anthropic/unsafe-router', 'missing/model']) {
     await assert.rejects(parent.call('herdr_new_session', { model }), /physical model|unavailable/);
-    await assert.rejects(parent.call('herdr_research_start', { tasks: [{ label: 'Synthetic', brief: 'Inspect code.' }], model }), /physical model|unavailable/);
+    await assert.rejects(parent.call('herdr_research_start', { tasks: [{ label: 'Synthetic', brief: 'Inspect.' }], model }), /physical model|unavailable/);
   }
-  assert.equal((await calls()).length, beforeModelFailure, 'model validation must not contact Herdr or fall back');
+  await assert.rejects(parent.call('herdr_new_session', { workspace: 'remote' }), /remote|local/i);
+  delete process.env.HC_TERMINAL_ID;
+  await assert.rejects(parent.extension.tools.get('herdr_new_session').definition.execute('test', {}, undefined, undefined, parent.ctx), /core|HC_TERMINAL_ID/);
+  parent.activate();
+  const cancelled = new AbortController(); cancelled.abort();
+  await assert.rejects(parent.call('herdr_new_session', {}, cancelled.signal), /abort/i);
+  assert.equal((await launches()).length, beforePreflight);
 
-  const localHandoff = (await parent.call('local_workflow_start', { question: 'Compare synthetic fixture counts.', context: 'Use synthetic fixtures only.' })).details;
-  assert.equal(localHandoff.model, 'test/chosen');
-  assert.equal(localHandoff.reportBack, false);
-  assert.equal(parent.state.branch.length, 0, 'local workflow defaults to independent handoff');
+  const handoff = await parent.call('herdr_new_session', { handoff: 'brief with spaces.md', label: 'Independent' });
+  assert.notEqual(handoff.isError, true, JSON.stringify(handoff.details));
+  const independent = handoff.details;
+  assert.equal(independent.backend, 'hc');
+  assert.equal(independent.deliveryState, 'accepted');
+  assert(independent.terminalId && independent.tabId && independent.paneId);
+  const header = JSON.parse((await readFile(independent.sessionPath, 'utf8')).split('\n')[0]);
+  assert.equal(header.id, independent.sessionId);
+  assert.equal(header.cwd, scratch);
+  assert.equal((await stat(independent.sessionPath)).mode & 0o777, 0o600);
+  let started = (await launches()).at(-1);
+  assert.equal(started.no_parent, true);
+  assert.equal(started.keep, true);
+  assert.equal(started.no_notify, true);
+  assert.equal(started.env.PI_CODING_AGENT_DIR, scratch);
+  assert.equal(started.env.HERDR_RESEARCH_DIR, '');
+  assert.equal(started.env.HERDR_RESEARCH_WORKER, '');
+  assert.equal(started.labels['herdr.space'], 'test-space');
+  assert(!started.argv.includes('--model'));
+  assert(!started.argv.includes('--append-system-prompt'));
+  assert.equal(started.argv[started.argv.indexOf('--session') + 1], independent.sessionPath);
+  assert.equal((await coreState()).focus.tab, 'parent-tab');
+  assert.equal((await coreState()).spaces[0].tabs.find(tab => tab.id === independent.tabId).name, 'Independent');
+  assert.equal(parent.state.branch.length, 0);
   assert.equal(timers.size, 0);
-  assert.equal((await stat(localHandoff.guidance)).mode & 0o777, 0o600);
-  const localGuidance = await readFile(localHandoff.guidance, 'utf8');
-  assert(localGuidance.includes('Use synthetic fixtures only.') && localGuidance.includes('Independent handoff'));
-  assert((await calls()).filter(args => args[1] === 'start').at(-1).includes(localHandoff.guidance));
-  assert.equal(localHandoff.session.deliveryState, 'accepted');
 
-  const explicitLocal = (await parent.call('local_workflow_start', { question: 'Synthetic task.', model: 'openai/gpt-6.1-sol', workspace: 'test', cwd: 'nested' })).details;
-  assert.equal(explicitLocal.model, 'openai/gpt-6.1-sol');
-  assert.equal(explicitLocal.session.cwd, join(scratch, 'nested'));
+  const explicit = await parent.call('herdr_new_session', { model: 'test/chosen', cwd: 'nested', workspace: 'test', appendSystemPrompt: 'guidance with spaces.md' });
+  assert.notEqual(explicit.isError, true, JSON.stringify(explicit.details));
+  started = (await launches()).at(-1);
+  assert.equal(started.cwd, join(scratch, 'nested'));
+  assert.equal(started.argv[started.argv.indexOf('--model') + 1], 'test/chosen');
+  assert.equal(started.argv[started.argv.indexOf('--append-system-prompt') + 1], guidance);
+  parent.activate();
+  await parent.extension.commands.get('herdr').handler('--model test/chosen --append-system-prompt "guidance with spaces.md"', parent.ctx);
+  assert.equal((await launches()).at(-1).argv[(await launches()).at(-1).argv.indexOf('--append-system-prompt') + 1], guidance);
 
-  const localReport = (await parent.call('local_workflow_start', { question: 'Synthetic task; report back.', reportBack: true, workspace: 'test', cwd: 'nested' })).details;
-  runDirs.push(localReport.run);
-  assert.equal(localReport.workers.length, 1);
-  assert.equal(localReport.reportBack, true);
-  assert.equal(localReport.workers[0].session.cwd, join(scratch, 'nested'));
-  const filePrompt = await readFile(localReport.workers[0].session.appendSystemPrompt, 'utf8');
-  assert(filePrompt.includes('Synthetic local guidance') && filePrompt.includes('Mandatory research boundaries') && filePrompt.includes('never inline findings'));
-  const localWorker = await instance('local-worker', [], { run: localReport.run, id: 'worker-1' });
-  await assert.rejects(localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY_MARKER', report: 'INLINE_FINDINGS_MARKER' }), /existing shareable file path/);
-  const privateReport = join(dirname(localReport.guidance), 'private', 'raw.md');
-  await writeFile(privateReport, 'PRIVATE_ARTIFACT_MARKER');
-  await assert.rejects(localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY_MARKER', report: privateReport }), /assigned shareable directory/);
-  const escaped = join(localReport.reportDirectory, 'symlink.md');
-  await symlink(privateReport, escaped);
-  await assert.rejects(localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY_MARKER', report: escaped }), /assigned shareable directory/);
-  const safeReport = join(localReport.reportDirectory, 'report.md');
-  await writeFile(safeReport, 'SYNTHETIC_AGGREGATE_MARKER', { mode: 0o600 });
-  const published = await localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY_MARKER', report: safeReport });
-  assert.equal(published.details.report, safeReport);
-  await tick();
-  const delivered = parent.state.messages.at(-1).message.content;
-  assert(delivered.includes(`Shareable report: ${safeReport}`));
-  assert(!delivered.includes('PRIVATE_SUMMARY_MARKER') && !delivered.includes('SYNTHETIC_AGGREGATE_MARKER'), 'file-only transport sends paths, not summaries or file contents');
-  await localWorker.emit({ type: 'session_shutdown', reason: 'quit' });
-  const recoveredLocalWorker = await instance('local-worker', [], { run: localReport.run, id: 'worker-1' });
-  await assert.rejects(recoveredLocalWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY_MARKER', report: 'INLINE_AFTER_RELOAD' }), /existing shareable file path/);
-  await recoveredLocalWorker.emit({ type: 'session_shutdown', reason: 'quit' });
-  parent.state.branch = [];
-  parent.state.messages = [];
-  await parent.emit({ type: 'session_start', reason: 'reload' });
+  process.env.TEST_WRONG_SESSION = '1';
+  const switched = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
+  delete process.env.TEST_WRONG_SESSION;
+  assert.equal(switched.isError, true);
+  assert(switched.details.session.terminalId);
+  process.env.TEST_NO_ACCEPT = '1';
+  const abort = new AbortController();
+  const abortTimer = setTimeout(() => abort.abort(), 1500);
+  const beforeUnaccepted = (await launches()).length;
+  const unaccepted = await parent.call('herdr_new_session', { handoff: 'engineering.md' }, abort.signal);
+  clearTimeout(abortTimer);
+  delete process.env.TEST_NO_ACCEPT;
+  assert.equal(unaccepted.isError, true);
+  assert.equal(unaccepted.details.session.deliveryState, 'unconfirmed');
+  assert(unaccepted.details.session.terminalId && unaccepted.details.session.sessionPath);
+  assert.equal((await launches()).length, beforeUnaccepted + 1);
+  process.env.TEST_LOST_ACK = '1';
+  const beforeLost = (await launches()).length;
+  const lost = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
+  delete process.env.TEST_LOST_ACK;
+  assert.equal(lost.isError, true);
+  assert(lost.details.session.name && lost.details.session.sessionPath);
+  assert.equal((await launches()).length, beforeLost + 1);
+  process.env.TEST_APP_FAILURE = '1';
+  const presentation = await parent.call('herdr_new_session', { handoff: 'engineering.md' });
+  delete process.env.TEST_APP_FAILURE;
+  assert.equal(presentation.isError, true);
+  assert(presentation.details.session.terminalId);
 
   const tasks = [{ label: 'Code flow', brief: 'Trace the flow.' }, { label: 'Constraints', brief: 'Inspect constraints.' }];
-  const beforeInvalidResearch = (await calls()).length;
-  await assert.rejects(parent.call('herdr_research_start', { tasks, appendSystemPrompt: 'missing-guidance.md' }), /ENOENT/);
-  await assert.rejects(parent.call('herdr_research_start', { tasks, appendSystemPrompt: 'empty-guidance.md' }), /is empty/);
-  assert.equal((await calls()).length, beforeInvalidResearch);
-  await assert.rejects(parent.call('herdr_research_start', { tasks: Array(5).fill(tasks[0]) }), /1–4/);
-  await assert.rejects(parent.call('herdr_research_start', { tasks, model: 'missing/model' }), /unavailable/);
-  const result = (await parent.call('herdr_research_start', { tasks, model: 'test/chosen', appendSystemPrompt: 'guidance with spaces.md' })).details;
+  assert(!parent.extension.tools.has('herdr_analysis_start'));
+  const localHandoff = (await parent.call('local_workflow_start', { question: 'Compare synthetic counts.' })).details;
+  assert.equal(localHandoff.reportBack, false);
+  assert.equal(localHandoff.session.deliveryState, 'accepted');
+  assert.equal(parent.state.branch.length, 0);
+  const beforeCrossSpace = (await launches()).length;
+  const crossSpace = (await parent.call('herdr_research_start', { tasks, workspace: 'other' })).details;
+  runDirs.push(crossSpace.run);
+  assert.equal(crossSpace.status, 'failed');
+  assert(crossSpace.workers.every(worker => /space|workspace/i.test(worker.error)));
+  assert.equal((await launches()).length, beforeCrossSpace);
+
+  const result = (await parent.call('herdr_research_start', { tasks, appendSystemPrompt: 'guidance with spaces.md' })).details;
   runDirs.push(result.run);
+  assert.equal(result.status, 'launched', JSON.stringify(result));
+  assert.equal(result.model, 'openai/gpt-6.1-sol');
   assert.equal(result.workers.length, 2);
-  assert(result.workers.every((w) => w.session && !w.error && w.session.appendSystemPrompt.endsWith(`${w.id}.system.md`)));
+  for (const launch of (await launches()).slice(-2)) {
+    assert.equal(launch.parent, 't1');
+    assert.equal(launch.keep, false);
+    assert(!launch.labels?.['herdr.space'] && !launch.labels?.['herdr.tab']);
+    assert.equal(launch.no_notify, true);
+    assert.equal(launch.argv[launch.argv.indexOf('--model') + 1], 'openai/gpt-6.1-sol');
+  }
   const researchPrompt = await readFile(result.workers[0].session.appendSystemPrompt, 'utf8');
-  assert(researchPrompt.includes('Do not spawn agents; share files only.') && researchPrompt.includes('Mandatory research boundaries') && researchPrompt.includes('Research source boundary') && researchPrompt.includes('Do not query operational or patient-bearing datasets'));
-  assert(!/Healthie|Datadog|Iterable|Mixpanel|BigQuery|skill:analysis/.test(researchPrompt), 'generic boundaries must not embed local vendors or skills'); 
-  const researchStarts = (await calls()).filter((args) => args[1] === 'start').slice(-2);
-  assert(researchStarts.every((args) => args[args.indexOf('--append-system-prompt') + 1].endsWith('.system.md') && args.at(-1).startsWith('Read and follow')));
-  assert.equal(timers.size, 1);
-  const worker = await instance(result.workers[0].session.sessionId, [], { run: result.run, id: 'worker-1' });
+  assert(researchPrompt.includes('Do not spawn agents; share files only.') && researchPrompt.includes('Do not query operational or patient-bearing datasets'));
+  assert(!/Healthie|Datadog|Iterable|Mixpanel|BigQuery|skill:analysis/.test(researchPrompt));
+  const workerInput = { run: result.run, id: 'worker-1', terminalId: result.workers[0].session.terminalId };
+  const worker = await instance(result.workers[0].session.sessionId, [], workerInput);
   await assert.rejects(worker.call('herdr_research_start', { tasks }), /cannot spawn/);
   await assert.rejects(parent.call('herdr_research_report', { summary: 'No', report: 'No' }), /Only research workers/);
   parent.state.busy = true;
@@ -322,10 +328,8 @@ console.log(JSON.stringify({ result }));
   assert.equal(parent.state.messages.length, 1);
   assert.deepEqual(parent.state.messages[0].options, { triggerTurn: true, deliverAs: 'followUp' });
   await tick();
-  assert.equal(parent.state.messages.length, 1, 'queued report must not duplicate');
-  assert.equal(parent.state.warnings.filter(warning => warning.includes('invalid')).length, 2, 'poison mail is warned once and never blocks valid reports');
-
-  // Reload before queue delivery: no durable receipt exists, so replay the pending report.
+  assert.equal(parent.state.messages.length, 1);
+  assert.equal(parent.state.warnings.filter(warning => warning.includes('invalid')).length, 2);
   await parent.emit({ type: 'session_shutdown', reason: 'reload' });
   const reloaded = await instance('parent', parent.state.branch);
   await tick();
@@ -333,106 +337,89 @@ console.log(JSON.stringify({ result }));
   await reloaded.emit({ type: 'session_shutdown', reason: 'reload' });
   const restored = await instance('parent', reloaded.state.branch);
   await tick();
-  assert.equal(restored.state.messages.length, 0, 'persisted report must not duplicate after reload');
-
+  assert.equal(restored.state.messages.length, 0);
   worker.state.busy = true;
   await restored.call('herdr_research_guide', { run: result.run, worker: 'worker-1', guidance: 'Also check compatibility.' });
   await tick();
   assert.equal(worker.state.messages.length, 1);
-  assert.equal(worker.state.messages[0].options.deliverAs, 'followUp');
   assert.match(worker.state.messages[0].message.content, /compatibility/);
-  await assert.rejects(restored.call('herdr_research_guide', { run: '/unowned', worker: 'worker-1', guidance: 'No' }), /does not own/);
-
-  // Aborted queue: replay, rather than silently dropping the guidance forever.
   worker.state.queued = [];
   await worker.emit({ type: 'agent_settled' });
   await tick();
   assert.equal(worker.state.messages.length, 2);
-
-  const other = await instance('forked-parent', restored.state.branch);
-  const changedWorker = await instance('forked-worker', [], { run: result.run, id: 'worker-1' });
-  await assert.rejects(other.call('herdr_research_guide', { run: result.run, worker: 'worker-1', guidance: 'No' }), /does not own/);
+  const fork = await instance('forked-parent', restored.state.branch);
+  await assert.rejects(fork.call('herdr_research_guide', { run: result.run, worker: 'worker-1', guidance: 'No' }), /does not own/);
+  const changedWorker = await instance('forked-worker', [], workerInput);
   await assert.rejects(changedWorker.call('herdr_research_report', { summary: 'No', report: 'No' }), /different Pi session/);
+  await assert.rejects(restored.call('herdr_research_guide', { run: result.run, worker: 'worker-1', guidance: 'No' }), /changed|different|session/i);
+  await worker.emit({ type: 'session_start', reason: 'reload' });
   await tick();
-  assert.equal(other.state.messages.length, 0, 'fork must not inherit parent reports');
-  assert.equal(changedWorker.state.messages.length, 0, 'new worker session must not inherit guidance');
+  assert.equal(fork.state.messages.length, 0);
+  assert.equal(changedWorker.state.messages.length, 0);
   const tree = await instance('parent', restored.state.branch);
   tree.state.branch = [];
   await tree.emit({ type: 'session_tree' });
-  await tick();
-  assert.equal(tree.state.messages.length, 0, 'tree navigation must drop research absent from the active branch');
   await assert.rejects(tree.call('herdr_research_guide', { run: result.run, worker: 'worker-1', guidance: 'No' }), /does not own/);
 
-  const beforeHandoff = restored.state.branch.length;
-  await restored.call('herdr_new_session', { handoff: 'independent.md' });
-  assert.equal(restored.state.branch.length, beforeHandoff);
-  const mixedLocal = (await restored.call('local_workflow_start', { question: 'Independent synthetic task while research is registered.' })).details;
-  assert.equal(mixedLocal.reportBack, false);
-  assert.equal(restored.state.branch.length, beforeHandoff, 'local independent handoff must not disturb existing research');
-  const mixedTab = (await calls()).filter(args => args[0] === 'tab').at(-1);
-  assert(mixedTab.includes('HERDR_RESEARCH_DIR=') && mixedTab.includes('HERDR_RESEARCH_WORKER='));
-  const ordinary = await instance('ordinary-handoff');
+  const legacyBranch = structuredClone(restored.state.branch);
+  for (const entry of legacyBranch) {
+    if (entry.customType === 'herdr-research-run') for (const item of entry.data.workers) if (item.session) { delete item.session.backend; delete item.session.terminalId; }
+  }
+  const runFile = join(result.run, 'run.json');
+  const savedRun = await readFile(runFile, 'utf8');
+  const legacyRun = JSON.parse(savedRun);
+  for (const item of legacyRun.workers) { delete item.session.backend; delete item.session.terminalId; }
+  await writeFile(runFile, JSON.stringify(legacyRun));
+  const legacy = await instance('parent', legacyBranch);
+  await assert.rejects(legacy.call('herdr_research_guide', { run: result.run, worker: 'worker-1', guidance: 'No' }), /legacy|core|hc/i);
+  await writeFile(runFile, savedRun);
+  const nextReport = await worker.call('herdr_research_report', { summary: 'New finding.', report: '# Updated findings' });
   await tick();
-  assert.equal(ordinary.state.messages.length, 0);
-  // Even a handoff launched by a worker explicitly clears the worker environment.
-  await worker.call('herdr_new_session', {});
-  const tab = (await calls()).filter((args) => args[0] === 'tab').at(-1);
-  assert(tab.includes('HERDR_RESEARCH_DIR=') && tab.includes('HERDR_RESEARCH_WORKER='));
+  assert(legacy.state.messages.some(item => item.message.content.includes(nextReport.details.report)));
 
-  const defaultResearch = (await restored.call('herdr_research_start', { tasks: [tasks[0]] })).details;
-  runDirs.push(defaultResearch.run);
-  assert(defaultResearch.workers[0].session && !defaultResearch.workers[0].error);
-  assert.equal(defaultResearch.model, 'openai/gpt-6.1-sol');
-  const defaultStart = (await calls()).filter(args => args[1] === 'start').at(-1);
-  assert.equal(defaultStart[defaultStart.indexOf('--model') + 1], 'openai/gpt-6.1-sol', 'legacy Herdr research defaults to its parent physical model');
-  assert.equal(JSON.parse(await readFile(join(defaultResearch.run, 'run.json'), 'utf8')).reportDirectory, undefined, 'ordinary research must not inherit the local file-only contract');
-
-  const standaloneDirectory = join(scratch, 'standalone-reports');
-  await mkdir(standaloneDirectory);
-  const standalone = (await restored.call('herdr_research_start', { tasks: [tasks[0]], reportDirectory: standaloneDirectory })).details;
-  runDirs.push(standalone.run);
-  const standalonePrompt = await readFile(standalone.workers[0].session.appendSystemPrompt, 'utf8');
-  const writeBoundary = standalonePrompt.split('# Mandatory research boundaries')[1].split('# Reporting and follow-up')[0];
-  assert(writeBoundary.includes(standaloneDirectory), 'file-only reporting without appended guidance must explicitly permit writes to the report directory');
-
-  process.env.HERDR_ENV = '0';
-  await assert.rejects(restored.call('herdr_research_start', { tasks }), /inside Herdr/);
-  await assert.rejects(restored.call('herdr_new_session', {}), /not running inside Herdr/);
-  process.env.HERDR_ENV = '1';
+  const localReport = (await restored.call('local_workflow_start', { question: 'Synthetic task; report back.', reportBack: true, workspace: 'test', cwd: 'nested' })).details;
+  runDirs.push(localReport.run);
+  assert.equal(localReport.status, 'launched', JSON.stringify(localReport));
+  const localWorkerInput = { run: localReport.run, id: 'worker-1', terminalId: localReport.workers[0].session.terminalId };
+  const localWorker = await instance(localReport.workers[0].session.sessionId, [], localWorkerInput);
+  await assert.rejects(localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY', report: 'INLINE_FINDINGS' }), /existing shareable file path/);
+  const privateReport = join(dirname(localReport.guidance), 'private', 'raw.md');
+  await writeFile(privateReport, 'PRIVATE_ARTIFACT');
+  await assert.rejects(localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY', report: privateReport }), /assigned shareable directory/);
+  const escaped = join(localReport.reportDirectory, 'symlink.md');
+  await symlink(privateReport, escaped);
+  await assert.rejects(localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY', report: escaped }), /assigned shareable directory/);
+  const safeReport = join(localReport.reportDirectory, 'report.md');
+  await writeFile(safeReport, 'SYNTHETIC_AGGREGATE', { mode: 0o600 });
+  await localWorker.call('herdr_research_report', { summary: 'PRIVATE_SUMMARY', report: safeReport });
+  await tick();
+  const delivered = restored.state.messages.at(-1).message.content;
+  assert(delivered.includes(`Shareable report: ${safeReport}`));
+  assert(!delivered.includes('PRIVATE_SUMMARY') && !delivered.includes('SYNTHETIC_AGGREGATE'));
+  await localWorker.emit({ type: 'session_shutdown', reason: 'reload' });
+  const recovered = await instance(localReport.workers[0].session.sessionId, [], localWorkerInput);
+  await assert.rejects(recovered.call('herdr_research_report', { summary: 'No', report: 'INLINE_AFTER_RELOAD' }), /existing shareable file path/);
+  const beforeWorkerHandoff = restored.state.branch.length;
+  const workerHandoff = await worker.call('herdr_new_session', { handoff: 'independent.md' });
+  assert.notEqual(workerHandoff.isError, true, JSON.stringify(workerHandoff.details));
+  assert.equal((await launches()).at(-1).env.HERDR_RESEARCH_DIR, '');
+  assert.equal((await launches()).at(-1).env.HERDR_RESEARCH_WORKER, '');
+  assert.equal(restored.state.branch.length, beforeWorkerHandoff);
   process.env.TEST_FAIL_ONCE = '1';
-  const partial = await restored.call('herdr_research_start', { tasks });
+  const partial = (await restored.call('herdr_research_start', { tasks })).details;
   delete process.env.TEST_FAIL_ONCE;
-  runDirs.push(partial.details.run);
-  assert.equal(partial.details.status, 'partial');
-  assert.match(partial.details.message, /1\/2 worker handoffs accepted/);
-  assert(partial.details.workers[0].error && partial.details.workers[1].session.deliveryState === 'accepted');
-  process.env.TEST_FAIL_START = '1';
-  const failed = (await restored.call('herdr_research_start', { tasks: [tasks[0]] })).details;
-  runDirs.push(failed.run);
-  assert((await calls()).filter((args) => args[1] === 'start').at(-1).includes('--append-system-prompt'), 'research always appends persistent task/source boundaries');
-  assert.equal(failed.status, 'failed');
-  assert.match(failed.workers[0].error, /launch\/delivery failed/);
-  assert(failed.workers[0].session.tabId && failed.workers[0].session.name, 'partial failure must retain launch IDs');
-  await assert.rejects(restored.call('herdr_research_guide', { run: failed.run, worker: 'worker-1', guidance: 'No' }), /did not launch/);
-  const failedLocal = await restored.call('local_workflow_start', { question: 'Synthetic task.', reportBack: true });
-  runDirs.push(failedLocal.details.run);
-  assert.equal(failedLocal.isError, true, 'local composition preserves generic launch failure');
-  assert.equal(failedLocal.details.status, 'failed');
-  assert(failedLocal.details.workers[0].session.tabId && failedLocal.details.workers[0].session.name);
-  const independentFailure = await restored.call('local_workflow_start', { question: 'Synthetic independent launch failure.' });
-  assert.equal(independentFailure.isError, true);
-  assert(independentFailure.details.session.tabId && independentFailure.details.session.deliveryState === 'unconfirmed');
-  assert.equal(await readFile(handoffPath, 'utf8'), handoffBefore);
-
-  // Exercise Pi's real file-to-system-prompt loading and post-compaction context reconstruction.
-  // Synthetic in-process responses only: the compacted summary omits the guidance deliberately.
+  runDirs.push(partial.run);
+  assert.equal(partial.status, 'partial', JSON.stringify(partial));
+  assert(partial.workers[0].error && partial.workers[1].session.deliveryState === 'accepted');
+  assert(partial.workers[0].session.name && partial.workers[0].session.sessionPath);
+  assert(!(await calls()).some(call => call.method === 'terminal.send'));
+  assert.equal(await readFile(researchPath, 'utf8'), researchBefore);
   const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = await import(pathToFileURL(join(packageRoot, 'dist/index.js')));
   const settingsManager = SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false }, retry: { enabled: false } });
   const skillRoutes = [['handoff', 'herdr_new_session'], ['research', 'subagent']];
   const skillPaths = skillRoutes.map(([name]) => join(skillsDir, name, 'SKILL.md'));
   const resourceLoader = new DefaultResourceLoader({ cwd: scratch, agentDir: scratch, settingsManager, appendSystemPrompt: [guidance], additionalSkillPaths: skillPaths, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
   await resourceLoader.reload();
-  // Synthetic OAuth metadata only; no login, token refresh, or provider requests.
   const access = `e30.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'synthetic-account' } })).toString('base64url')}.synthetic`;
   await writeFile(join(scratch, 'auth.json'), JSON.stringify({ 'openai': { type: 'oauth', access, refresh: 'synthetic', expires: Date.now() + 3600000, accountId: 'synthetic-account' } }), { mode: 0o600 });
   const modelRuntime = await ModelRuntime.create({ authPath: join(scratch, 'auth.json'), modelsPath: null, modelsStorePath: join(scratch, 'models-store.json'), allowModelNetwork: false });
@@ -462,7 +449,6 @@ console.log(JSON.stringify({ result }));
     assert(requests.every(request => JSON.stringify(request).includes(marker)), 'guidance reaches the model before and after compaction, not merely a file');
     assert(!sessionManager.getBranch().find(entry => entry.type === 'compaction').summary.includes(marker));
 
-    // Real Pi /skill: expansion, not a hand-written approximation of its parser.
     const loadedSkills = resourceLoader.getSkills();
     assert.deepEqual(loadedSkills.diagnostics.filter(diagnostic => skillPaths.includes(diagnostic.path)), []);
     for (const [name, tool] of skillRoutes) {
@@ -477,7 +463,6 @@ console.log(JSON.stringify({ result }));
     }
     assert.equal(requests.length, 4);
 
-    // An explicitly selected physical model remains selected across compaction.
     await session.setModel(modelRuntime.getModel('openai', 'gpt-6.1-sol'));
     await session.prompt('Synthetic physical-model turn.');
     const beforeCompaction = session.messages.filter(message => message.role === 'assistant').at(-1);
@@ -493,12 +478,14 @@ console.log(JSON.stringify({ result }));
   } finally {
     session.dispose();
   }
-  console.log('PASS: native handoff acknowledgement, delayed/working startup, preflight, silent delivery failure, cancellation, recovery identifiers, poison-mail isolation; no virtual model registration; explicit physical-model dispatch across compaction; physical model preflight and virtual-router rejection; skill expansion, handoff/report-back isolation, persistent research boundaries, file-only generic transport and local adapter composition, compaction, reload, and failures. Herdr/provider calls are mocked.');
+
+  console.log('PASS: hc handoff/native workers, receipt recovery, session-bound mailbox privacy/reload, and real Pi skill/compaction flows.');
 } finally {
-  for (const instance of instances) await instance.emit({ type: 'session_shutdown', reason: 'quit' });
+  for (const item of instances) await item.emit({ type: 'session_shutdown', reason: 'quit' });
   global.setInterval = realSetInterval;
   global.clearInterval = realClearInterval;
   for (const key of Object.keys(process.env)) if (!(key in environment)) delete process.env[key];
   Object.assign(process.env, environment);
-  for (const dir of [scratch, ...runDirs]) await rm(dir, { recursive: true, force: true });
+  for (const dir of runDirs) await rm(dir, { recursive: true, force: true });
+  await rm(scratch, { recursive: true, force: true });
 }

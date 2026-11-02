@@ -5,16 +5,19 @@ session-bound asynchronous reports and follow-up guidance. This extension owns
 launching and report transport, not a particular analysis workflow or provider
 policy. It never reads a named skill's guidance file.
 
-Requires the Herdr CLI and an interactive Pi session inside Herdr for reporting.
-Herdr owns its generated Pi state integration; do not copy that generated file
-into this project.
+Requires `hc` (herdr-core) and an interactive Pi TUI with a live
+`HC_TERMINAL_ID`. The caller terminal is validated before launching. Public tool
+and command names stay unchanged; the launch/control backend is core-only, with
+no legacy `herdr` worker-control fallback. Pi publishes native OSC status; managed
+children also publish their current Pi session identity as a terminal label.
+Do not copy a tool-generated Pi integration into this project.
 
 ## Tools
 
 | Tool | Behavior |
 | --- | --- |
-| `herdr_new_session` | Start an independent session; optionally supply a handoff and persistent guidance file |
-| `herdr_research_start` | Start 1–4 guided read-only workers with asynchronous reports |
+| `herdr_new_session` | Start an independent, kept terminal in a visible app tab; optionally supply a handoff and persistent guidance file |
+| `herdr_research_start` | Start 1–4 guided read-only child terminals with asynchronous reports |
 | `herdr_research_report` | Submit a report from a registered worker |
 | `herdr_research_guide` | Queue follow-up guidance for a worker owned by this session |
 
@@ -24,6 +27,23 @@ configured local read-only workflows.
 
 `/herdr [workspace] [--cwd path] [--model provider/model] [--label text]
 [--handoff file] [--append-system-prompt file]` starts an independent session.
+
+## Terminal lifecycle and placement
+
+- Independent sessions (`herdr_new_session`, `/herdr`, and the handoff skill)
+  start fresh Pi sessions in their own named app tabs, preserving caller focus.
+  They have no hc parent and use `keep: true`. The `workspace` parameter is a
+  compatibility alias for an existing space's exact ID or unique local name;
+  it defaults to the caller's space.
+- Research workers are hc children of the caller terminal, with `keep: false`
+  and the default end-with-parent lifetime. They survive app closure and
+  extension reload while the parent terminal remains alive. They do not create
+  named app tabs. An explicit research `workspace` may select only the parent's
+  own space, never a cross-space worker tab.
+- Launch results identify `backend: "hc"`, `terminalId`, `sessionId`,
+  `sessionPath`, `name`, `label`, `cwd`, `model`, `launchState`, and `deliveryState`.
+  Independent sessions include `workspaceId`, `tabId`, and `paneId`; research
+  results need not have app-placement IDs.
 
 ## Guidance, models and launch acknowledgement
 
@@ -39,14 +59,13 @@ configured local read-only workflows.
 - Explicit models must be available physical models. No virtual routing or
   silent model/provider substitution.
 - Appended guidance and worker task/reporting boundaries survive compaction.
-- A handoff succeeds only after its initial prompt is found in the intended
-  session. Confirmation uses the created pane ID, not the generated agent name,
-  which may be unavailable after a startup readiness timeout. Agent-not-found
-  responses during detection are retried within the existing 15-second
-  confirmation window; the exact session ID and initial prompt must still match.
-  No agent is relaunched and no prompt is resent during confirmation.
-  Partial failures retain existing tab/pane/agent identifiers; inspect those
-  sessions before retrying, rather than blindly creating duplicates.
+- Each launch uses a fresh session file seeded through Pi's public session SDK,
+  so its exact session ID and path are known before Pi starts. A handoff is
+  accepted only when its initial prompt is recorded in that intended session.
+  Acceptance is not task completion. No session is relaunched and no prompt is
+  resent during confirmation. Partial failures retain known terminal, session,
+  and app-placement identifiers; inspect those sessions before retrying rather
+  than blindly creating duplicates.
 - Creating a session is not permission to access data or change external systems.
 
 ## Reporting
@@ -64,13 +83,18 @@ contents.
 
 This validates transport, **not sanitization**. The calling workflow owns
 reviewing report contents and deciding what may be shared. A directory setting
-does not authorize access to sensitive data.
+does not authorize access to sensitive data. Default research stays within code,
+verified non-sensitive lower environments, and public sources; operational or
+patient-bearing datasets, sensitive production copies, and unknown data
+provenance require a separately authorized workflow. Available tools do not
+expand those permissions.
 
-Reports and guidance use session-bound local mailboxes. Busy sessions receive
-follow-ups without terminal input. Reload restores runs from the active branch,
-avoids duplicate delivered reports, and does not grant ownership to forks or new
-sessions. Independent handoffs do not register reporting or inherit worker
-mailbox bindings.
+Reports and guidance use session-bound local mailboxes, not `hc send`. Busy
+sessions receive queued follow-ups without terminal input. Reload restores runs
+from the active branch, avoids duplicate delivered reports, and does not grant
+ownership to forks or new sessions. Saved reports from old runs remain readable,
+but legacy worker control is not supported. Independent handoffs do not register
+reporting or inherit worker mailbox bindings.
 
 ## Local workflow composition
 
@@ -99,5 +123,6 @@ launcher is a local addition, not registered by this extension.
 
 From the repository root, run `npm test`.
 The retained suite covers actual Pi loading, skill expansion and synthetic
-compaction with a fake Herdr CLI and synthetic model responses. Live Herdr
-checks are separate, opt-in, and may create real sessions.
+compaction with a fake hc CLI and synthetic model responses. The
+[standalone live smoke test](tests/README.md) is separate and opt-in: it creates
+one real interactive child, may incur provider charges, and retains its tab.
