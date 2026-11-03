@@ -59,6 +59,9 @@ follow-up guidance. They also support separately configured local read-only work
 - Explicit models must be available physical models. No virtual routing or
   silent model/provider substitution.
 - Appended guidance and worker task/reporting boundaries survive compaction.
+- Launches reuse the current Pi executable: absolute Node/Bun plus CLI script,
+  or the compiled Pi executable, before falling back to `pi` on PATH. This avoids
+  depending on the Herdr service's PATH for an installed CLI.
 - Each launch uses a fresh session file seeded through Pi's public session SDK,
   so its exact session ID and path are known before Pi starts. A handoff is
   accepted only when its initial prompt is recorded in that intended session.
@@ -95,6 +98,16 @@ from the active branch, avoids duplicate delivered reports, and does not grant
 ownership to forks or new sessions. Saved reports from old runs remain readable,
 but legacy worker control is not supported. Independent handoffs do not register
 reporting or inherit worker mailbox bindings.
+
+New worker sessions persist their mailbox identity and reserve their exact
+session binding before terminal launch. After inspecting a failed launch and
+confirming whether a terminal exists, resuming that exact `sessionPath` restores
+report submission even without `HERDR_RESEARCH_*` environment variables. Preserve
+its model and appended guidance when recovering; this does not automatically
+relaunch, resend a task, or reassign parent follow-up control to another terminal.
+Forks and unrelated sessions cannot claim the binding. Older worker sessions
+without persisted identity still require their original worker environment;
+appended instructions alone do not register a worker.
 
 ## Local workflow composition
 

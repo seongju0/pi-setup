@@ -6,7 +6,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, withFileMutationQueue, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { requireLaunchModel } from "../lib/models.ts";
-import { createSession, getCoreTerminal, publishSessionIdentity, resolvePromptFile, type SessionResult } from "./runtime.ts";
+import { createSession, getCoreTerminal, publishSessionIdentity, resolvePromptFile, WORKER_ENTRY, type WorkerIdentity, type SessionResult } from "./runtime.ts";
 
 function parseArgs(input: string) {
   const tokens = input.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((s) => s.replace(/^["']|["']$/g, "")) ?? [];
@@ -76,8 +76,10 @@ function textResult(data: unknown) {
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool(createSessionTool);
-  const workerDir = process.env.HERDR_RESEARCH_DIR;
-  const workerId = process.env.HERDR_RESEARCH_WORKER;
+  const inheritedWorkerDir = process.env.HERDR_RESEARCH_DIR;
+  const inheritedWorkerId = process.env.HERDR_RESEARCH_WORKER;
+  let workerDir = inheritedWorkerDir;
+  let workerId = inheritedWorkerId;
   let runs = new Map<string, Run>();
   let pending = new Set<string>();
   let context: ExtensionContext | undefined;
@@ -196,7 +198,17 @@ export default function (pi: ExtensionAPI) {
     runs = new Map();
     pending = new Set();
     const owner = ctx.sessionManager.getSessionId();
+    workerDir = inheritedWorkerDir;
+    workerId = inheritedWorkerId;
     for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === "custom" && entry.customType === WORKER_ENTRY) {
+        const identity = entry.data as WorkerIdentity;
+        if (!identity || typeof identity.dir !== "string" || !isAbsolute(identity.dir) || !/^worker-[1-4]$/.test(identity.worker) || typeof identity.sessionId !== "string") throw new Error("Invalid research worker identity");
+        // A copied/forked entry never grants the new session the original binding.
+        if (identity.sessionId !== owner) throw new Error("Research belongs to a different Pi session; resume the original worker");
+        workerDir = identity.dir;
+        workerId = identity.worker;
+      }
       if (entry.type !== "custom" || entry.customType !== RUN_ENTRY) continue;
       const run = entry.data as Run;
       if (run.owner === owner) runs.set(run.dir, run);

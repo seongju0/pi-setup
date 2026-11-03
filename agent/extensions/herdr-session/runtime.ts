@@ -6,6 +6,10 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { getAgentDir, SessionManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { requireLaunchModel } from "../lib/models.ts";
+import { piInvocation } from "../lib/pi-invocation.ts";
+
+export const WORKER_ENTRY = "herdr-research-worker";
+export type WorkerIdentity = { dir: string; worker: string; sessionId: string };
 
 const execFileAsync = promisify(execFile);
 
@@ -200,7 +204,12 @@ export async function createSession(input: SessionInput, currentCwd: string, ctx
   const sessionPath = session.getSessionFile();
   const header = session.getHeader();
   if (!sessionPath || !header) throw new Error("Pi could not allocate a session file");
-  await writeFile(sessionPath, `${JSON.stringify(header)}\n`, { flag: "wx", mode: 0o600 });
+  if (input.research) {
+    session.appendCustomEntry(WORKER_ENTRY, { ...input.research, sessionId: header.id } satisfies WorkerIdentity);
+    // Reserve identity before startup, including when the terminal fails to launch.
+    await writeFile(resolve(input.research.dir, `${input.research.worker}.session.json`), JSON.stringify({ session: header.id }), { flag: "wx", mode: 0o600 });
+  }
+  await writeFile(sessionPath, [header, ...session.getEntries()].map((entry) => JSON.stringify(entry)).join("\n") + "\n", { flag: "wx", mode: 0o600 });
   const prompt = handoff ? `Read and follow the handoff brief at ${JSON.stringify(handoff)}. Treat it as the task instructions; ask if a material ambiguity blocks safe progress.` : undefined;
   const result: SessionResult = {
     backend: "hc", name: `pi-${randomUUID().replaceAll("-", "").slice(0, 24)}`, sessionId: header.id, sessionPath, label, cwd,
@@ -208,7 +217,8 @@ export async function createSession(input: SessionInput, currentCwd: string, ctx
     ...(!input.research ? { workspace: target!.name, workspaceId: target!.id, tabId: `tb${randomUUID().replaceAll("-", "")}` } : {}),
   };
   try {
-    const argv = ["pi", "--session", sessionPath];
+    const invocation = piInvocation(["--session", sessionPath]);
+    const argv = [invocation.command, ...invocation.args];
     if (input.model) argv.push("--model", input.model);
     if (appendSystemPrompt) argv.push("--append-system-prompt", appendSystemPrompt);
     if (prompt) argv.push("--", prompt);

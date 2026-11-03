@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const scratch = await mkdtemp(join(tmpdir(), 'hc-research-test-'));
 const environment = { ...process.env };
+const originalArgv = [...process.argv];
 process.env.PI_CODING_AGENT_DIR = scratch;
 const packageRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@earendil-works/pi-coding-agent');
 const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(join(packageRoot, 'dist/core/extensions/loader.js')));
@@ -23,7 +24,7 @@ const runDirs = [];
 global.setInterval = (callback) => { const timer = { callback, unref() {} }; timers.add(timer); return timer; };
 global.clearInterval = (timer) => timers.delete(timer);
 
-async function instance(id, branch = [], worker) {
+async function instance(id, branch = [], worker, catchStartupError = false) {
   const coreId = worker?.terminalId ?? 't1';
   function activate() {
     process.env.HC_TERMINAL_ID = coreId;
@@ -64,7 +65,13 @@ async function instance(id, branch = [], worker) {
   runtime.createContext = () => ctx;
   const item = { ...state, state, ctx, call, emit, extension, activate };
   instances.push(item);
-  await emit({ type: 'session_start', reason: 'startup' });
+  try {
+    await emit({ type: 'session_start', reason: 'startup' });
+  } catch (error) {
+    if (!catchStartupError) throw error;
+    // Pi's ExtensionRunner catches lifecycle errors and leaves tools callable.
+    state.warnings.push(error.message);
+  }
   return item;
 }
 async function tick() { for (const timer of [...timers]) await timer.callback(); }
@@ -121,12 +128,17 @@ if (program === 'hc') {
     let result;
     let error;
     if (method === 'terminal.run') {
+      if (!path.isAbsolute(params.argv[0]) || !path.isAbsolute(params.argv[1]) || !fs.existsSync(params.argv[0]) || !fs.existsSync(params.argv[1])) throw new Error('Launch must not depend on the service PATH');
+      if (process.env.TEST_SPAWN_FAILURE === '1') {
+        console.log(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'cannot start executable', data: { kind: 'spawn_failed' } } }));
+        return;
+      }
       const file = params.argv[params.argv.indexOf('--session') + 1];
       const entries = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
       const originalId = entries[0].id;
       if (process.env.TEST_WRONG_SESSION === '1') entries[0].id = 'wrong';
       const prompt = params.argv.includes('--') ? params.argv.at(-1) : undefined;
-      if (prompt && process.env.TEST_NO_ACCEPT !== '1') entries.push({ type: 'message', id: 'initial-user', parentId: null, timestamp: new Date().toISOString(), message: { role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() } });
+      if (prompt && process.env.TEST_NO_ACCEPT !== '1') entries.push({ type: 'message', id: 'initial-user', parentId: entries.at(-1).id ?? null, timestamp: new Date().toISOString(), message: { role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() } });
       fs.writeFileSync(file, entries.map(JSON.stringify).join('\n') + '\n');
       const address = 't' + state.next++;
       result = { address, name: params.name, argv: params.argv, cwd: params.cwd, labels: { ...params.labels, 'pi.session-id': originalId }, parent: params.no_parent ? null : params.parent, keep: params.keep, notify: !params.no_notify, state: 'live', reported: true, status: { app: 'pi', state: 'idle' }, created_ms: Date.now(), screen: 'exact', cols: 100, rows: 40 };
@@ -201,6 +213,8 @@ if (program === 'hc') {
   const guidance = join(scratch, 'guidance with spaces.md');
   await writeFile(guidance, '# Analyst guidance\nDo not spawn agents; share files only.');
   await writeFile(join(scratch, 'empty-guidance.md'), '  \n');
+  // The extension runs in Pi's CLI, not in this test runner.
+  process.argv[1] = join(packageRoot, 'dist/cli.js');
   const parent = await instance('parent');
   assert.equal(timers.size, 0);
   const beforePreflight = (await launches()).length;
@@ -231,6 +245,7 @@ if (program === 'hc') {
   assert.equal(header.cwd, scratch);
   assert.equal((await stat(independent.sessionPath)).mode & 0o777, 0o600);
   let started = (await launches()).at(-1);
+  assert.deepEqual(started.argv.slice(0, 2), [process.execPath, process.argv[1]]);
   assert.equal(started.no_parent, true);
   assert.equal(started.keep, true);
   assert.equal(started.no_notify, true);
@@ -395,8 +410,39 @@ if (program === 'hc') {
   assert(delivered.includes(`Shareable report: ${safeReport}`));
   assert(!delivered.includes('PRIVATE_SUMMARY') && !delivered.includes('SYNTHETIC_AGGREGATE'));
   await localWorker.emit({ type: 'session_shutdown', reason: 'reload' });
-  const recovered = await instance(localReport.workers[0].session.sessionId, [], localWorkerInput);
+  const { SessionManager: StoredSessions } = await import(pathToFileURL(join(packageRoot, 'dist/index.js')));
+  const savedWorkerBranch = StoredSessions.open(localReport.workers[0].session.sessionPath).getBranch();
+  // Manual recovery keeps --session but loses the launcher's environment.
+  const recovered = await instance(localReport.workers[0].session.sessionId, savedWorkerBranch, { terminalId: localWorkerInput.terminalId });
   await assert.rejects(recovered.call('herdr_research_report', { summary: 'No', report: 'INLINE_AFTER_RELOAD' }), /existing shareable file path/);
+  await assert.rejects(recovered.call('herdr_research_report', { summary: 'No', report: escaped }), /assigned shareable directory/);
+  await recovered.call('herdr_research_report', { summary: 'PRIVATE_RECOVERED_SUMMARY', report: safeReport });
+  await tick();
+  assert(restored.state.messages.at(-1).message.content.includes(`Shareable report: ${safeReport}`));
+  assert(!restored.state.messages.at(-1).message.content.includes('PRIVATE_RECOVERED_SUMMARY'));
+  const recoveredFork = await instance('forked-recovered-worker', savedWorkerBranch, undefined, true);
+  const beforeForkReport = restored.state.messages.length;
+  await assert.rejects(recoveredFork.call('herdr_research_report', { summary: 'Unauthorized fork', report: safeReport }), /Only research workers|different Pi session/);
+  await tick();
+  assert.equal(restored.state.messages.length, beforeForkReport);
+
+  process.env.TEST_SPAWN_FAILURE = '1';
+  const failedLaunch = (await restored.call('local_workflow_start', { question: 'Synthetic failed launch.', reportBack: true })).details;
+  delete process.env.TEST_SPAWN_FAILURE;
+  runDirs.push(failedLaunch.run);
+  assert.equal(failedLaunch.status, 'failed');
+  const failedSession = failedLaunch.workers[0].session;
+  assert(!failedSession.terminalId);
+  const failedBranch = StoredSessions.open(failedSession.sessionPath).getBranch();
+  const recoveredLaunch = await instance(failedSession.sessionId, failedBranch);
+  const recoveredReport = join(failedLaunch.reportDirectory, 'recovered.md');
+  await writeFile(recoveredReport, 'SYNTHETIC_RECOVERY');
+  await recoveredLaunch.call('herdr_research_report', { summary: 'PRIVATE_FAILURE_SUMMARY', report: recoveredReport });
+  await tick();
+  assert(restored.state.messages.at(-1).message.content.includes(`Shareable report: ${recoveredReport}`));
+  assert(!restored.state.messages.at(-1).message.content.includes('PRIVATE_FAILURE_SUMMARY'));
+  const unregistered = await instance('unregistered-worker', [], { run: failedLaunch.run, id: 'worker-4' });
+  await assert.rejects(unregistered.call('herdr_research_report', { summary: 'No', report: recoveredReport }), /Unknown research worker/);
   const beforeWorkerHandoff = restored.state.branch.length;
   const workerHandoff = await worker.call('herdr_new_session', { handoff: 'independent.md' });
   assert.notEqual(workerHandoff.isError, true, JSON.stringify(workerHandoff.details));
@@ -483,6 +529,7 @@ if (program === 'hc') {
   global.clearInterval = realClearInterval;
   for (const key of Object.keys(process.env)) if (!(key in environment)) delete process.env[key];
   Object.assign(process.env, environment);
+  process.argv.splice(0, process.argv.length, ...originalArgv);
   for (const dir of runDirs) await rm(dir, { recursive: true, force: true });
   await rm(scratch, { recursive: true, force: true });
 }

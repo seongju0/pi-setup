@@ -16,7 +16,8 @@
     "agent/extensions/web-search"
   ],
   "support": [
-    "agent/extensions/lib/models.ts"
+    "agent/extensions/lib/models.ts",
+    "agent/extensions/lib/pi-invocation.ts"
   ],
   "skills": [
     "agent/skills/build",

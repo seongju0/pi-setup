@@ -1,22 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
-import { basename } from "node:path";
+import { piInvocation } from "../lib/pi-invocation.ts";
 import type { JsonAgentSessionEvent, RpcCommand, RpcResponse, RpcExtensionUIRequest } from "@earendil-works/pi-coding-agent";
 
 const COMMAND_TIMEOUT = 30_000;
 const MAX_RECORD = 16 * 1024 * 1024;
 
 type Record = JsonAgentSessionEvent | RpcResponse | RpcExtensionUIRequest | { type: "extension_error"; error: string };
-
-// Match upstream's launcher: installed Node/Bun CLI, compiled executable, then PATH.
-function invocation(args: string[]) {
-  const script = process.argv[1];
-  if (script && !script.startsWith("/$bunfs/root/") && existsSync(script)) {
-    return { command: process.execPath, args: [script, ...args] };
-  }
-  if (!/^(node|bun)(\.exe)?$/i.test(basename(process.execPath))) return { command: process.execPath, args };
-  return { command: "pi", args };
-}
 
 /** Small RPC transport: unlike RpcClient, exposes process death and cancels unsupported approval dialogs. */
 export class ChildRpc {
@@ -30,7 +19,7 @@ export class ChildRpc {
   private stderr = "";
 
   constructor(args: string[], cwd: string, onEvent: (event: Record) => void, onFailure: (error: Error) => void) {
-    const launch = invocation(["--mode", "rpc", ...args]);
+    const launch = piInvocation(["--mode", "rpc", ...args]);
     this.child = spawn(launch.command, launch.args, {
       cwd, shell: false, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, PI_SUBAGENT: "1", HERDR_RESEARCH_DIR: "", HERDR_RESEARCH_WORKER: "" },
