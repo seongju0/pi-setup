@@ -36,7 +36,17 @@ function keys(render, handle) {
 
 export function ask(_key, message, fallback) {
   let reply = '';
-  return keys(() => process.stdout.write(`\r\x1b[2K${message} ${fallback ? '[Y/n]' : '[y/N]'} ${reply}`), (text, key) => {
+  let drawn = false;
+  return keys(() => {
+    if (!drawn) {
+      process.stdout.write(`${message} ${fallback ? '[Y/n]' : '[y/N]'}\n`);
+      drawn = true;
+    }
+    // Only redraw the ASCII answer, leaving a column free to avoid terminal wrapping.
+    const width = Math.max(1, (process.stdout.columns || 80) - 1);
+    const answer = `> ${reply}`;
+    process.stdout.write(`\r\x1b[2K${answer.slice(-width)}`);
+  }, (text, key) => {
     if (key.name === 'return') return reply ? ['y', 'yes'].includes(reply.toLowerCase()) : fallback;
     if (key.name === 'backspace') reply = reply.slice(0, -1);
     else if (text && !key.ctrl && !key.meta && /^[a-z]+$/i.test(text)) reply += text;

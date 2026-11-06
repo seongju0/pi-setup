@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { spawn, spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { runSetup, inspectSetup } from '../scripts/setup.mjs';
 import { checkSetup } from '../scripts/check.mjs';
@@ -35,7 +35,58 @@ async function fixture(t) {
   return { temp, root, home, bin, target, calls, env, ask, setup, settings: path.join(target, 'settings.json'), backups: path.join(home, '.local/state/pi-setup/backups') };
 }
 
-// Exactly three caller-level flows; no internal implementation stubs.
+test('confirmation in a narrow terminal prints each question once, bounds edits and preserves approval/cancellation', { skip: process.platform !== 'darwin' }, async t => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-prompt-test-'));
+  t.after(() => fs.rm(temp, { recursive: true, force: true }));
+  const entry = path.join(temp, 'confirmation.mjs');
+  const question = 'Apply the approved changes? Existing replacements will be backed up.';
+  await fs.writeFile(entry, `import { ask } from ${JSON.stringify(pathToFileURL(path.join(source, 'scripts/prompts.mjs')).href)};
+console.log('APPROVED:' + await ask('apply', ${JSON.stringify(question)}, false));
+console.log('REPEATED:' + await ask('repeated', 'Reject repeated answer?', false));
+console.log('DEFAULT:' + await ask('default', 'Default decline?', false));
+try { await ask('cancel', 'Cancel confirmation?', false); } catch { console.log('CANCELLED'); }
+console.log('RAW:' + process.stdin.isRaw);
+`);
+  // macOS's system expect drives a real PTY; neither the key parser nor the prompt is stubbed.
+  const driver = path.join(temp, 'terminal.exp');
+  await fs.writeFile(driver, `set timeout 10
+set stty_init {columns 24 rows 24}
+spawn -noecho [lindex $argv 0] [lindex $argv 1]
+expect_before timeout { exit 1 }
+expect -exact {${question} [y/N]}
+send -- "[string repeat y 40][string repeat \\177 39]\\r"
+expect -exact {Reject repeated answer? [y/N]}
+send -- "yyy\\r"
+expect -exact {Default decline? [y/N]}
+send -- "\\r"
+expect -exact {Cancel confirmation? [y/N]}
+send -- "\\033"
+expect eof
+lassign [wait] pid spawnid osError status
+exit $status
+`);
+  const child = spawn('/usr/bin/expect', ['-f', driver, process.execPath, entry], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  let output = '', errors = '';
+  child.stdout.on('data', chunk => { output += chunk; });
+  child.stderr.on('data', chunk => { errors += chunk; });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { child.kill(); reject(new Error(`Prompt stalled: ${output}\n${errors}`)); }, 10000);
+    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`Prompt exited ${code}: ${output}\n${errors}`)); });
+  });
+  assert.equal(output.split(question).length - 1, 1);
+  const edits = output.split('\r\x1b[2K').slice(1).map(frame => frame.split(/[\r\n]/)[0]);
+  assert.ok(edits.length > 40);
+  assert.ok(edits.every(frame => frame.length < 24), 'answer redraw must never wrap');
+  assert.match(output, /APPROVED:true/);
+  assert.match(output, /REPEATED:false/);
+  assert.match(output, /DEFAULT:false/);
+  assert.match(output, /CANCELLED/);
+  assert.match(output, /RAW:false/);
+});
+
+// Setup caller-level flows below use no internal implementation stubs.
 test('fresh install: preview/prerequisites/cancellation are read-only, then links, preferences and native package apply', async t => {
   const f = await fixture(t);
   let prompted = false;
