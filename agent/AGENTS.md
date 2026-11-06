@@ -16,6 +16,12 @@ verification gaps without a mandatory closing template.
 
 ## Task-owned durable memory
 
+Standalone sessions, orchestrating parents and receiving independent sessions
+resolve the durable owner and curate memory. Parent-owned workers use the
+supplied ownership and relevant context; they do not independently search for an
+owner, attach, create records or checkpoint shared memory unless assigned that
+responsibility.
+
 - **Establish the owner before substantial enduring work.** A task/outcome owns
   memory; sessions, stages and worktrees do not each need a new TODO. Session
   `task` checklists track execution, not durable understanding. Use the
@@ -27,6 +33,13 @@ verification gaps without a mandatory closing template.
   do not guess from cwd
   or silently switch. Creation requires explicit user intent: offer it when
   needed, not for every question or command. Honor an explicit tracking opt-out.
+- **Make creation decisions visible.** When creation needs permission, ask in a
+  standalone message headed **Decision required**, with the proposed TODO title
+  and explicit **Yes** (create and attach) / **No** (continue without durable
+  tracking for this task) choices. Do not bury the question in progress updates.
+  End the turn and pause that task's implementation and worker launches until
+  answered. Clarify ambiguous replies such as “continue”; do not infer consent.
+  Do not ask again when creation was already explicitly requested or approved.
 - **Keep one durable home for understanding.** Use TODO for consequential
   findings, choices/reasons, uncertainty, constraints and substantial completion
   with limitations. Save within the current work turn when omission would cause
@@ -37,17 +50,21 @@ verification gaps without a mandatory closing template.
   ritual. Replace stale current claims; do not append a progress diary.
 - **Preserve bodies only when needed.** Use `todo_artifact` for reusable research
   or design whose body future work needs, updating one current document per
-  responsibility. Otherwise a concise finding plus a stable authoritative
-  reference is sufficient. A `/tmp` pointer alone does not preserve essential
+  responsibility. Presentation and preservation are separate: an inline answer
+  may still need durable storage, while a saved file is not automatically useful
+  memory. Otherwise a concise finding plus a stable authoritative reference is
+  sufficient. A `/tmp` pointer alone does not preserve essential
   understanding. Keep detailed QA, review and execution reports with their
   native owners; do not copy every report into TODO or maintain a competing
   project summary in handoff files. Never store credentials or PHI.
-- **Carry ownership across workers and sessions.** Pass the TODO ID and relevant
-  artifact references with the bounded assignment. Independent sessions resume
-  the owner and read relevant bodies; the same outcome may span sessions, while
-  independently owned outcomes may need separate items. For parent-owned
-  subagents, the parent integrates consequential results; do not make every
-  worker attach or checkpoint shared memory. Saved state and historical approval
+- **Carry explicit context references.** Distinguish the owning TODO ID,
+  authoritative design artifact IDs or stable document paths, execution-evidence
+  paths, and the bounded current assignment/permissions. Use available tools,
+  not persistence internals. If a worker lacks TODO access, supply the necessary
+  bounded material rather than another authoritative copy. Independent sessions
+  resume the owner and read relevant bodies; the same outcome may span sessions,
+  while independently owned outcomes may need separate items. The parent
+  integrates consequential worker results. Saved state and historical approval
   are context, not renewed execution permission; verify live state before
   consequential actions. If tracking is declined/unavailable, disclose the
   fallback and its persistence limits rather than silently replacing TODO.

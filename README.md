@@ -47,6 +47,19 @@ when ready; setup never reloads Pi or restarts apps.
 `PI_CODING_AGENT_DIR` selects another Pi directory; `PI_SETUP_HOME` selects another
 managed installation location.
 
+## Workflow and task memory
+
+The declared resources ship TODO, workflow skills and shared guidance together,
+but integrate through a task-memory contract rather than runtime orchestration.
+Skills own how work is performed; TODO owns durable understanding and retrieval.
+Standalone sessions and parents resolve the owner, while delegated workers use
+supplied context and return results for the parent to curate. Presentation and
+preservation are separate decisions; native saved results normally suffice for
+stage reports without duplicate files. If durable tracking is declined or
+unavailable, skills disclose their fallback and its persistence limits. TODO does
+not launch the workflows or require their stage sequence. See the
+[memory contract](agent/extensions/todo/docs/memory.md).
+
 ## Features and dependencies
 
 See [extensions](agent/extensions/README.md) and [custom skills](agent/skills) for
