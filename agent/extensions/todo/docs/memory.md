@@ -98,13 +98,21 @@ These are structured fields, not a template to repeat in a second Markdown descr
 
 ### Titles and goals are the discovery surface
 
-Native search matches the current saved title and goal/scope only. It does not search obsolete wording, findings or artifact contents. A completed item is searchable without turning its name into a historical closeout receipt.
+Work discovery (`todo search`) matches the current saved title and goal/scope only. It does not search obsolete wording, findings or artifact contents. The separate `todo_knowledge` tool searches curated findings, decisions, questions, references and currently cataloged artifact bodies; active visibility is the default, with full retained history available explicitly. Its excerpts and owner revisions are leads to read, not a new source of truth. It never searches old body revisions or attaches work. A completed item is searchable without turning its name into a historical closeout receipt.
 
 Keep names recognizable through research, implementation, review and completion. For example, **Make effective-date reassignment release events external** remains useful; **Investigating → Building → PR merged → Done** does not. Lifecycle belongs in `status`, details in the design, and findings in evidence/decisions—not the title or outcome.
 
 Update title/goal when the agreed responsibility changes or a clarification materially improves discoverability. Update them together where needed, but do not rename at every stage, add aliases or require a completion-time bookkeeping ritual. Preserve important exclusions and scope: changing `outcome` or an approved direction retains its existing sign-off requirement. A labeling clarification must not quietly expand authority.
 
 Recall uses flat candidates with type, status, goal and parent ID/title (null for roots). Search includes current and historical statuses by default; list excludes done/canceled unless requested. Parent labels help distinguish similarly named items; they do not contribute words to child matching. Inspect ambiguous candidates, then explicitly `get` or `resume` the selected ID. Resume loads relevant parent grounding without reopening completed work or granting execution permission.
+
+### Recoverable sources, not a receipt archive
+
+Use `session_history` when the original journal evidence matters. Store its emitted `pi-history:v1/<encoded-session-id>/<encoded-entry-id>` reference in an existing evidence/reference string beside the concise finding and qualifications. No schema migration, automatic harvesting or per-tool bookkeeping is required. Default search stays on current ancestry (including pre-compaction entries); exact reference reads can resolve same-project session files. Other-project or deleted sources fail visibly rather than expanding scope.
+
+Historical user text, assistant claims, tool evidence, coordination and derived summaries keep distinct provenance. Reading them does not revive approval or prove live state. Verify actual state before repeating consequential actions. Journal edits/compaction are not deletion; retrieved historical originals may differ from the current conversation projection. Retrieved text enters the selected model/provider context; thinking, system messages, hidden extension state and image bytes are excluded. The history tool does not guarantee recovery of overwritten TODO fields.
+
+Artifact reads use bounded pages in both text and structured output. Follow `next_offset` with `expected_version` for the material needed; restart if the document changed. Required artifacts remain listed and validated during resume, not silently dropped to fit retrieval limits. Fixed page sizes are not a guarantee that a provider request fits. These retrieval tools do not change compaction, approve decisions or automatically update durable understanding.
 
 ### Clear to humans, compact internally
 

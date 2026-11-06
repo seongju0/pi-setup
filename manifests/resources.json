@@ -10,6 +10,7 @@
     "agent/extensions/no-sleep",
     "agent/extensions/task",
     "agent/extensions/todo",
+    "agent/extensions/session-history",
     "agent/extensions/update-skills",
     "agent/extensions/usage",
     "agent/extensions/view",
@@ -17,7 +18,8 @@
   ],
   "support": [
     "agent/extensions/lib/models.ts",
-    "agent/extensions/lib/pi-invocation.ts"
+    "agent/extensions/lib/pi-invocation.ts",
+    "agent/extensions/lib/retrieval.ts"
   ],
   "skills": [
     "agent/skills/build",

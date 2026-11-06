@@ -273,7 +273,9 @@ try {
   assert.equal(JSON.parse(metadataOnly.content[0].text).artifact_id, undefined);
   assert.equal(JSON.parse(metadataOnly.content[0].text).path, undefined);
   const artifactRead = await activity.callRaw("todo_artifact", { action: "read", id: artifactChild.todo.id, artifact_id: artifactStarted.todo.artifacts[0].id });
-  assert.deepEqual(JSON.parse(artifactRead.content[0].text), { body: "# Draft plan\n" });
+  assert.equal(artifactRead.structuredContent.body, "# Draft plan\n");
+  assert.equal(artifactRead.structuredContent.complete, true);
+  assert.ok(artifactRead.content[0].text.endsWith(artifactRead.structuredContent.body));
   assert.equal(artifactStarted.todo.status, "in_progress");
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.status, "in_progress");
   assert.match(activity.statuses.at(-1), /Activity \[in_progress\]/);
@@ -1094,6 +1096,87 @@ try {
   await largeSession.call("todo", { action: "leave" });
   const [leftLarge] = await largeSession.emit("context", { messages: largeContext.messages });
   assert.ok(!leftLarge.messages.some(message => message.customType === "todo-context-size-warning-v1"));
+
+  // Retrieval: existing legacy-kind documents remain readable, and every page is explicit and bounded.
+  const retrievalRoot = join(scratch, "retrieval");
+  const retrievalProject = await create(retrievalRoot, "project", "Knowledge", "Own shared investigation");
+  const retrievalChild = await create(retrievalRoot, "simple", "Completed work", "A stable delivery", retrievalProject.todo.id);
+  const retrievalOther = await create(retrievalRoot, "simple", "Other owner", "Separate responsibility");
+  const oldKnowledge = await checkpoint(retrievalRoot, retrievalChild.todo.id, 1, {
+    current_state: { evidence: ["queue.id: consumer deduplication remains unverified"] },
+    decisions: [{ summary: "queue.id: old assumption", rationale: "Earlier synthetic observation", approval: "draft", evidence: [] }],
+    questions: [{ text: "queue.id: did the consumer run?", resolution: "Synthetic run only" }],
+    references: ["pi-history:v1/synthetic-session/tool-result"],
+  }, "knowledge-first", "test");
+  const currentKnowledge = await checkpoint(retrievalRoot, retrievalChild.todo.id, 2, {
+    status: "done", decisions: [{ summary: "queue.id: inspect consumer first", rationale: "Avoid duplicate side effects", approval: "draft", evidence: [], supersedes: oldKnowledge.todo.decisions[0].id }],
+  }, "knowledge-current", "test");
+  await checkpoint(retrievalRoot, retrievalOther.todo.id, 1, { current_state: { evidence: ["queue.id: outside project"] } }, "knowledge-other", "test");
+  await saveArtifact(retrievalRoot, retrievalProject.todo.id, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.revision, { ...metadata, applies_to: [], required: false, body: "queue.id: parent-only research" });
+  const pagedBody = (`Quoted \\\"line\\\" \\\\ newline\n🙂 `.repeat(3000) + "queue.id: exact document evidence").trim() + "\n";
+  const documentOwner = await saveArtifact(retrievalRoot, retrievalChild.todo.id, currentKnowledge.todo.revision, { ...metadata, applies_to: [], required: false, body: pagedBody });
+  const document = documentOwner.todo.artifacts[0];
+  // This represents persisted artifacts authored by earlier releases, not permission to author legacy kinds.
+  await mutate(retrievalRoot, retrievalChild.todo.id, documentOwner.todo.revision, todo => { todo.artifacts[0].kind = "verification"; return todo; });
+  process.env.PI_TODO_PATH = retrievalRoot;
+  const retrieval = await instance();
+  await retrieval.call("todo", { action: "resume", selector: retrievalChild.todo.id });
+  const retrievalFiles = [...await list(retrievalRoot)].map(row => join(row.directory, "todo.json"));
+  const retrievalBefore = await Promise.all(retrievalFiles.map(path => readFile(path, "utf8")));
+  const retrievalEntries = JSON.stringify(retrieval.stored);
+  let nextOffset = 0; let expectedVersion; let reconstructed = "";
+  do {
+    const rawPage = await retrieval.callRaw("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: nextOffset, ...(expectedVersion ? { expected_version: expectedVersion } : {}) });
+    const page = rawPage.structuredContent;
+    assert.deepEqual(rawPage.details, page);
+    assert.ok(page.body.length <= 12000);
+    assert.ok(rawPage.content[0].text.endsWith(page.body));
+    assert.equal(page.offset, nextOffset);
+    assert.equal(page.total_chars, pagedBody.length);
+    assert.equal(page.complete, page.next_offset === null);
+    reconstructed += page.body; expectedVersion = page.version; nextOffset = page.next_offset;
+  } while (nextOffset !== null);
+  assert.equal(reconstructed, pagedBody);
+  assert.equal((await retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: pagedBody.length, expected_version: expectedVersion })).complete, true);
+  await assert.rejects(retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: 1 }), /expected_version/);
+  await assert.rejects(retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: pagedBody.length + 1, expected_version: expectedVersion }), /Offset/);
+
+  const knowledgeQuery = { query: "QUEUE.ID", selector: retrievalChild.todo.id, limit: 1 };
+  assert.deepEqual(await retrieval.call("todo", { action: "search", query: "queue.id" }), []);
+  let knowledgeCursor; const knowledgeHits = [];
+  do {
+    const page = await retrieval.call("todo_knowledge", { ...knowledgeQuery, ...(knowledgeCursor ? { cursor: knowledgeCursor } : {}) });
+    knowledgeHits.push(...page.results); knowledgeCursor = page.next_cursor;
+  } while (knowledgeCursor);
+  assert.deepEqual(new Set(knowledgeHits.map(hit => hit.source_kind)), new Set(["evidence", "decision", "artifact"]));
+  assert.ok(knowledgeHits.every(hit => hit.owner_id === retrievalChild.todo.id));
+  assert.ok(knowledgeHits.find(hit => hit.source_kind === "artifact").excerpt.includes("queue.id"));
+  assert.equal(knowledgeHits.find(hit => hit.source_kind === "decision").approval, "draft");
+  assert.ok(!knowledgeHits.some(hit => hit.record_id === oldKnowledge.todo.decisions[0].id));
+  for (const hit of knowledgeHits) {
+    const { tool, ...args } = hit.read;
+    assert.ok(await retrieval.call(tool, args));
+  }
+  const fullKnowledge = await retrieval.call("todo_knowledge", { ...knowledgeQuery, view: "full", limit: 20 });
+  assert.ok(fullKnowledge.results.some(hit => hit.record_id === oldKnowledge.todo.decisions[0].id));
+  assert.ok(fullKnowledge.results.some(hit => hit.source_kind === "question"));
+  const projectKnowledge = await retrieval.call("todo_knowledge", { query: "queue.id", selector: retrievalProject.todo.id, limit: 20 });
+  assert.deepEqual(new Set(projectKnowledge.results.map(hit => hit.owner_id)), new Set([retrievalProject.todo.id, retrievalChild.todo.id]));
+  assert.ok((await retrieval.call("todo_knowledge", { query: "queue.id", limit: 20 })).results.some(hit => hit.owner_id === retrievalOther.todo.id));
+  const cursorPage = await retrieval.call("todo_knowledge", knowledgeQuery);
+  await assert.rejects(retrieval.call("todo_knowledge", { ...knowledgeQuery, query: "different", cursor: cursorPage.next_cursor }), /Cursor/);
+  assert.deepEqual(await retrieval.call("todo_knowledge", { query: "absent knowledge" }), { results: [], next_cursor: null });
+  await assert.rejects(retrieval.call("todo_knowledge", { query: "   " }), /non-whitespace/);
+  assert.deepEqual(await Promise.all(retrievalFiles.map(path => readFile(path, "utf8"))), retrievalBefore);
+  assert.equal(JSON.stringify(retrieval.stored), retrievalEntries);
+  assert.equal((await locate(retrievalRoot, retrievalChild.todo.id)).todo.status, "done");
+  const latestDocumentOwner = await locate(retrievalRoot, retrievalChild.todo.id);
+  await retrieval.call("todo_artifact", { action: "upsert", id: retrievalChild.todo.id, revision: latestDocumentOwner.todo.revision, artifact_id: document.id, ...metadata, applies_to: [], required: false, body: "New current document" });
+  await assert.rejects(retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: 12000, expected_version: expectedVersion }), /Artifact changed/);
+  assert.equal((await retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id })).body, "New current document\n");
+  await rm(join(retrievalProject.directory, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.artifacts[0].path));
+  await assert.rejects(retrieval.call("todo_knowledge", { query: "anything", selector: retrievalProject.todo.id }), /ENOENT/);
+  process.env.PI_TODO_PATH = root;
 
   // Corruption is still visible and never silently reset.
   await writeFile(join(child.directory, "todo.json"), "{broken");

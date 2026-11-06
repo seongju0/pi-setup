@@ -10,7 +10,8 @@ vendored Pi runtime is needed.
 | `move/` | Move a session using Pi's session APIs |
 | `no-sleep/` | macOS sleep prevention using caffeinate |
 | `task/` | Session-local task tracking |
-| `todo/` | Durable local work context; optional user-configured Linear integration |
+| `todo/` | Durable local work context, paged artifacts and curated knowledge search; optional user-configured Linear integration |
+| [`session-history/`](session-history/README.md) | Read-only current-branch history search and exact same-project evidence references |
 | `update-skills/` | Skill inventory and owner-native updates |
 | [`usage/`](usage/README.md) | `/usage [week\|month]`: local token usage and catalog cost comparison |
 | [`view/`](view/README.md) | Open a path in a configurable GUI editor; defaults to Zed |

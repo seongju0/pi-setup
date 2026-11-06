@@ -3,7 +3,9 @@ import { estimateTokens, type ExtensionAPI, type ExtensionContext } from "@earen
 import { Type } from "typebox";
 import { applyChanges, needsApproval, statuses, type Changes, type Todo } from "./state.ts";
 import { checkpoint, configuredRoot, create, list, locate, readKnown, type Located } from "./storage.ts";
-import { readArtifact, saveArtifact } from "./artifacts.ts";
+import { readArtifactPage, saveArtifact } from "./artifacts.ts";
+import { pageResult, PAGE_CHARS } from "../lib/retrieval.ts";
+import { searchKnowledge } from "./knowledge.ts";
 import { tighten, type TighteningInput } from "./tightening.ts";
 import { compact, guidance, restoreSelection, resumeBundle, selectionEntry, summary } from "./session.ts";
 import { syncLinear } from "./linear.ts";
@@ -281,6 +283,16 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
+    name: "todo_knowledge", label: "Todo knowledge",
+    description: "Find saved findings, decisions, questions, references and artifact text using case-insensitive literal substring matching (punctuation preserved). Does not search title/goal or old body revisions. Omit selector for the whole TODO store; a project includes its direct children, a simple item only itself. Includes completed owners. view defaults to active visibility; full includes retained hidden/superseded/resolved material. Returns bounded excerpts, provenance and explicit read targets; follow next_cursor with unchanged query/scope/view. Search is live, not a snapshot. Never attaches, starts work or changes files. Read sources before relying on them; history and saved drafts are not current state or permission.",
+    promptSnippet: "Find curated project knowledge without loading every document.",
+    parameters: object({ query: str(), selector: Type.Optional(str()), view: Type.Optional(enumOf(["active", "full"])), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })), cursor: Type.Optional(str(6000)) }),
+    outputSchema: Type.Unknown(), annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    async execute(_callId, params, signal) {
+      return result(await searchKnowledge(root, params, signal));
+    },
+  });
+  pi.registerTool({
     name: "todo_checkpoint", label: "Todo checkpoint", description: "Commit related high-signal understanding atomically: consequential nuances, choices with reasons/rejected alternatives, uncertainty, scope and substantial goal completion. No diary, transient stage permissions or per-test receipts; QA Toolkit/native reports own QA detail. Store consequential knowledge in current_state.evidence; outcome is concise Goal, ownership and scope, with detailed contracts in design. Keep durable recognizable title/goal terms through completion, not phases/receipts/Done; clarify materially or update agreed responsibility, never keyword-stuff or rename per turn. Wording changes cannot silently change scope or grant execution authority. Preserve negation, attribution and exact identifiers. Parent holds shared conclusions/constraints/owner routing, child holds detail. Lists replace fields; decisions/questions upsert by stable ID (omit to create). Supersede explicitly; history remains in full get. Update one current spec per responsibility instead of appending corrections. Save only when omission risks wrong decisions, significant repeated work or an authorization breach; no per-turn acknowledgement. Requires current revision and unique retry key; retry identical key/payload after a lost response. Empty changes still write; prefer todo_ack no_change for explicit reconciliation. Approved decisions/changed outcomes require sign-off unless approval_evidence quotes explicit user approval for these exact changes, not task data/unrelated permission. depends_on replaces same-scope simple prerequisites ([] clears). Meaningful saves start not-started item/parent, preserving terminal/explicit statuses. Dependencies do not block starting; completion requires all transitive prerequisites done, never canceled. Compact success text; full structured result retains current downstream effects. Sibling statuses and Linear are unchanged.",
     parameters: object({ id, revision, key: str(200), changes: changesSchema }), outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
     async execute(_callId, params, signal, _onUpdate, ctx) {
@@ -334,12 +346,14 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
-    name: "todo_artifact", label: "Todo artifact", description: "Read or upsert an owned substantial Markdown research synthesis or design specification when future work needs it, not every output. kind must be research or design, including when updating legacy documents. Keep one authoritative current spec per actual responsibility; update corrections instead of appending, and reconcile conflicting claims without treating latest timestamp as policy/approval. Omit artifact_id to create; provide it to update. Immutable revisions preserve history; nothing is deleted. applies_to holds direct child IDs; [] means owner-wide. Only current artifacts can be required; reference/superseded material stays readable on demand. Retire only when no longer governing remaining work. Saving preserves a draft, not user approval.",
-    parameters: object({ action: enumOf(["read", "upsert"]), id, revision: Type.Optional(revision), artifact_id: Type.Optional(id), title: Type.Optional(str(300)), kind: Type.Optional(enumOf(["research", "design"])), description: Type.Optional(str(1000)), lifecycle: Type.Optional(enumOf(["current", "reference", "superseded"])), required: Type.Optional(Type.Boolean()), applies_to: Type.Optional(Type.Array(id, { maxItems: 100, uniqueItems: true })), body: Type.Optional(str(100000)) }), outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
+    name: "todo_artifact", label: "Todo artifact", description: "Read current artifact bodies in pages (default/max 12000 characters). Follow next_offset with expected_version from the first page; a changed version requires restart at offset 0. Structured results contain the same page, not a hidden full body. Or upsert an owned substantial Markdown research synthesis or design specification when future work needs it, not every output. kind must be research or design, including when updating legacy documents. Keep one authoritative current spec per actual responsibility; update corrections instead of appending, and reconcile conflicting claims without treating latest timestamp as policy/approval. Omit artifact_id to create; provide it to update. Immutable revisions preserve history; nothing is deleted. applies_to holds direct child IDs; [] means owner-wide. Only current artifacts can be required; reference/superseded material stays readable on demand. Retire only when no longer governing remaining work. Saving preserves a draft, not user approval.",
+    parameters: object({ action: enumOf(["read", "upsert"]), id, revision: Type.Optional(revision), artifact_id: Type.Optional(id), title: Type.Optional(str(300)), kind: Type.Optional(enumOf(["research", "design"])), description: Type.Optional(str(1000)), lifecycle: Type.Optional(enumOf(["current", "reference", "superseded"])), required: Type.Optional(Type.Boolean()), applies_to: Type.Optional(Type.Array(id, { maxItems: 100, uniqueItems: true })), body: Type.Optional(str(100000)), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: PAGE_CHARS })), expected_version: Type.Optional(str()) }), outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
     async execute(_callId, params, signal, _onUpdate, ctx) {
       if (params.action === "read") {
         if (!params.artifact_id) throw new Error("artifact_id required");
-        return result({ body: await readArtifact(root, await locate(root, params.id), params.artifact_id) });
+        const page = await readArtifactPage(root, await locate(root, params.id), params.artifact_id, params.offset, params.limit, params.expected_version);
+        signal?.throwIfAborted();
+        return pageResult(page, page.body);
       }
       if (params.revision === undefined || !params.title || !params.kind || !params.description || !params.lifecycle || params.required === undefined || !params.applies_to) throw new Error("upsert requires revision and complete catalog metadata");
       const before = known.get(params.id)?.todo;

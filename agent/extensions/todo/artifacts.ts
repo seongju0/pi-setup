@@ -3,6 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { atomicWrite, list, mutate, rootPath, safePath, type Located } from "./storage.ts";
 import { validate, type Artifact } from "./state.ts";
+import { PAGE_CHARS, textPage } from "../lib/retrieval.ts";
 
 export type ArtifactInput = Omit<Artifact, "id" | "path"> & { id?: string; body?: string };
 export async function saveArtifact(root: string, id: string, revision: number, input: ArtifactInput, signal?: AbortSignal): Promise<Located> {
@@ -33,6 +34,15 @@ export async function saveArtifact(root: string, id: string, revision: number, i
     return todo;
   }, signal, true);
 }
+export async function readArtifactPage(root: string, item: Located, artifactId: string, offset = 0, limit = PAGE_CHARS, expectedVersion?: string) {
+  const artifact = item.todo.artifacts.find(row => row.id === artifactId);
+  if (!artifact) throw new Error("Artifact not found");
+  if (offset > 0 && !expectedVersion) throw new Error("Continuation requires expected_version from the first page");
+  if (expectedVersion !== undefined && expectedVersion !== artifact.path) throw new Error("Artifact changed; restart at offset 0 without expected_version");
+  const { text, ...page } = textPage(await readArtifact(root, item, artifactId), offset, limit);
+  return { id: item.todo.id, artifact_id: artifactId, version: artifact.path, body: text, ...page };
+}
+
 export async function readArtifact(root: string, item: Located, artifactId: string): Promise<string> {
   root = await rootPath(root);
   const artifact = item.todo.artifacts.find(row => row.id === artifactId);
