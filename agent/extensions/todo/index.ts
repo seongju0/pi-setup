@@ -12,7 +12,7 @@ import { syncLinear } from "./linear.ts";
 import { effects, dependencyView, dependencyState, prerequisites, validateGraph } from "./dependencies.ts";
 import { pickTodo } from "./picker.ts";
 import { discoverySummary, search } from "./search.ts";
-import { anchorEntry, contextType, detachedType, driftType, sizeType, ordinaryMessages, messageKey, projectContext, hasMissingAnchor, type Anchor, type ContextNote } from "./context.ts";
+import { anchorEntry, contextType, detachedType, driftType, sizeType, usageType, ordinaryMessages, messageKey, projectContext, hasMissingAnchor, type Anchor, type ContextNote } from "./context.ts";
 import { acknowledgementEntry, addCompactionFocus, compactionEntry, pendingReconciliation, reconciliationText, type CompactionMarker } from "./compaction.ts";
 
 const enumOf = (values: readonly string[]) => Type.Union(values.map(value => Type.Literal(value)));
@@ -229,18 +229,29 @@ export default function todoExtension(pi: ExtensionAPI) {
       const message = loadedMessage!;
       const estimated = estimateTokens({ role: "user", content: [{ type: "text", text: message.content + (driftMessage?.content ?? "") }], timestamp: message.timestamp });
       const usage = ctx.getContextUsage?.();
-      const highUsage = typeof usage?.percent === "number" && usage.percent >= 70;
-      const warningKey = JSON.stringify([message.details.load_id, ctx.model?.contextWindow, highUsage]);
+      const usageBand = typeof usage?.percent === "number" ? usage.percent >= 90 ? 90 : usage.percent >= 80 ? 80 : 0 : 0;
+      const warningKey = JSON.stringify([message.details.load_id, ctx.model?.contextWindow]);
       const largeForModel = !!ctx.model?.contextWindow && estimated > Math.floor(ctx.model.contextWindow / 10);
-      const oversized = loadedSizes.orientation > 18000 || loadedSizes.bundle > 40000 || largeForModel || highUsage;
+      const oversized = loadedSizes.orientation > 18000 || loadedSizes.bundle > 40000 || largeForModel;
       if (oversized && sizeWarningKey !== warningKey && !notes.some(note => note.details.warning_key === warningKey)) {
         sizeWarningKey = warningKey;
-        const warning = `Todo context size warning (nonblocking): orientation ${loadedSizes.orientation} characters, full bundle ${loadedSizes.bundle} characters, about ${estimated} injected tokens${largeForModel ? "; exceeds 10% of this model's window" : ""}${highUsage ? `; Pi estimates session context usage at ${Math.round(usage!.percent!)}%` : ""}. Active context was retained; use todo get view active for current understanding, full/artifact read for history. Consider todo_tighten during a meaningful update only when verified progress makes context redundant. Read full selected/parent context first. Retire only artifacts no longer governing remaining work, not every merge; keep active rules, authorization boundaries, unresolved constraints, relevant research/design and completion evidence. Preserve evidence and decision history; do not hide required material, infer approval or resolve questions without evidence. No extra cleanup turn or repeated maintenance without new material progress. Tightening affects future loads, not this brief or conversation; explicit refresh replaces the brief, Pi compaction reclaims conversation space.`;
+        const warning = `Todo context size warning (nonblocking): orientation ${loadedSizes.orientation} characters, full bundle ${loadedSizes.bundle} characters, about ${estimated} injected tokens${largeForModel ? "; exceeds 10% of this model's window" : ""}. Active context was retained; use todo get view active for current understanding, full/artifact read for history. Consider todo_tighten during a meaningful update only when verified progress makes context redundant. Read full selected/parent context first. Retire only artifacts no longer governing remaining work, not every merge; keep active rules, authorization boundaries, unresolved constraints, relevant research/design and completion evidence. Preserve evidence and decision history; do not hide required material, infer approval or resolve questions without evidence. No extra cleanup turn or repeated maintenance without new material progress. Tightening affects future loads, not this brief or conversation; explicit refresh replaces the brief, Pi compaction reclaims conversation space.`;
         sizeMessage = { role: "custom", customType: sizeType, display: false, details: { load_id: randomUUID(), warning_key: warningKey }, timestamp: Date.now(), content: warning };
         notes.push(sizeMessage); pi.sendMessage(sizeMessage, { triggerTurn: false });
-        ctx.ui.notify(`Todo context is large (${loadedSizes.orientation} orientation characters, ${loadedSizes.bundle} bundle characters${largeForModel ? "; exceeds 10% of this model's window" : ""}${highUsage ? `; session usage ${Math.round(usage!.percent!)}%` : ""}). The model received a nonforcing tightening nudge.`, "warning");
+        ctx.ui.notify(`Todo context is large (${loadedSizes.orientation} orientation characters, ${loadedSizes.bundle} bundle characters${largeForModel ? "; exceeds 10% of this model's window" : ""}). The model received a nonforcing tightening nudge.`, "warning");
       }
       if (!oversized) { sizeMessage = undefined; sizeWarningKey = ""; }
+      const usageKey = (band: number) => JSON.stringify([message.details.load_id, ctx.model?.contextWindow, band]);
+      const deliveredUsage = (band: number) => notes.some(note => note.customType === usageType && note.details.warning_key === usageKey(band));
+      if (usageBand && !deliveredUsage(usageBand) && !deliveredUsage(90)) {
+        const guidance = usageBand === 90
+          ? "Within the current work turn, preserve consequential unsaved findings, decisions with reasons, uncertainty and decisive evidence pointers using todo_checkpoint or relevant artifacts. If saved understanding is already current, do not rewrite it or perform an acknowledgement ritual. Preserve still-active authorization with its exact limits in the conversation, not as durable execution permission. Continue the prescribed task normally; Pi owns compaction. No forced reset, extra bookkeeping turn, premature final answer or skipped verification."
+          : "Context is getting full. Prefer targeted todo_knowledge/session_history searches and bounded reads of relevant material; avoid loading unrelated documents. Continue the prescribed task normally. This is not a task deadline or a reason to reduce scope, skip verification or perform cleanup.";
+        const warning = `Todo session context usage reminder (nonblocking, ${usageBand}% band): Pi estimates session context usage at ${Math.round(usage!.percent!)}%. ${guidance}`;
+        const note: ContextNote = { role: "custom", customType: usageType, display: false, details: { load_id: randomUUID(), warning_key: usageKey(usageBand) }, timestamp: Date.now(), content: warning };
+        notes.push(note); pi.sendMessage(note, { triggerTurn: false });
+        ctx.ui.notify(`Session context usage is about ${Math.round(usage!.percent!)}%. Todo sent a nonforcing ${usageBand === 90 ? "unsaved-understanding preservation" : "selective retrieval"} reminder.`, "warning");
+      }
       return { messages: project(messages, ctx) };
     } catch (error) {
       ctx.abort(); ctx.ui.notify(`Todo context could not load: ${(error as Error).message}. Use /todo leave to detach or repair it.`, "error");

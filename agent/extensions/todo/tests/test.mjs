@@ -624,19 +624,56 @@ try {
   const [noSizeWarning] = await smallModel.emit("context", { messages: repeatSmall.messages });
   assert.equal(noSizeWarning.messages.filter(message => message.customType === "todo-context-size-warning-v1").length, 2); // Delivered warnings remain at their original positions.
 
-  // Pi's session-usage estimate nudges at 70%, even for a small Todo. Unknown/below-threshold usage is not guessed.
-  smallModel.ctx.getContextUsage = () => ({ percent: 69.9, tokens: 699000, contextWindow: 1000000 });
-  assert.equal((await smallModel.emit("context", { messages: [] }))[0].messages.filter(m => m.customType === "todo-context-size-warning-v1").length, 2);
-  smallModel.ctx.getContextUsage = () => ({ percent: 70, tokens: 700000, contextWindow: 1000000 });
+  // Session usage is independent of brief size: 80% encourages selective reads, 90% preserves unsaved understanding.
+  const usageNotes = messages => messages.filter(message => message.customType === "todo-context-usage-warning-v1");
+  smallModel.ctx.getContextUsage = () => ({ percent: 79.9, tokens: 799000, contextWindow: 1000000 });
+  assert.equal(usageNotes((await smallModel.emit("context", { messages: [] }))[0].messages).length, 0);
+  smallModel.ctx.getContextUsage = () => ({ percent: 80, tokens: 800000, contextWindow: 1000000 });
   const [usageContext] = await smallModel.emit("context", { messages: [] });
-  assert.match(usageContext.messages.at(-1).content, /session context usage at 70%/);
-  assert.match(usageContext.messages.at(-1).content, /todo_tighten/);
+  assert.match(usageNotes(usageContext.messages)[0].content, /80% band.*targeted.*bounded reads/);
+  assert.doesNotMatch(usageNotes(usageContext.messages)[0].content, /todo_tighten/);
+  assert.equal(usageContext.messages.filter(m => m.customType === "todo-context-size-warning-v1").length, 2);
   const usageWarnings = smallModel.warnings.length;
   await smallModel.emit("context", { messages: usageContext.messages });
   assert.equal(smallModel.warnings.length, usageWarnings);
+  smallModel.ctx.getContextUsage = () => ({ percent: 90, tokens: 900000, contextWindow: 1000000 });
+  const [preservationContext] = await smallModel.emit("context", { messages: usageContext.messages });
+  assert.equal(usageNotes(preservationContext.messages).length, 2);
+  assert.match(usageNotes(preservationContext.messages)[1].content, /90% band.*consequential unsaved.*already current.*do not rewrite/);
+  const preservedWarnings = smallModel.warnings.length;
+  smallModel.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000, contextWindow: 1000000 });
+  await smallModel.emit("context", { messages: preservationContext.messages });
+  assert.equal(smallModel.warnings.length, preservedWarnings);
   assert.deepEqual(await smallModel.emit("agent_before_settle", boundary), []);
+  const usageReopened = await instance(smallModel.stored);
+  usageReopened.ctx.model = smallModel.ctx.model;
+  usageReopened.ctx.getContextUsage = smallModel.ctx.getContextUsage;
+  assert.equal(usageNotes((await usageReopened.emit("context", { messages: preservationContext.messages }))[0].messages).length, 2);
+  assert.equal(usageReopened.warnings.length, 0); // Persisted anchors/receipts also deduplicate after reopening.
   smallModel.ctx.getContextUsage = () => ({ percent: null, tokens: null, contextWindow: 1000000 });
-  assert.equal((await smallModel.emit("context", { messages: usageContext.messages }))[0].messages.filter(m => m.customType === "todo-context-size-warning-v1").length, 3);
+  assert.equal(usageNotes((await smallModel.emit("context", { messages: preservationContext.messages }))[0].messages).length, 2);
+
+  const jumpedUsage = await instance();
+  await jumpedUsage.call("todo", { action: "resume", selector: sibling.todo.id });
+  jumpedUsage.ctx.model = { contextWindow: 1000000 };
+  jumpedUsage.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000, contextWindow: 1000000 });
+  const [jumpedContext] = await jumpedUsage.emit("context", { messages: [] });
+  assert.equal(usageNotes(jumpedContext.messages).length, 1);
+  assert.match(usageNotes(jumpedContext.messages)[0].content, /90% band/);
+  jumpedUsage.ctx.getContextUsage = () => ({ percent: 85, tokens: 850000, contextWindow: 1000000 });
+  assert.equal(usageNotes((await jumpedUsage.emit("context", { messages: jumpedContext.messages }))[0].messages).length, 1);
+  await jumpedUsage.call("todo", { action: "refresh" });
+  const [renewedUsage] = await jumpedUsage.emit("context", { messages: jumpedContext.messages });
+  assert.equal(usageNotes(renewedUsage.messages).length, 1);
+  assert.match(usageNotes(renewedUsage.messages)[0].content, /80% band/);
+  await jumpedUsage.emit("session_compact", { reason: "manual" });
+  jumpedUsage.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000, contextWindow: 1000000 });
+  const [compactedUsage] = await jumpedUsage.emit("context", { messages: renewedUsage.messages });
+  assert.equal(usageNotes(compactedUsage.messages).length, 1);
+  assert.match(usageNotes(compactedUsage.messages)[0].content, /90% band/);
+  await jumpedUsage.call("todo_ack", { id: sibling.todo.id, reason: "no_change", explanation: "Read-only context reminder checks" });
+  await jumpedUsage.call("todo", { action: "leave" });
+  assert.equal(usageNotes((await jumpedUsage.emit("context", { messages: compactedUsage.messages }))[0].messages).length, 0);
 
   // Autonomous saving records existing user approval without another confirmation; no approval still fails closed.
   const autonomousTodo = await create(root, "simple", "Autonomous saving", "Original outcome");

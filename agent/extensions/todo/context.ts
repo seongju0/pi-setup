@@ -4,11 +4,12 @@ import { checkpointMessage } from "./session.ts";
 export const contextType = "todo-context-v1";
 export const driftType = "todo-context-drift-v1";
 export const sizeType = "todo-context-size-warning-v1";
+export const usageType = "todo-context-usage-warning-v1";
 export const detachedType = "todo-context-detached-v1";
 export const anchorEntry = "todo-context-anchor-v1";
 export type ContextNote = { role: "custom"; customType: string; content: string; display: boolean; details: { load_id: string; anchor_version?: number; warning_key?: string; drift_key?: string }; timestamp: number };
 export type Anchor = { id: string; epoch: string; after: string | null };
-const ownedTypes = new Set([contextType, driftType, sizeType, detachedType, checkpointMessage]);
+const ownedTypes = new Set([contextType, driftType, sizeType, usageType, detachedType, checkpointMessage]);
 export const isTodoNote = (message: any) => ownedTypes.has(message.customType);
 // Identity only, never content: tool results can share timestamps but have distinct call IDs.
 export const messageKey = (message: any) => JSON.stringify([message.role, message.timestamp, message.toolCallId, message.responseId]);
