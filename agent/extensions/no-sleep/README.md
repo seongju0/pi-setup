@@ -64,10 +64,7 @@ exit listener, timer, watchdog, automatic retry, or power-setting change is used
 
 ## Host placement, Herdr, and limits
 
-A local macOS Pi inside Herdr runs on the same execution host; no special Herdr
-integration, pane focus, visible tab, or terminal output is needed for the native
-mechanism. This is a host-placement statement, not acceptance evidence for this
-replacement's full runtime lifecycle.
+Sleep inhibition applies to the Mac running Pi, including Pi inside Herdr.
 
 - **Idle sleep:** `-i` requests prevention of automatic system sleep due to
   inactivity. It has no AC-only restriction in the native manual.
@@ -95,21 +92,13 @@ do not attribute assertions owned by other processes to this extension. A record
 for `PreventSystemSleep` alone is not proof of effective system policy, especially
 on battery. Do not disable other processes' assertions to test this extension.
 
-Automated tests use Pi's actual extension loader and documented event/command
-contracts with mocked native spawning, not actual OS assertions or the complete
-Pi session runtime.
+## Verification
 
-On 2026-10-25, an authorized isolated real Pi RPC process inside a local macOS
-Herdr environment loaded only this replacement. Its own idle-system assertion
-appeared at startup, disappeared on `off`, returned with a new helper on `on`,
-and disappeared on orderly Pi exit. Verification matched the helper's PID and
-parent process, not merely the machine-wide summary; other assertions were left
-untouched. Temporary configuration and both owned helpers were cleaned up.
-
-This bounded check did not deliberately put the machine to sleep. Active-agent,
-abort, reload, abrupt-process-death, display opt-in, overnight, and hardware-specific
-behavior remain unverified by native acceptance. No existing Pi session was
-reloaded or activated for this test.
+Automated tests use Pi's loader and event/command contracts with mocked native
+spawning. A native smoke check verified the owned idle-system assertion at
+startup, off/on, and orderly exit. Active-agent, abort, reload, abrupt-process-death,
+display opt-in, overnight, and hardware-specific behavior remain unverified by
+native acceptance; the check did not deliberately put the machine to sleep.
 
 ## License
 

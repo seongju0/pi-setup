@@ -21,14 +21,7 @@ Commands:
 
 `/skills update` only updates user-scoped GitHub skills and packages that provide currently listed skills. It reports the native updater output (including available versions/change notes when the owner provides them), reports skipped repository/tool/symlink/personal skills with their management instruction, and reloads only when output indicates a change. It never infers or runs an arbitrary command from a skill's frontmatter, adopts an untracked repository, or changes project skills.
 
-GitHub updates require an existing `gh` command with `gh skill` support and any
-required authentication. pi-setup does not install packages, tools, or upstream
-skills; this command updates separately managed resources already present.
-
-If separately installed, `herdr-core` from `herdrdev/herdr-core` follows its
-GitHub metadata normally; no Herdr-specific update logic is needed. The legacy
-`herdr` skill tracks a different repository. Replace it explicitly, moving any backup outside active skill roots;
-`/skills update` does not rename skills or migrate between repositories.
+GitHub updates require `gh` with `gh skill` support and any required authentication.
 
 GWS skills should remain tied to the installed `gws` tool. Update that tool first, then deliberately regenerate/select its skills; `gws generate-skills` writes a broad skill set in the current directory, so it is intentionally not called here.
 
