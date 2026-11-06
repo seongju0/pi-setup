@@ -92,7 +92,7 @@ export default function (pi: ExtensionAPI) {
         let changed = false;
         const changedOutput = (text: string) => /\bupdated\b|\binstalled\b|[1-9]\d* update\(s\) available/i.test(text) && !/all skills are up to date|already current/i.test(text);
         if (userGithub.length) {
-          const result = await pi.exec("gh", ["skill", "update", ...userGithub.map(skill => skill.name), "--dir", join(getAgentDir(), "skills"), "--unpin"], { cwd: ctx.cwd, timeout: 120_000 });
+          const result = await pi.exec("gh", ["skill", "update", ...userGithub.map(skill => skill.name), "--dir", join(getAgentDir(), "skills"), "--unpin", "--all"], { cwd: ctx.cwd, timeout: 120_000 });
           const text = trim([result.stdout, result.stderr].filter(Boolean).join("\n"));
           output.push(`GitHub skills:\n${text || (result.code === 0 ? "Already current." : `failed (exit ${result.code})`)}`);
           changed ||= changedOutput(text);

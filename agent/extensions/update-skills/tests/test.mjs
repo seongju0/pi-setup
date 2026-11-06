@@ -1,7 +1,7 @@
 // Run from the repository root: npm test. Direct: node agent/extensions/update-skills/tests/test.mjs
-// Real extension loader; temporary skill roots only, no network or update subprocesses.
+// Real extension loader; temporary skill roots and a fake gh, no network or real updates.
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -45,5 +45,18 @@ try {
   assert.match(notices.at(-1).message, /Update gws, then regenerate selected skills deliberately/);
   await command.handler('update nope', ctx);
   assert.match(notices.at(-1).message, /Usage:/);
-  console.log('PASS: /skills inventory classifies repository, GitHub, personal, GWS-generated, and tool-symlink skills; details and command validation.');
+  const bin = join(scratch, 'bin');
+  const argsFile = join(scratch, 'gh-args.json');
+  await mkdir(bin);
+  await writeFile(join(bin, 'gh'), `#!${process.execPath}\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));\nconsole.log('Updated herdr-core');\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  let reloads = 0;
+  try {
+    process.env.PATH = `${bin}:${originalPath}`;
+    await command.handler('update', { ...ctx, reload: async () => { reloads++; } });
+    assert.deepEqual(JSON.parse(await readFile(argsFile, 'utf8')), ['skill', 'update', 'herdr-core', '--dir', join(agent, 'skills'), '--unpin', '--all']);
+    assert.match(notices.at(-1).message, /Updated herdr-core/);
+    assert.equal(reloads, 1);
+  } finally { process.env.PATH = originalPath; }
+  console.log('PASS: /skills ownership, details, command validation, and scoped noninteractive GitHub updates with resource reload.');
 } finally { if (original === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = original; await rm(scratch, { recursive: true, force: true }); }
