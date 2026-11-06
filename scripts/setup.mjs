@@ -126,7 +126,9 @@ export async function runSetup({ root = checkout, env = process.env, ask, log = 
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  // A pre-Pi-only launcher can still pass this flag after pulling this revision.
+  // Accept it as a no-op; external tool provisioning is no longer supported.
+  const args = process.argv.slice(2).filter(arg => arg !== '--new-tools');
   if (args.some(x => !['--help', '--dry-run'].includes(x))) throw new Error('Unknown argument. Use --help.');
   if (args.includes('--help')) { console.log('Usage: ./setup.sh [--dry-run] [--help]\nLink Pi resources and add missing preference defaults. Existing files and settings are preserved.\nRequires macOS, existing Pi on PATH, and Node >=26.0.0. Dry run makes no changes.'); return; }
   const dryRun = args.includes('--dry-run');

@@ -55,7 +55,14 @@ async function fixture(t) {
   await fs.mkdir(bin);
   await fs.writeFile(path.join(bin, 'pi'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   for (const name of ['client.mjs', 'update.mjs']) await fs.copyFile(path.join(source, 'scripts', name), path.join(publisher, 'scripts', name));
-  await fs.chmod(path.join(publisher, 'scripts/client.mjs'), 0o755);
+  // Freeze the old launcher's update handoff: it keeps running across a pull
+  // and passes --new-tools even when the newly pulled setup no longer offers tools.
+  const clientFile = path.join(publisher, 'scripts/client.mjs');
+  const client = await fs.readFile(clientFile, 'utf8');
+  const handoff = "[path.join(info.root, 'scripts/setup.mjs')]";
+  assert.ok(client.includes(handoff));
+  await fs.writeFile(clientFile, client.replace(handoff, "[path.join(info.root, 'scripts/setup.mjs'), ...(command === 'update' ? ['--new-tools'] : [])]"));
+  await fs.chmod(clientFile, 0o755);
   // External revision handoff boundary: the tiny upstream installer makes its
   // revision, flags and checkout visible without mocking consumer decisions.
   const setup = revision => `import fs from 'node:fs/promises';
@@ -113,7 +120,7 @@ test('bootstrap and managed launcher isolate source, preserve local state, and h
   terminal([f.command, 'update'], [], f.env);
   assert.equal(await fs.readFile(path.join(f.target, 'resource'), 'utf8'), 'second');
   const handoffs = (await fs.readFile(f.env.HANDOFF, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.deepEqual(handoffs.map(x => [x.revision, x.args]), [['first', []], ['first', []], ['first', []], ['second', []]]);
+  assert.deepEqual(handoffs.map(x => [x.revision, x.args]), [['first', []], ['first', []], ['first', []], ['second', ['--new-tools']]]);
   assert.ok(handoffs.every(x => x.root === f.root));
   assert.equal((await fs.lstat(f.command)).ino, launcher.ino);
   assert.equal(await fs.readFile(path.join(f.target, 'settings.json'), 'utf8'), '{"local":true}\n');
@@ -122,8 +129,8 @@ test('bootstrap and managed launcher isolate source, preserve local state, and h
   assert.equal(f.git(f.root, 'status', '--porcelain'), '');
 
   // Publish the actual installer into the same local upstream and consume it.
-  // This exercises the real confirmation after the client yields stdin,
-  // not just the earlier revision-handoff fixture.
+  // The still-running legacy client hands --new-tools to the new real installer.
+  // Exercise that upgrade transition and the real one-confirmation flow.
   for (const directory of ['scripts', 'agent', 'manifests']) await fs.cp(path.join(source, directory), path.join(f.publisher, directory), { recursive: true });
   f.git(f.publisher, 'add', '.');
   f.git(f.publisher, 'commit', '-m', 'Actual foundation installer');
