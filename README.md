@@ -1,99 +1,78 @@
 # pi-setup
 
-My reusable [Pi](https://pi.dev) setup: instructions, extensions, skills, and
-preferences, with an interactive installer and a separate managed checkout.
+My custom [Pi](https://pi.dev) extensions, skills, guidance, and preference defaults.
+**Pi configuration—not a workstation installer.**
 
-## Requirements
+```text
+Managed checkout                         ~/.pi/agent/
+  agent/extensions/<feature> ── link ──> extensions/<feature>
+  agent/skills/<skill>       ── link ──> skills/<skill>
+  agent/AGENTS.md            ── link ──> AGENTS.md
+  agent/settings.base.json  ── fill ──> settings.json (missing defaults only)
 
-macOS, Node.js 26+, and existing `pi` and `git` commands on `PATH`.
-Installation requires an interactive terminal. Pi, Node, Git, and Homebrew are
-not installed or upgraded by setup.
+Your local additions, existing settings, packages, auth, and sessions stay yours.
+```
 
 ## Install
+
+Requires **macOS, Node.js 26+, Pi, and Git** already installed. Run in a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/seongju0/pi-setup/main/install.sh | sh
 ```
 
-Prefer to inspect first? Clone this repository, review `install.sh` and `scripts/`,
-then run `./install.sh`. Both approaches create a separate managed checkout.
+Or clone, inspect `install.sh` and `scripts/`, then run `./install.sh`.
+Both paths create a managed checkout at `~/.local/share/pi-setup/checkout/`
+and a command at `~/.local/bin/pi-setup`. Shell startup files are not changed.
+
+## Use
 
 ```sh
-pi-setup install     # Revisit choices and reconcile resources
-pi-setup update      # Pull upstream changes, then review setup
-pi-setup check       # Read-only status
+pi-setup install   # Preview → confirm → link resources and fill missing defaults
+pi-setup update    # Fast-forward managed source, then reconcile
+pi-setup check     # Read-only status
 ```
 
-Use `~/.local/bin/pi-setup` directly if that directory is not on your `PATH`.
-Setup does not change shell startup files.
+From a checkout, `./setup.sh --dry-run` previews without prompts or writes.
+Use the full command path if `~/.local/bin` is not on `PATH`.
 
-## Included
+### What changes—and what doesn't
 
-- [Extensions](agent/extensions/README.md): subagents, Herdr sessions, web search,
-  tasks, todos, session utilities, and skill updates.
-- [Skills](agent/skills): build, design, review, research, checkout, handoff,
-  walkthrough, and related workflows.
-- [Global instructions](agent/AGENTS.md) and an optional
-  [preference template](agent/settings.base.json).
-- Optional [Pi packages](manifests/packages.json) and
-  [tools/companion skills](manifests/tools.json), including gh-stack, Herdr App,
-  herdr-core guidance, Zed, and agent-browser. These are installed from upstream,
-  not bundled here.
+- Only [declared resources](manifests/resources.json) are linked individually.
+- [Defaults](agent/settings.base.json) fill missing settings, including nested keys;
+  existing values and unrelated keys are preserved. Settings remain a local file.
+- Conflicting files or links are **skipped**, never replaced. Resolve them manually.
+- Existing settings are privately backed up before adding defaults, under
+  `~/.local/state/pi-setup/backups/`. Nothing is automatically pruned or uninstalled.
 
-[No-sleep](agent/extensions/no-sleep/README.md) keeps macOS from idle-system sleep
-for each Pi session by default. Use `/no-sleep off` to disable it or
-`/no-sleep agent` for active agent runs only. The display may still sleep.
+Updates require a clean checkout and tracking upstream. **Linked code changes
+when Git pulls—even if you cancel reconciliation.** Reload idle Pi sessions
+when ready; setup never reloads Pi or restarts apps.
 
-[Usage](agent/extensions/usage/README.md) compares retained local session and
-subagent token usage with `/usage [week|month]`, including recorded catalog cost
-estimates. It needs no network access or extra credentials.
-
-[View](agent/extensions/view/README.md) opens the current directory or a supplied
-path with `/view [path]`. It defaults to Zed; set `view.editor` and `view.args` in
-personal Pi settings to choose another GUI editor. Zed is an optional,
-unselected Homebrew cask offer (`brew install --cask zed`), not a requirement.
-
-## Local configuration
-
-```text
-~/.local/share/pi-setup/checkout/   Managed source; keep this directory
-~/.local/bin/pi-setup              Command linked into that checkout
-~/.pi/agent/                      Your settings and installed resource links
-~/.local/state/pi-setup/           Choice history and replacement backups
-```
-
-Resources are linked individually using [an explicit list](manifests/resources.json).
-Settings remain a regular local JSON file. Existing settings and unrelated files
-are preserved unless you explicitly approve changes. Review custom extension
-behavior and permission rules before replacing existing resources.
-
-Optional packages, tools, and companion skills start unselected. Changes are
-previewed; replacements and final approval default to **no**. Approved replacements
-are backed up. Native installer failures may leave earlier approved changes.
-
-Setup does not prune resources, uninstall tools, reload Pi, or restart Herdr.
-Updates require a clean checkout and tracking upstream, and allow fast-forward
-only. The pull updates the managed checkout, not a copy in `~/.local/bin`:
-the command and individual Pi resources link into that checkout. Existing links
-therefore use the updated source before the setup review; cancelling that review
-does not undo the pull. Reload idle Pi sessions when ready to load changed extensions.
-
-Update output separates the source revision, setup preview, and applied changes.
-Detected optional tools/skills are summarized and left untouched; detection does
-not verify their version or health. Use `pi-setup check` for paths and details.
-External packages and tools keep their own update mechanisms.
-
-Herdr offers target the current App/core workflow: `brew install --cask herdr-app`
-(Apple Silicon macOS) and the `herdr-core` skill from `herdrdev/herdr-core`.
-Open Herdr App to complete any required hc setup; installing the skill installs
-guidance only. The new offer IDs are distinct from legacy Herdr choices, so old
-choice history does not hide the replacements. Setup does not remove the legacy
-CLI or skill. Back up the old `herdr` skill outside active skill roots when
-replacing it; `/skills update` then follows the new skill's GitHub metadata.
-
-Use `PI_CODING_AGENT_DIR` for a custom Pi directory or `PI_SETUP_HOME` for another
+`PI_CODING_AGENT_DIR` selects another Pi directory; `PI_SETUP_HOME` selects another
 managed installation location.
 
-## License
+## Features and dependencies
 
-[MIT](LICENSE). External packages and tools retain their own licenses.
+See [extensions](agent/extensions/README.md) and [custom skills](agent/skills) for
+usage. Dependencies are installed and configured separately:
+
+| Feature | Dependency |
+| --- | --- |
+| Herdr sessions, handoff, research | [Herdr App / `hc`](https://github.com/herdrdev/herdr-app); run Pi inside Herdr |
+| `/view` | Your configured editor; defaults to [Zed](https://zed.dev) |
+| GitHub skill updates | [GitHub CLI](https://cli.github.com/) with `gh skill` support |
+| Web search / delegation | Available models and provider authentication; see [search auth support](agent/extensions/web-search/README.md) |
+| Optional Linear features | Your configured Linear MCP integration |
+| Browser workflows | A browser CLI and skill, such as [agent-browser](https://agent-browser.dev) |
+| `/no-sleep` | macOS `caffeinate` (built in) |
+| `/usage` | Local session/subagent metadata; no network or extra credentials |
+
+No external apps, packages, or upstream skills are offered or installed by setup.
+
+## Development
+
+Edit repository source, not live Pi files. Run `npm test` (temporary state, no real
+service calls). See [AGENTS.md](AGENTS.md) for boundaries.
+
+[MIT license](LICENSE).

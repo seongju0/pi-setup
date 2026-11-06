@@ -34,14 +34,14 @@ export function updateCheckout({ root = checkout, env = process.env, log = conso
 function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--help') {
-    console.log('Usage: ./update.sh\nPull the tracking upstream with a clean checkout and fast-forward only, then run interactive setup.\nExisting settings and local additions remain unchanged unless explicitly selected for replacement.\nExternal Pi packages are not automatically upgraded.');
+    console.log('Usage: ./update.sh\nPull the tracking upstream with a clean checkout and fast-forward only, then run interactive setup.\nExisting settings and local additions are preserved. External tools and packages are not managed.');
     return;
   }
   if (args.length) throw new Error('Unknown argument. Use ./update.sh --help.');
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Update requires a TTY for the subsequent setup review. Run ./update.sh in a terminal.');
   const { root } = updateCheckout();
   // Start fresh: the pulled revision may have changed the installer itself.
-  const result = spawnSync(process.execPath, [path.join(root, 'scripts/setup.mjs'), '--new-tools'], { cwd: root, env: process.env, stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [path.join(root, 'scripts/setup.mjs')], { cwd: root, env: process.env, stdio: 'inherit' });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 }

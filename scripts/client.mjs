@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 
-const usage = 'Usage: pi-setup install | update | check | help\ninstall: install or revisit choices (no pull)\nupdate: fast-forward the managed checkout, then review new tools\ncheck: read-only inspection of the managed installation';
+const usage = 'Usage: pi-setup install | update | check | help\ninstall: reconcile Pi resources and missing defaults (no pull)\nupdate: fast-forward the managed checkout, then reconcile Pi resources\ncheck: read-only inspection of the managed installation';
 const stat = async name => { try { return await fs.lstat(name); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
 export function locations(env = process.env) {
   if (!env.HOME) throw new Error('HOME must be set.');
@@ -53,33 +53,16 @@ export async function runClient(command, { env = process.env, ask, run = execute
   const current = await stat(info.command);
   const correct = current?.isSymbolicLink() && path.resolve(path.dirname(info.command), await fs.readlink(info.command)) === launcher;
   if (!correct) {
-    if (current?.isDirectory()) throw new Error(`Command path is a directory; move it yourself: ${info.command}`);
     if (current) {
-      if (!await ask(`Back up and replace command ${info.command}?`, false)) {
-        log(`Command preserved. Run: ${process.execPath} ${launcher} install`);
-      } else {
-        const base = path.join(info.home, '.local/state/pi-setup/backups');
-        await fs.mkdir(base, { recursive: true, mode: 0o700 });
-        const backup = await fs.mkdtemp(path.join(base, 'command-'));
-        await fs.chmod(backup, 0o700);
-        // Backups must not become tracked source or consumer resources.
-        const resolved = await fs.realpath(backup);
-        for (const root of [info.root, path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')]) {
-          const actual = await fs.realpath(root);
-          if (resolved === actual || resolved.startsWith(actual + path.sep)) throw new Error('Command backup must be outside the repository.');
-        }
-        await fs.rename(info.command, path.join(backup, 'pi-setup'));
-        log(`Original command saved: ${backup}/pi-setup`);
-        await fs.symlink(launcher, info.command);
-      }
+      log(`Command preserved: ${info.command}. Resolve this conflict manually; the managed launcher is ${launcher}.`);
     } else {
       await fs.mkdir(path.dirname(info.command), { recursive: true });
       await fs.symlink(launcher, info.command);
     }
   }
-  log(`Command: ${info.command}`);
+  log(`Managed launcher: ${launcher}`);
   if (!(env.PATH || '').split(path.delimiter).includes(path.dirname(info.command))) log(`Add ${path.dirname(info.command)} to PATH yourself, or use the full command above. No shell files were changed.`);
-  await run(process.execPath, [path.join(info.root, 'scripts/setup.mjs'), ...(command === 'update' ? ['--new-tools'] : [])], { env, cwd: info.root });
+  await run(process.execPath, [path.join(info.root, 'scripts/setup.mjs')], { env, cwd: info.root });
 }
 
 async function main() {

@@ -1,7 +1,6 @@
 import { emitKeypressEvents } from 'node:readline';
 
-// Each prompt owns stdin only while active; no readline question interface can
-// consume checklist keys. Always restore the terminal, including cancellation.
+// Restore the terminal after confirmation, including cancellation.
 function keys(render, handle) {
   const input = process.stdin;
   const output = process.stdout;
@@ -50,31 +49,5 @@ export function ask(_key, message, fallback) {
     if (key.name === 'return') return reply ? ['y', 'yes'].includes(reply.toLowerCase()) : fallback;
     if (key.name === 'backspace') reply = reply.slice(0, -1);
     else if (text && !key.ctrl && !key.meta && /^[a-z]+$/i.test(text)) reply += text;
-  });
-}
-
-export function selectTools(tools) {
-  let cursor = 0;
-  let drawn = false;
-  const selected = new Set();
-  return keys(() => {
-    if (drawn) process.stdout.write(`\x1b[${tools.length + 1}A`);
-    process.stdout.write('\r\x1b[2KOptional tools: ↑/↓ move, Space toggle, Enter finish; Esc/Ctrl-C cancel\n');
-    for (const [index, tool] of tools.entries()) {
-      const needsGh = tool.requires?.some(id => !selected.has(id));
-      process.stdout.write(`\r\x1b[2K${index === cursor ? '>' : ' '} [${selected.has(tool.id) ? 'x' : ' '}] ${tool.name}${!tool.available ? ` — unavailable: ${tool.reason}` : needsGh ? ' — select GitHub CLI (gh) first' : ''}\n`);
-    }
-    drawn = true;
-  }, (_text, key) => {
-    if (key.name === 'return') return [...selected];
-    if (key.name === 'up') cursor = (cursor + tools.length - 1) % tools.length;
-    if (key.name === 'down') cursor = (cursor + 1) % tools.length;
-    if (key.name === 'space' && tools[cursor].available) {
-      const tool = tools[cursor];
-      if (selected.has(tool.id)) {
-        selected.delete(tool.id);
-        for (const dependent of tools) if (dependent.requires?.includes(tool.id)) selected.delete(dependent.id);
-      } else if (!tool.requires?.some(id => !selected.has(id))) selected.add(tool.id);
-    }
   });
 }

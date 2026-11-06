@@ -37,12 +37,12 @@ try {
     assert.equal(result.status, 0, `${path} suite failed${result.signal ? ` (${result.signal})` : ""}`);
     suites++;
   }
-  for (const suite of ["setup", "client", "tools", "checkout"]) {
+  for (const suite of ["setup", "client", "checkout"]) {
     const result = spawnSync(process.execPath, [join(repo, `tests/${suite}.test.mjs`)], { cwd: repo, env, stdio: "inherit" });
     if (result.error) throw result.error;
     assert.equal(result.status, 0, `${suite} flow checks failed`);
   }
-  console.log(`\nPASS: loader check, ${suites} retained suites, and setup/client/tool/checkout flows; temporary state only.`);
+  console.log(`\nPASS: loader check, ${suites} retained suites, and setup/client/checkout flows; temporary state only.`);
 } finally {
   for (const [key, value] of Object.entries(before)) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;

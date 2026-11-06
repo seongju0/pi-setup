@@ -23,4 +23,4 @@ Optionally configure your personal Pi settings (`~/.pi/agent/settings.json`):
 
 `editor` is an executable name on `PATH` or an executable path. `args` are passed before the target path. Changes apply on the next `/view` invocation.
 
-Zed is available through pi-setup's optional-tool checklist, using `brew install --cask zed`.
+Install your editor separately and make its executable available on `PATH` (or configure its full path). pi-setup does not install or offer editors. Only personal Pi settings configure this command; project settings cannot choose an executable.

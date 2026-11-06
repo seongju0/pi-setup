@@ -113,7 +113,7 @@ test('bootstrap and managed launcher isolate source, preserve local state, and h
   terminal([f.command, 'update'], [], f.env);
   assert.equal(await fs.readFile(path.join(f.target, 'resource'), 'utf8'), 'second');
   const handoffs = (await fs.readFile(f.env.HANDOFF, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.deepEqual(handoffs.map(x => [x.revision, x.args]), [['first', []], ['first', []], ['first', []], ['second', ['--new-tools']]]);
+  assert.deepEqual(handoffs.map(x => [x.revision, x.args]), [['first', []], ['first', []], ['first', []], ['second', []]]);
   assert.ok(handoffs.every(x => x.root === f.root));
   assert.equal((await fs.lstat(f.command)).ino, launcher.ino);
   assert.equal(await fs.readFile(path.join(f.target, 'settings.json'), 'utf8'), '{"local":true}\n');
@@ -122,8 +122,8 @@ test('bootstrap and managed launcher isolate source, preserve local state, and h
   assert.equal(f.git(f.root, 'status', '--porcelain'), '');
 
   // Publish the actual installer into the same local upstream and consume it.
-  // This exercises the real raw-key checklist after the client yields stdin,
-  // not just the earlier revision-handoff fixture or a selection callback.
+  // This exercises the real confirmation after the client yields stdin,
+  // not just the earlier revision-handoff fixture.
   for (const directory of ['scripts', 'agent', 'manifests']) await fs.cp(path.join(source, directory), path.join(f.publisher, directory), { recursive: true });
   f.git(f.publisher, 'add', '.');
   f.git(f.publisher, 'commit', '-m', 'Actual foundation installer');
@@ -131,30 +131,27 @@ test('bootstrap and managed launcher isolate source, preserve local state, and h
   const bin = path.join(f.temp, 'bin');
   await fs.symlink(process.execPath, path.join(bin, 'node'));
   const calls = path.join(f.temp, 'unexpected-installs');
-  for (const tool of ['brew', 'npm']) await fs.writeFile(path.join(bin, tool), `#!/bin/sh\nprintf '%s\\n' unexpected >> '${calls}'\nexit 1\n`, { mode: 0o755 });
+  for (const tool of ['brew', 'npm', 'pi']) await fs.writeFile(path.join(bin, tool), `#!/bin/sh\nprintf '%s\\n' unexpected >> '${calls}'\nexit 1\n`, { mode: 0o755 });
   const rawEnv = { ...f.env, PATH: [bin, '/usr/bin', '/bin', '/usr/sbin'].join(path.delimiter) };
   const prompt = (message, input = '\r') => ({ prompt: message, input });
   const output = terminal([f.command, 'update'], [
-    prompt('Manage global Pi guidance (AGENTS.md)? [Y/n]'), prompt('Include extensions? [Y/n]'),
-    prompt('Include skills? [Y/n]'), prompt('Review suggested Pi settings from this repository? [y/N]'),
-    ...['npm:pi-updater', 'npm:@ff-labs/pi-fff', 'npm:glimpseui', 'npm:pi-zentui'].map(name => prompt(`Install optional ${name}? Third-party packages can execute code. [y/N]`)),
-    prompt('Optional tools: ↑/↓ move, Space toggle, Enter finish; Esc/Ctrl-C cancel', ' \x1b[B \x1b[A \x1b[B \x1b[A  \r'),
-    prompt('Apply the approved changes? Existing replacements will be backed up. [y/N]', 'yes\r'),
+    prompt('Apply safe changes? [y/N]', 'yes\r'),
   ], rawEnv);
-  assert.match(output, /\[x\] GitHub CLI/);
-  assert.match(output, /\[x\] gh-stack extension/);
+  assert.equal(output.split('Apply safe changes?').length - 1, 1);
+  assert.equal((output.match(/\[y\/N\]/g) || []).length, 1);
   assert.equal(await exists(calls), false);
   assert.equal(await fs.readlink(path.join(f.target, 'skills/build')), path.join(f.root, 'agent/skills/build'));
-  const historyPath = path.join(f.home, '.local/state/pi-setup/tools.json');
-  const history = JSON.parse(await fs.readFile(historyPath, 'utf8'));
-  assert.deepEqual(history.seen, JSON.parse(await fs.readFile(path.join(source, 'manifests/tools.json'), 'utf8')).map(tool => tool.id));
-  assert.equal(await fs.readFile(path.join(f.target, 'settings.json'), 'utf8'), '{"local":true}\n');
+  assert.equal(await exists(path.join(f.home, '.local/state/pi-setup/tools.json')), false);
+  const settings = JSON.parse(await fs.readFile(path.join(f.target, 'settings.json'), 'utf8'));
+  assert.deepEqual(settings, { ...JSON.parse(await fs.readFile(path.join(source, 'agent/settings.base.json'), 'utf8')), local: true });
   assert.equal(await fs.readFile(path.join(f.target, 'local-sentinel'), 'utf8'), 'keep');
-  assert.equal(await exists(f.backups), false);
+  const backups = await fs.readdir(f.backups);
+  assert.equal(backups.length, 1);
+  assert.equal(await fs.readFile(path.join(f.backups, backups[0], 'settings.json'), 'utf8'), '{"local":true}\n');
   assert.equal(f.git(f.root, 'status', '--porcelain'), '');
 });
 
-test('no-terminal entry points make no changes; command conflict defaults to preserve and approval makes private backup', mac, async t => {
+test('no-terminal entry points make no changes; command conflicts are preserved without replacement prompts or backups', mac, async t => {
   const f = await fixture(t);
   const detached = command => spawnSync('python3', ['-c', 'import subprocess,sys,json\np=subprocess.run(json.loads(sys.argv[1]),start_new_session=True,capture_output=True)\nsys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.returncode)', JSON.stringify(command)], { env: f.env, encoding: 'utf8' });
   assert.notEqual(detached(['/bin/sh', path.join(source, 'install.sh')]).status, 0);
@@ -167,20 +164,21 @@ test('no-terminal entry points make no changes; command conflict defaults to pre
   assert.equal(await exists(f.env.PI_SETUP_HOME), false);
   await fs.mkdir(path.dirname(f.command), { recursive: true });
   await fs.writeFile(f.command, 'original command');
-  terminal([process.execPath, path.join(source, 'scripts/client.mjs'), 'install'], ['yes', ''], f.env);
+  const output = terminal([process.execPath, path.join(source, 'scripts/client.mjs'), 'install'], ['yes'], f.env);
+  assert.match(output, /Command preserved:/);
   assert.equal(await fs.readFile(f.command, 'utf8'), 'original command');
   assert.equal(await exists(f.backups), false);
-  terminal([process.execPath, path.join(source, 'scripts/client.mjs'), 'install'], ['yes'], f.env);
+  terminal([process.execPath, path.join(source, 'scripts/client.mjs'), 'install'], [], f.env);
+  assert.equal(await fs.readFile(f.command, 'utf8'), 'original command');
+  assert.equal(await exists(f.backups), false);
+  // Once the owner resolves the conflict, install can create the missing launcher.
+  await fs.unlink(f.command);
+  terminal([process.execPath, path.join(source, 'scripts/client.mjs'), 'install'], [], f.env);
   assert.equal(await fs.readlink(f.command), path.join(f.root, 'scripts/client.mjs'));
-  const backups = await fs.readdir(f.backups);
-  assert.equal(backups.length, 1);
-  const backup = path.join(f.backups, backups[0]);
-  assert.equal(await fs.readFile(path.join(backup, 'pi-setup'), 'utf8'), 'original command');
-  assert.equal((await fs.stat(backup)).mode & 0o777, 0o700);
   const launcher = await fs.lstat(f.command);
   terminal([f.command, 'install'], [], f.env);
   assert.equal((await fs.lstat(f.command)).ino, launcher.ino);
-  assert.deepEqual(await fs.readdir(f.backups), backups);
+  assert.equal(await exists(f.backups), false);
   // A check neither repairs a missing launcher nor adds new backup state.
   await fs.unlink(f.command);
   assert.equal(detached([process.execPath, path.join(source, 'scripts/client.mjs'), 'check']).status, 0);
