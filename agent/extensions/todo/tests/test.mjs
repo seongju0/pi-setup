@@ -195,6 +195,57 @@ try {
   await pi.extension.commands.get("todo").handler("new simple", pi.ctx);
   assert.equal((await list(root)).length, 4);
 
+  // Task memory survives a fresh session and removal of its temporary design source.
+  const continuationRoot = join(scratch, "continuation-todos");
+  process.env.PI_TODO_PATH = continuationRoot;
+  const author = await instance();
+  assert.deepEqual(await author.call("todo", { action: "status" }), { selected: null });
+  assert.deepEqual(author.stored, []);
+  const owner = await author.call("todo", { action: "create", type: "simple", title: "Versioned identifiers", outcome: "Preserve record identity across conversion" });
+  const candidates = await author.call("todo", { action: "search", query: "versioned identifiers" });
+  assert.equal(candidates[0].id, owner.todo.id);
+  await author.call("todo", { action: "get", selector: candidates[0].id, view: "active" });
+  assert.deepEqual(await author.call("todo", { action: "status" }), { selected: null }); // Discovery/inspection is not attachment.
+  await author.call("todo", { action: "resume", selector: candidates[0].id });
+  const finding = "Verified identifier ownership; deployment remains unverified.";
+  const preserved = await author.call("todo_checkpoint", { id: owner.todo.id, revision: 1, key: "identifier-owner", changes: { current_state: { evidence: [finding] } } });
+  const temporaryDesign = join(scratch, "temporary-design.md");
+  const designBody = "# Durable design\n\nRetain the original record identifier during conversion.\n";
+  await writeFile(temporaryDesign, designBody);
+  const designed = await author.call("todo_artifact", { action: "upsert", id: owner.todo.id, revision: preserved.todo.revision, title: "Identifier migration design", kind: "design", description: "Stable identity contract", lifecycle: "current", required: true, applies_to: [], body: await readFile(temporaryDesign, "utf8") });
+  await rm(temporaryDesign);
+  const fresh = await instance(); // No inherited transcript, selection or temporary source document.
+  fresh.ctx.sessionManager.getSessionId = () => "fresh-task-session";
+  assert.deepEqual(await fresh.call("todo", { action: "status" }), { selected: null });
+  const rediscovered = await fresh.call("todo", { action: "search", query: "versioned identifiers" });
+  await fresh.call("todo", { action: "resume", selector: rediscovered[0].id });
+  const [freshContext] = await fresh.emit("context", { messages: [] });
+  const brief = freshContext.messages.find(message => message.customType === "todo-context-v1").content;
+  assert.ok(brief.includes(finding));
+  assert.ok(brief.includes("Identifier migration design"));
+  assert.ok(!brief.includes("Retain the original record identifier during conversion.")); // Catalog first, body on demand.
+  const durableBody = await fresh.call("todo_artifact", { action: "read", id: owner.todo.id, artifact_id: designed.todo.artifacts[0].id });
+  assert.equal(durableBody.body, designBody);
+  assert.equal(durableBody.complete, true);
+  const externalUpdate = await author.call("todo_checkpoint", { id: owner.todo.id, revision: designed.todo.revision, key: "external-nuance", changes: { current_state: { evidence: [finding, "External discovery: preserve imported aliases too."] } } });
+  const beforeStatus = await readFile(join(owner.directory, "todo.json"), "utf8");
+  const beforeStatusEntries = fresh.stored.length;
+  const attachment = await fresh.call("todo", { action: "status" });
+  assert.equal(attachment.selected.id, owner.todo.id);
+  assert.equal(attachment.selected.revision, externalUpdate.todo.revision);
+  assert.equal(attachment.selected.status, "in_progress");
+  assert.equal("current_state" in attachment.selected, false);
+  assert.equal(fresh.stored.length, beforeStatusEntries);
+  assert.equal(await readFile(join(owner.directory, "todo.json"), "utf8"), beforeStatus);
+  const [afterStatusContext] = await fresh.emit("context", { messages: freshContext.messages });
+  assert.match(afterStatusContext.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
+  assert.equal(afterStatusContext.messages.find(message => message.customType === "todo-context-v1").content, brief); // Status neither observes the external write nor refreshes the brief.
+  await assert.rejects(fresh.call("todo", { action: "leave" }), /Checkpoint or acknowledge/); // Status is not acknowledgement.
+  await fresh.call("todo_ack", { id: owner.todo.id, reason: "no_change", explanation: "Only recovered saved understanding" });
+  await fresh.call("todo", { action: "leave" });
+  assert.deepEqual(await fresh.call("todo", { action: "status" }), { selected: null });
+  assert.equal(await readFile(join(owner.directory, "todo.json"), "utf8"), beforeStatus);
+
   // Saved activity starts only its owner and parent; reads, retries and terminal edits do not restart work.
   const activityRoot = join(scratch, "activity-todos");
   process.env.PI_TODO_PATH = activityRoot;

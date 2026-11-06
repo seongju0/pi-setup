@@ -6,11 +6,13 @@ disable-model-invocation: true
 
 # Handoff
 
-Turn the user's request and only the relevant conversation context into a brief for a fresh Pi session. Do not do the handed-off work here.
+Turn the user's request and only the relevant conversation context into a brief for an independent Pi session or separate workstream. This is not parent-owned subagent delegation or a memory-system selection step. Do not do the handed-off work here or create a new TODO merely because a new session is starting.
 
 ## Brief
 
 Resolve the objective, repository/worktree, authoritative references, current state, settled decisions, permissions, forbidden actions, ordered work, and acceptance checks from the conversation. Keep only details that affect execution. Prefer paths and identifiers over copied background. Separate confirmed facts from assumptions; ask the user only if an unresolved conflict or ambiguity changes the destination, permissions, or work. Never infer permission to commit, push, change a PR, update Linear, or make other external changes.
+
+Before launch, the originating parent resolves the durable owner under the global AGENTS.md task-memory policy. Carry the resolved TODO ID and relevant artifact IDs in the brief; require the receiving session to resume that TODO and read relevant artifact bodies before applicable work. If durable tracking is explicitly declined or unavailable, state that limitation. A task/workstream owns this memory, not its session or worktree.
 
 Reserve persistent system instructions (`appendSystemPrompt`) for rules that should remain binding throughout the receiving session. Keep temporary assumptions and phase-specific choices in the brief, with their scope and end condition. Reconcile carried-over constraints when the task changes; surface conflicts rather than silently overriding higher-priority instructions.
 
@@ -24,7 +26,7 @@ Write a unique Markdown file under `/tmp/handoffs/`. Use these headings as neede
 # Stop condition
 ```
 
-Make it self-contained but short. Do not paste the transcript or include secrets, credentials, PHI, or irrelevant history. State the desired final report and stop point. End with: “Work independently from this brief. Do not report back to or wait on the parent session.”
+Make it self-contained but short: a bounded assignment and launch envelope, not a comprehensive progress history or continuing authorization. Preserve consequential understanding under the global task-memory policy before launch; a `/tmp/` pointer alone is not durable memory. Do not paste the transcript or include secrets, credentials, PHI, or irrelevant history. State the desired final report and stop point. End with: “Work independently from this brief. Do not report back to or wait on the parent session.”
 
 ## Start the session
 

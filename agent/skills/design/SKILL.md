@@ -9,6 +9,8 @@ Settle what to build, then define exactly how to build it. Produce an implementa
 
 The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions; do not reopen what the product should do. Do not automatically implement or start another session. Delegate bounded research or specification work when useful under the global delegation contract; retain ownership of the final design.
 
+Apply the global AGENTS.md task-memory entry policy before substantial enduring design; use the resolved TODO and read relevant artifact bodies before specifying. The task/workstream owns the design, not a new session or stage.
+
 ## Direction checkpoint
 
 Before specifying, state direction in a few lines:
@@ -87,4 +89,4 @@ Scale the spec to the task, but do not sacrifice implementation-critical detail 
 
 Mark the spec **ready for build** only when implementation-critical decisions and locations are resolved. Otherwise mark it **blocked** and state exactly what must be decided or verified. This readiness label is not permission to implement or user approval.
 
-Unanswered flow questions block only when the answer changes the core design; otherwise state the default and leave the extra handling out. The build handoff lists the approved direction, execution order, commands, expected results, prohibited changes (including omitted safeguards and tests outside the test plan), and final report requirements. Return the spec in the conversation unless the user requests a saved artifact or an existing workflow specifies its location. Do not implement or automatically invoke `/skill:build`; stop after the spec.
+Unanswered flow questions block only when the answer changes the core design; otherwise state the default and leave the extra handling out. The build handoff lists the approved direction, execution order, commands, expected results, prohibited changes (including omitted safeguards and tests outside the test plan), and final report requirements. Return the spec in the conversation unless the user requests a saved artifact or an existing workflow specifies its location. Preserve consequential understanding under the global task-memory policy when warranted, not as a mandatory save for every output. When future work needs the specification body, update one authoritative design artifact for its responsibility; an existing persisted document may remain canonical with a concise durable finding and stable reference. A `/tmp/` pointer alone is insufficient. Saving or labeling a spec ready does not approve it. Do not implement or automatically invoke `/skill:build`; stop after the spec.

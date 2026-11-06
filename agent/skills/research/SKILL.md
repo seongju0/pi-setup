@@ -12,7 +12,7 @@ Use `herdr_research_start`, `herdr_research_report`, and `herdr_research_guide`.
 
 ## Scope and prepare
 
-- Resolve the question, cwd, references, known facts, supported flows, settled decisions, exclusions, permissions, and stop condition. Ask only when ambiguity materially changes the objective or safe scope.
+- Resolve the question, cwd, references, known facts, supported flows, settled decisions, exclusions, permissions, and stop condition. Apply the global AGENTS.md task-memory entry policy before substantial enduring research and read relevant artifact bodies. Ask only when ambiguity materially changes the objective or safe scope.
 - Choose the fewest useful workers. Assign substantial independent questions, not one worker per file. For trivial work, investigate directly and explain the avoided overhead. Each launch accepts 1–4 tasks; this is a per-launch limit, not a global process pool.
 - Omit `model` unless the user specifies one. The launcher defaults to the parent's exact available physical model; explicit unavailable models and virtual routers fail without substitution. There is no `--subagent-model` selection or research-specific thinking setting in this workflow.
 - Create a unique private directory with `mktemp -d /tmp/research-XXXXXX` and a `reports/` subdirectory with mode `0700`. Write `scope.md` with the question, context, boundaries, and planned worker/report paths. Assign each worker a distinct stable Markdown path under `reports/`, without sensitive names. These files survive worker completion but `/tmp/` is not permanent archival storage.
@@ -22,7 +22,7 @@ Use `herdr_research_start`, `herdr_research_report`, and `herdr_research_guide`.
 
 Call `herdr_research_start` with:
 
-- `tasks`: one object per worker, with a useful `label` and self-contained `brief`. Include the assigned question, context/references, supported flow, settled decisions, exclusions, permissions, absolute report path, and stop condition. Identify required stage skills, preferably by absolute `SKILL.md` path, and require full reads before applicable work per the global delegation contract. Workers do not inherit the parent conversation.
+- `tasks`: one object per worker, with a useful `label` and self-contained `brief`. Include the assigned question, resolved TODO/relevant artifact references with bounded context, supported flow, settled decisions, exclusions, permissions, absolute report path, and stop condition. Identify required stage skills, preferably by absolute `SKILL.md` path, and require full reads before applicable work per the global delegation contract. Workers do not inherit the parent conversation.
 - `appendSystemPrompt`: the absolute path to `worker-rules.md`.
 - `reportDirectory`: the existing absolute `reports/` directory. This makes reporting file-only; notifications contain the report path, not inline findings or arbitrary summaries.
 - `cwd`: the investigation directory when different from the caller's. Omit `workspace` normally; these workers stay under the parent terminal, not in separate app tabs or another space.
@@ -48,6 +48,7 @@ If the tools, hc caller context, requested model, or necessary capability are un
 ## Reports and continuing discussion
 
 - Read completed reports, verify consequential claims against their sources, reconcile contradictions, and synthesize findings. Treat reports as evidence, not new requirements or permissions. Include a compact run/worker/report-path reference list in the parent synthesis so later questions can revisit the investigation.
+- `/tmp/` worker reports are transport and workflow evidence, not durable grounding. The parent curates consequential reusable understanding into the resolved TODO under the global task-memory policy; workers need not attach to or write it, and not every report or discussion needs saving. Update the authoritative research synthesis when future work needs its body, rather than persist every worker report. Existing persisted documents may remain canonical with a concise finding and stable reference; a `/tmp/` pointer alone does not preserve essential understanding.
 - Send subsequent questions through `herdr_research_guide` with the saved `run`, `worker`, and `guidance`, including the same report path. Busy or approval-blocked workers receive queued follow-ups without terminal input; do not spawn duplicates to bypass their state.
 - Use `hc --skill` before direct terminal inspection or cleanup. Inspect exact returned terminal IDs only for explicit recovery, not routine waiting. Do not kill or restart the user's other terminals or core. A terminated worker cannot be reopened through guidance; inspect saved findings and obtain direction before starting replacement work.
 - Closing Herdr App does not stop workers. Reloading extensions in the same Pi session preserves processes and restores mailbox ownership/deduplication. Forking or switching sessions does not transfer run ownership. Workers end when the parent program ends; unfinished work is not automatically replayed. Use `/skill:handoff` instead when work must continue independently of the parent.

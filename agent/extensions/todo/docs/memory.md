@@ -4,6 +4,25 @@ Todo preserves the minimum sufficient grounding for a fresh or parallel session 
 
 The [README](../README.md) owns implementation architecture and API reference. This document defines information ownership, writing conventions and design trade-offs. It is repository documentation, not another saved project memory or always-injected prompt.
 
+## Task entry and workflow ownership
+
+Durable memory belongs to an enduring task/outcome, not to a session, worktree or stage. The global `agent/AGENTS.md` contract establishes the owner before substantial work: use the relevant attachment, or resolve a supplied TODO ID/linked issue URL or search recognizable goals, inspect candidates and resume a clear existing match. `get` alone does not attach. Ask on ambiguity or before switching owners; creation still requires explicit user intent. Trivial questions need no record. An explicit opt-out is respected; unavailable/declined tracking requires a disclosed fallback, not a silent parallel memory system.
+
+The tool's `status` action exposes the attachment as selected summary metadata or null without changing selection, durable files, loaded context or acknowledgement. Inspect at entry/recovery when needed, not on every turn. It reads the current saved revision, not a guarantee that the loaded brief is current. The extension does not choose an owner from cwd or classify user requests automatically.
+
+| Owner | Responsibility |
+| --- | --- |
+| Originating/current parent | Resolve the durable owner; curate consequential understanding and reusable bodies within the work turn. |
+| TODO | Current task grounding and relevant research/design catalog; no execution authority. |
+| Handoff | Launch an independent workstream with resolved TODO/artifact IDs and a bounded current assignment; not parent-owned subagent delegation or a project-memory substitute. |
+| Receiving independent session | Resume that owner, read relevant bodies, reconcile live state and act only within current permission. |
+| Delivery | Orchestrate implementation/review/verification, using task memory even when no TODO ID was explicitly supplied to the skill. |
+| Parent-owned subagent | Complete its bounded assignment; the parent integrates consequential findings, rather than every worker checkpointing shared memory. |
+
+A temporary launch envelope may live in `/tmp`, and execution reports remain with their native workflow. Neither replaces durable understanding. If future work needs a research/design body that exists only in a temporary file, save the body through `todo_artifact`; a reference cannot preserve a deleted target. A stable existing authoritative document can remain a reference when the concise finding plus that reference is sufficient. Do not copy every worker report or raw log into artifacts. Once TODO owns a design, update that owning artifact rather than maintaining a competing current copy.
+
+These are task-entry and semantic-saving rules, not forced per-turn checkpoints, automatic transcript harvesting, migrations or a new storage layer. Existing selection, approval, revision/concurrency, privacy and bounded-retrieval rules remain unchanged. Saved understanding is not guaranteed complete or proof of current external state.
+
 ## One home per responsibility
 
 | Information | Home |
@@ -135,7 +154,7 @@ Visibility changes can be reversed with restore IDs. Replaced mutable text is no
 
 For an explicitly authorized migration, inspect retired summaries/actions/history for stranded knowledge before removal. Transfer meaningful facts, constraints and uncertainties to their proper homes; discard obsolete execution instructions. Do not mechanically create children or decisions from every action. A one-time private rollback copy outside the working store is not an artifact category or a new ongoing archive mechanism.
 
-When delivery has a supplied durable todo, use it and relevant specs/reports instead of another comprehensive handoff ledger. Stage reports stay with the delivery workflow. Without suitable durable grounding, a temporary handoff can still serve the workflow; it is not automatically long-term memory.
+Delivery resolves the durable owner under the global task-memory entry policy even when no TODO ID was supplied. Use that owner and relevant specs/reports instead of another comprehensive handoff ledger; stage reports stay with the delivery workflow. A transient execution handoff may route revisions, worktrees, resource leases and reports without duplicating project understanding. Comprehensive file-based grounding is a fallback only when durable tracking is explicitly declined or unavailable; disclose that limitation and the file's persistence limits. A missing TODO parameter is not grounds for this fallback.
 
 ## Retention, injection and compaction
 
