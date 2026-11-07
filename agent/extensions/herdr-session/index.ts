@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rename, stat, writeFile } 
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, withFileMutationQueue, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, defineTool, withFileMutationQueue, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { requireLaunchModel } from "../lib/models.ts";
 import { createSession, getCoreTerminal, publishSessionIdentity, resolvePromptFile, WORKER_ENTRY, type WorkerIdentity, type SessionResult } from "./runtime.ts";
@@ -342,6 +342,24 @@ export default function (pi: ExtensionAPI) {
       return textResult({ run: run.dir, worker: worker.id, message: "Guidance queued. Busy or approval-blocked workers receive it as a follow-up; no terminal input was sent." });
     },
   }));
+  pi.registerCommand("herdr-id", {
+    description: "Show and copy this agent's Herdr terminal ID for hc send",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
+      const id = process.env.HC_TERMINAL_ID?.trim();
+      if (!id) {
+        ctx.ui.notify("No Herdr terminal ID: this Pi process was not started inside herdr-core.", "warning");
+        return;
+      }
+      try {
+        await copyToClipboard(id);
+      } catch (error) {
+        ctx.ui.notify(`Herdr terminal ID: ${id}\nClipboard failed: ${error instanceof Error ? error.message : String(error)}\nSend with: hc send ${id} "message"`, "warning");
+        return;
+      }
+      ctx.ui.notify(`Herdr terminal ID: ${id} (copied)\nSend with: hc send ${id} "message"`, "info");
+    },
+  });
   pi.registerCommand("herdr", {
     description: "Start a fresh Pi session in Herdr (usage: /herdr [workspace] [--cwd path] [--model provider/model] [--label text] [--handoff file] [--append-system-prompt file])",
     handler: async (args, ctx) => {

@@ -229,6 +229,13 @@ if (program === 'hc') {
   await assert.rejects(parent.call('herdr_new_session', { workspace: 'remote' }), /remote|local/i);
   delete process.env.HC_TERMINAL_ID;
   await assert.rejects(parent.extension.tools.get('herdr_new_session').definition.execute('test', {}, undefined, undefined, parent.ctx), /core|HC_TERMINAL_ID/);
+  const idCommand = parent.extension.commands.get('herdr-id');
+  assert(idCommand, 'the managed extension registers /herdr-id');
+  const noticesBeforeId = parent.state.warnings.length;
+  await idCommand.handler('', { ...parent.ctx, hasUI: false });
+  assert.equal(parent.state.warnings.length, noticesBeforeId);
+  await idCommand.handler('', { ...parent.ctx, hasUI: true });
+  assert.match(parent.state.warnings.at(-1), /No Herdr terminal ID/);
   parent.activate();
   const cancelled = new AbortController(); cancelled.abort();
   await assert.rejects(parent.call('herdr_new_session', {}, cancelled.signal), /abort/i);

@@ -28,6 +28,10 @@ follow-up guidance. They also support separately configured local read-only work
 `/herdr [workspace] [--cwd path] [--model provider/model] [--label text]
 [--handoff file] [--append-system-prompt file]` starts an independent session.
 
+`/herdr-id` shows and copies the current `HC_TERMINAL_ID`, with an `hc send`
+example. It warns when no ID is available; if copying fails, the ID remains
+visible. It does not launch a session or call `hc`.
+
 ## Terminal lifecycle and placement
 
 - Independent sessions (`herdr_new_session`, `/herdr`, and the handoff skill)
