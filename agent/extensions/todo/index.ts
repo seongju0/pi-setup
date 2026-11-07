@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { estimateTokens, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { applyChanges, needsApproval, statuses, type Changes, type Todo } from "./state.ts";
 import { checkpoint, configuredRoot, create, list, locate, readKnown, type Located } from "./storage.ts";
@@ -13,7 +13,7 @@ import { effects, dependencyView, dependencyState, prerequisites, validateGraph 
 import { pickTodo } from "./picker.ts";
 import { discoverySummary, search } from "./search.ts";
 import { anchorEntry, contextType, detachedType, driftType, sizeType, usageType, ordinaryMessages, messageKey, projectContext, hasMissingAnchor, type Anchor, type ContextNote } from "./context.ts";
-import { acknowledgementEntry, addCompactionFocus, compactionEntry, pendingReconciliation, reconciliationText, type CompactionMarker } from "./compaction.ts";
+import { acknowledgementEntry, addCompactionFocus, compactionEntry, pendingReconciliation, reconciliationText, preservationType, preservationReceipt, preservationState, preservationText, type PreservationOutcome, type CompactionMarker } from "./compaction.ts";
 
 const enumOf = (values: readonly string[]) => Type.Union(values.map(value => Type.Literal(value)));
 const str = (maxLength = 2000) => Type.String({ minLength: 1, maxLength });
@@ -69,6 +69,15 @@ export default function todoExtension(pi: ExtensionAPI) {
   }
   function project(messages: Parameters<typeof projectContext>[0], ctx: ExtensionContext) {
     if (!loadedMessage) return messages;
+    // A boundary draft is not committed until after turn_end. Collect it only from saved history.
+    const branch = ctx.sessionManager.getBranch();
+    const pass = preservationState(branch, selected);
+    // Reattachment must not replay an old request as new work. Refresh has no selection entry.
+    const attachedAt = branch.findLastIndex(entry => entry.type === "custom" && entry.customType === selectionEntry);
+    if (selected && pass.request && branch.indexOf(pass.request) > attachedAt && !pass.outcome && !notes.some(note => note.details.load_id === pass.request.details.load_id)) {
+      const entry = pass.request;
+      notes.push({ role: "custom", customType: preservationType, content: entry.content, display: false, details: entry.details, timestamp: typeof entry.timestamp === "number" ? entry.timestamp : new Date(entry.timestamp).getTime() });
+    }
     // Other context hooks may append transient messages. Only persisted transcript messages can anchor notes.
     const persisted = new Set(ctx.sessionManager.getBranch().flatMap(entry => {
       if (entry.type === "message") return [messageKey(entry.message)];
@@ -156,6 +165,11 @@ export default function todoExtension(pi: ExtensionAPI) {
       pi.appendEntry(acknowledgementEntry, { id: todoId, reason: "checkpoint" });
     }
   }
+  function completePreservation(ctx: ExtensionContext, todoId: string, outcome: PreservationOutcome) {
+    if (ctx.sessionManager.getSessionId() !== sessionId || selected !== todoId) return;
+    const pass = preservationState(ctx.sessionManager.getBranch(), selected);
+    if (pass.request && !pass.outcome) pi.appendEntry(preservationReceipt, { request_id: pass.request.details.request_id, outcome });
+  }
   async function approve(ctx: ExtensionContext, todo: Todo, changes: Changes) {
     applyChanges(todo, changes); // Validate before asking for approval.
     if (!needsApproval(todo, changes)) return;
@@ -165,6 +179,22 @@ export default function todoExtension(pi: ExtensionAPI) {
   pi.on("session_tree", async (_event, ctx) => restore(ctx));
   pi.on("session_shutdown", (_event, ctx) => { display(ctx); selected = undefined; });
   pi.on("before_agent_start", () => { acknowledged = false; });
+  pi.on("turn_end", (event, ctx) => {
+    if (!selected || event.outcome !== "completed" || !event.context.canContinue || ctx.signal?.aborted || !ctx.model) return;
+    // Pi 1.5 uses this discriminator but does not export its isVirtualModel helper.
+    if (ctx.model.api === "pi-virtual" || event.message.role !== "assistant" || ["aborted", "error"].includes(event.message.stopReason)) return;
+    const tokens = ctx.getContextUsage()?.tokens;
+    if (tokens == null || !Number.isFinite(tokens)) return;
+    const settings = SettingsManager.inMemory(pi.getSettings()).getCompactionSettings(ctx.model);
+    const window = ctx.model.contextWindow;
+    const compactAt = window - settings.reserveTokens;
+    const preserveAt = Math.min(Math.floor(window * 0.90), compactAt - Math.min(16384, Math.floor(window / 10)));
+    if (!settings.enabled || preserveAt <= 0 || preserveAt >= compactAt || tokens < preserveAt || tokens >= compactAt) return;
+    const pass = preservationState(ctx.sessionManager.getBranch(), selected);
+    if (pass.request) return;
+    const requestId = randomUUID();
+    return { entries: [...event.entries, { type: "custom_message" as const, customType: preservationType, content: preservationText(selected), display: false, details: { id: selected, cycle: pass.cycle, request_id: requestId, load_id: requestId } }], continue: true };
+  });
   pi.on("tool_execution_end", (event) => {
     // Conservative signal, not semantic detection: even a read-only bash may warrant a no_change acknowledgement.
     if (selected && !event.isError && (["write", "edit", "bash"].includes(event.toolName) || event.toolName === "todo_artifact" && event.args?.action === "upsert" && known.has(event.args?.id))) acknowledged = false;
@@ -176,7 +206,8 @@ export default function todoExtension(pi: ExtensionAPI) {
     event.signal.throwIfAborted();
     const item = await locate(root, owner);
     if (selected !== owner || ctx.sessionManager.getSessionId() !== session) return;
-    preparedCompaction = { id: owner, revision: item.todo.revision, pending: !acknowledged || !!reconciliation, reason: event.reason };
+    const pass = preservationState(ctx.sessionManager.getBranch(), owner);
+    preparedCompaction = { id: owner, revision: item.todo.revision, pending: !acknowledged || !!reconciliation || !!(pass.request && !pass.outcome), reason: event.reason };
     addCompactionFocus(event.preparation, preparedCompaction);
   });
   pi.on("session_compact", (_event, ctx) => {
@@ -229,7 +260,7 @@ export default function todoExtension(pi: ExtensionAPI) {
       const message = loadedMessage!;
       const estimated = estimateTokens({ role: "user", content: [{ type: "text", text: message.content + (driftMessage?.content ?? "") }], timestamp: message.timestamp });
       const usage = ctx.getContextUsage?.();
-      const usageBand = typeof usage?.percent === "number" ? usage.percent >= 90 ? 90 : usage.percent >= 80 ? 80 : 0 : 0;
+      const usageBand = typeof usage?.percent === "number" && usage.percent >= 80 ? 80 : 0;
       const warningKey = JSON.stringify([message.details.load_id, ctx.model?.contextWindow]);
       const largeForModel = !!ctx.model?.contextWindow && estimated > Math.floor(ctx.model.contextWindow / 10);
       const oversized = loadedSizes.orientation > 18000 || loadedSizes.bundle > 40000 || largeForModel;
@@ -244,13 +275,11 @@ export default function todoExtension(pi: ExtensionAPI) {
       const usageKey = (band: number) => JSON.stringify([message.details.load_id, ctx.model?.contextWindow, band]);
       const deliveredUsage = (band: number) => notes.some(note => note.customType === usageType && note.details.warning_key === usageKey(band));
       if (usageBand && !deliveredUsage(usageBand) && !deliveredUsage(90)) {
-        const guidance = usageBand === 90
-          ? "Within the current work turn, preserve consequential unsaved findings, decisions with reasons, uncertainty and decisive evidence pointers using todo_checkpoint or relevant artifacts. If saved understanding is already current, do not rewrite it or perform an acknowledgement ritual. Preserve still-active authorization with its exact limits in the conversation, not as durable execution permission. Continue the prescribed task normally; Pi owns compaction. No forced reset, extra bookkeeping turn, premature final answer or skipped verification."
-          : "Context is getting full. Prefer targeted todo_knowledge/session_history searches and bounded reads of relevant material; avoid loading unrelated documents. Continue the prescribed task normally. This is not a task deadline or a reason to reduce scope, skip verification or perform cleanup.";
+        const guidance = "Context is getting full. Prefer targeted todo_knowledge/session_history searches and bounded reads of relevant material; avoid loading unrelated documents. Continue the prescribed task normally. This is not a task deadline or a reason to reduce scope, skip verification or perform cleanup.";
         const warning = `Todo session context usage reminder (nonblocking, ${usageBand}% band): Pi estimates session context usage at ${Math.round(usage!.percent!)}%. ${guidance}`;
         const note: ContextNote = { role: "custom", customType: usageType, display: false, details: { load_id: randomUUID(), warning_key: usageKey(usageBand) }, timestamp: Date.now(), content: warning };
         notes.push(note); pi.sendMessage(note, { triggerTurn: false });
-        ctx.ui.notify(`Session context usage is about ${Math.round(usage!.percent!)}%. Todo sent a nonforcing ${usageBand === 90 ? "unsaved-understanding preservation" : "selective retrieval"} reminder.`, "warning");
+        ctx.ui.notify(`Session context usage is about ${Math.round(usage!.percent!)}%. Todo sent a nonforcing selective retrieval reminder.`, "warning");
       }
       return { messages: project(messages, ctx) };
     } catch (error) {
@@ -312,7 +341,7 @@ export default function todoExtension(pi: ExtensionAPI) {
       // Avoid repeating approval for a successful identical retry; checkpoint still verifies digest and owner.
       if (item.todo.last_checkpoint?.key !== params.key) await approve(ctx, item.todo, params.changes as Changes);
       const updated = await checkpoint(root, params.id, params.revision, params.changes as Changes, params.key, ctx.sessionManager.getSessionId(), signal);
-      observe(updated, ctx); acknowledge(ctx, params.id);
+      observe(updated, ctx); acknowledge(ctx, params.id); completePreservation(ctx, params.id, "checkpoint");
       // applyChanges appends id-less patches in order; an identical last-key replay retains that tail.
       const createdDecisions = params.changes.decisions?.filter(row => !row.id).length ?? 0;
       const createdQuestions = params.changes.questions?.filter(row => !row.id).length ?? 0;
@@ -354,6 +383,7 @@ export default function todoExtension(pi: ExtensionAPI) {
         ctx.ui.notify(`Todo needs approval: ${params.explanation}`, "warning");
       }
       acknowledged = true; reconciliation = undefined; pi.appendEntry(acknowledgementEntry, params);
+      completePreservation(ctx, params.id, params.reason as PreservationOutcome);
       return result(params);
     },
   });

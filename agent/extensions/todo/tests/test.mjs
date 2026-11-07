@@ -9,7 +9,7 @@ import { configuredRoot, create, list, locate, checkpoint, mutate, withStoreLock
 import { applyChanges, createTodo, needsApproval, validate } from "../state.ts";
 import { readArtifact, saveArtifact } from "../artifacts.ts";
 import { restoreSelection, resumeBundle, selectionEntry, checkpointMessage } from "../session.ts";
-import { compactionEntry, acknowledgementEntry, pendingReconciliation } from "../compaction.ts";
+import { compactionEntry, acknowledgementEntry, pendingReconciliation, preservationType, preservationState } from "../compaction.ts";
 
 const scratch = await mkdtemp(join(tmpdir(), "pi-todo-test-"));
 const root = join(scratch, "todos");
@@ -29,6 +29,7 @@ process.env.PI_CODING_AGENT_DIR = scratch;
 async function instance(branch = [], interactive = false, deferMessages = false, withTasks = false) {
   const runtime = createExtensionRuntime();
   const stored = [...branch]; const warnings = []; const statuses = []; const confirmations = []; const selects = []; const inputs = []; const editors = []; const panels = []; const customSteps = [];
+  runtime.getSettings = () => ctx.settings ?? {};
   runtime.appendEntry = (customType, data) => stored.push({ type: "custom", customType, data });
   const pending = [];
   runtime.sendMessage = (message) => (deferMessages ? pending : stored).push({ type: "custom_message", ...message });
@@ -675,56 +676,169 @@ try {
   const [noSizeWarning] = await smallModel.emit("context", { messages: repeatSmall.messages });
   assert.equal(noSizeWarning.messages.filter(message => message.customType === "todo-context-size-warning-v1").length, 2); // Delivered warnings remain at their original positions.
 
-  // Session usage is independent of brief size: 80% encourages selective reads, 90% preserves unsaved understanding.
+  // Usage awareness stays lightweight; preservation is an actionable, persisted one-shot boundary.
   const usageNotes = messages => messages.filter(message => message.customType === "todo-context-usage-warning-v1");
-  smallModel.ctx.getContextUsage = () => ({ percent: 79.9, tokens: 799000, contextWindow: 1000000 });
+  smallModel.ctx.getContextUsage = () => ({ percent: 79.9, tokens: 799000 });
   assert.equal(usageNotes((await smallModel.emit("context", { messages: [] }))[0].messages).length, 0);
-  smallModel.ctx.getContextUsage = () => ({ percent: 80, tokens: 800000, contextWindow: 1000000 });
+  smallModel.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000 });
   const [usageContext] = await smallModel.emit("context", { messages: [] });
   assert.match(usageNotes(usageContext.messages)[0].content, /80% band.*targeted.*bounded reads/);
-  assert.doesNotMatch(usageNotes(usageContext.messages)[0].content, /todo_tighten/);
-  assert.equal(usageContext.messages.filter(m => m.customType === "todo-context-size-warning-v1").length, 2);
+  assert.equal(usageNotes(usageContext.messages).length, 1);
   const usageWarnings = smallModel.warnings.length;
   await smallModel.emit("context", { messages: usageContext.messages });
   assert.equal(smallModel.warnings.length, usageWarnings);
-  smallModel.ctx.getContextUsage = () => ({ percent: 90, tokens: 900000, contextWindow: 1000000 });
-  const [preservationContext] = await smallModel.emit("context", { messages: usageContext.messages });
-  assert.equal(usageNotes(preservationContext.messages).length, 2);
-  assert.match(usageNotes(preservationContext.messages)[1].content, /90% band.*consequential unsaved.*already current.*do not rewrite/);
-  const preservedWarnings = smallModel.warnings.length;
-  smallModel.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000, contextWindow: 1000000 });
-  await smallModel.emit("context", { messages: preservationContext.messages });
-  assert.equal(smallModel.warnings.length, preservedWarnings);
-  assert.deepEqual(await smallModel.emit("agent_before_settle", boundary), []);
-  const usageReopened = await instance(smallModel.stored);
-  usageReopened.ctx.model = smallModel.ctx.model;
-  usageReopened.ctx.getContextUsage = smallModel.ctx.getContextUsage;
-  assert.equal(usageNotes((await usageReopened.emit("context", { messages: preservationContext.messages }))[0].messages).length, 2);
-  assert.equal(usageReopened.warnings.length, 0); // Persisted anchors/receipts also deduplicate after reopening.
-  smallModel.ctx.getContextUsage = () => ({ percent: null, tokens: null, contextWindow: 1000000 });
-  assert.equal(usageNotes((await smallModel.emit("context", { messages: preservationContext.messages }))[0].messages).length, 2);
 
-  const jumpedUsage = await instance();
-  await jumpedUsage.call("todo", { action: "resume", selector: sibling.todo.id });
-  jumpedUsage.ctx.model = { contextWindow: 1000000 };
-  jumpedUsage.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000, contextWindow: 1000000 });
-  const [jumpedContext] = await jumpedUsage.emit("context", { messages: [] });
-  assert.equal(usageNotes(jumpedContext.messages).length, 1);
-  assert.match(usageNotes(jumpedContext.messages)[0].content, /90% band/);
-  jumpedUsage.ctx.getContextUsage = () => ({ percent: 85, tokens: 850000, contextWindow: 1000000 });
-  assert.equal(usageNotes((await jumpedUsage.emit("context", { messages: jumpedContext.messages }))[0].messages).length, 1);
-  await jumpedUsage.call("todo", { action: "refresh" });
-  const [renewedUsage] = await jumpedUsage.emit("context", { messages: jumpedContext.messages });
-  assert.equal(usageNotes(renewedUsage.messages).length, 1);
-  assert.match(usageNotes(renewedUsage.messages)[0].content, /80% band/);
-  await jumpedUsage.emit("session_compact", { reason: "manual" });
-  jumpedUsage.ctx.getContextUsage = () => ({ percent: 95, tokens: 950000, contextWindow: 1000000 });
-  const [compactedUsage] = await jumpedUsage.emit("context", { messages: renewedUsage.messages });
-  assert.equal(usageNotes(compactedUsage.messages).length, 1);
-  assert.match(usageNotes(compactedUsage.messages)[0].content, /90% band/);
-  await jumpedUsage.call("todo_ack", { id: sibling.todo.id, reason: "no_change", explanation: "Read-only context reminder checks" });
-  await jumpedUsage.call("todo", { action: "leave" });
-  assert.equal(usageNotes((await jumpedUsage.emit("context", { messages: compactedUsage.messages }))[0].messages).length, 0);
+  const proactiveTodo = await create(root, "simple", "Preservation", "Keep significant understanding");
+  const proactive = await instance();
+  await proactive.call("todo", { action: "resume", selector: proactiveTodo.todo.id });
+  proactive.ctx.model = { provider: "synthetic", id: "physical", api: "anthropic-messages", contextWindow: 272000 };
+  let tokens = 239231;
+  proactive.ctx.getContextUsage = () => ({ tokens });
+  const turn = { ...boundary, entries: [], message: { role: "assistant", stopReason: "stop" } };
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined);
+  tokens++;
+  proactive.ctx.settings = { compaction: { enabled: false } };
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined);
+  proactive.ctx.settings = { compaction: { modelOverrides: { "synthetic/physical": { reserveTokens: 0 } } } };
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined);
+  proactive.ctx.settings = {};
+  proactive.ctx.model.api = "pi-virtual";
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined);
+  proactive.ctx.model.api = "anthropic-messages";
+  tokens = null;
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined);
+  tokens = 239232;
+  assert.equal((await proactive.emit("turn_end", { ...turn, outcome: "aborted" }))[0], undefined);
+  assert.equal((await proactive.emit("turn_end", { ...turn, message: { role: "assistant", stopReason: "error" } }))[0], undefined);
+  assert.equal((await proactive.emit("turn_end", { ...turn, context: { canContinue: false } }))[0], undefined);
+  tokens = 255616;
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined); // Native compaction wins a jump.
+  tokens = 239232;
+  const prior = { type: "custom", customType: "other-extension", data: {} };
+  const [draft] = await proactive.emit("turn_end", { ...turn, entries: [prior] });
+  assert.equal(draft.continue, true);
+  assert.equal(draft.entries[0], prior);
+  assert.equal(preservationState(proactive.stored, proactiveTodo.todo.id).request, undefined);
+  assert.equal((await proactive.emit("turn_end", turn))[0].continue, true, "uncommitted drafts cannot deduplicate");
+  proactive.stored.push(...draft.entries.map(entry => ({ ...entry, timestamp: 8000 })));
+  const persistedUser = { role: "user", content: "Work", timestamp: 7000 };
+  proactive.stored.push({ type: "message", message: persistedUser });
+  const [delivered] = await proactive.emit("context", { messages: [persistedUser] });
+  const request = delivered.messages.find(message => message.customType === preservationType);
+  assert(request);
+  const nextUser = { role: "user", content: "Continue", timestamp: 9000 };
+  proactive.stored.push({ type: "message", message: nextUser });
+  const [stable] = await proactive.emit("context", { messages: [...delivered.messages, nextUser] });
+  assert.equal(stable.messages.indexOf(request), delivered.messages.indexOf(request));
+  proactive.ctx.model = { ...proactive.ctx.model, id: "another-physical" };
+  proactive.ctx.settings = { compaction: { reserveTokens: 10000 } };
+  assert.equal((await proactive.emit("turn_end", turn))[0], undefined, "model/settings changes cannot repeat a committed pass");
+  await assert.rejects(proactive.call("todo_checkpoint", { id: proactiveTodo.todo.id, revision: 99, key: "stale-pass", changes: {} }), /Stale revision/);
+  await proactive.call("todo_checkpoint", { id: reconciliationTodo.todo.id, revision: 2, key: "other-owner", changes: {} });
+  await proactive.call("todo_artifact", { action: "upsert", id: proactiveTodo.todo.id, revision: 1, title: "Understanding", kind: "research", description: "Relevant findings", lifecycle: "current", required: false, applies_to: [], body: "# Findings" });
+  await proactive.call("todo_tighten", { id: proactiveTodo.todo.id, revision: 2, reason: "Verified consolidation" });
+  assert.equal(preservationState(proactive.stored, proactiveTodo.todo.id).outcome, undefined);
+  const pendingReopened = await instance(proactive.stored);
+  pendingReopened.ctx.model = proactive.ctx.model;
+  pendingReopened.ctx.getContextUsage = proactive.ctx.getContextUsage;
+  const [replayed] = await pendingReopened.emit("context", { messages: stable.messages });
+  assert.equal(replayed.messages.filter(message => message.customType === preservationType).length, 1);
+  assert.equal((await pendingReopened.emit("turn_end", turn))[0], undefined);
+  await pendingReopened.call("todo", { action: "refresh" });
+  const [refreshedPass] = await pendingReopened.emit("context", { messages: replayed.messages });
+  assert.equal(refreshedPass.messages.filter(message => message.customType === preservationType).length, 1);
+  assert.equal((await pendingReopened.emit("turn_end", turn))[0], undefined);
+  await pendingReopened.call("todo_ack", { id: proactiveTodo.todo.id, reason: "needs_approval", explanation: "May we change direction?" });
+  assert.equal(preservationState(pendingReopened.stored, proactiveTodo.todo.id).outcome, "needs_approval");
+  assert((await locate(root, proactiveTodo.todo.id)).todo.open_questions.some(question => question.text.includes("May we change direction?")));
+  await pendingReopened.call("todo", { action: "refresh" });
+  assert.equal((await pendingReopened.emit("context", { messages: refreshedPass.messages }))[0].messages.filter(message => message.customType === preservationType).length, 0);
+  pendingReopened.stored.push({ type: "compaction", id: "native-cycle-2" });
+  const [secondPass] = await pendingReopened.emit("turn_end", turn);
+  pendingReopened.stored.push(...secondPass.entries);
+  await pendingReopened.call("todo_ack", { id: proactiveTodo.todo.id, reason: "no_change", explanation: "Saved understanding is current" });
+  assert.equal(preservationState(pendingReopened.stored, proactiveTodo.todo.id).outcome, "no_change");
+  await pendingReopened.call("todo", { action: "leave" });
+  assert.equal((await pendingReopened.emit("context", { messages: refreshedPass.messages }))[0].messages.filter(message => message.customType === preservationType).length, 0);
+
+  // Switching removes pending instructions, without resetting the owner/cycle deduplication.
+  pendingReopened.stored.push({ type: "compaction", id: "native-cycle-3" });
+  await pendingReopened.call("todo", { action: "resume", selector: proactiveTodo.todo.id });
+  const [thirdPass] = await pendingReopened.emit("turn_end", turn);
+  pendingReopened.stored.push(...thirdPass.entries);
+  pendingReopened.ctx.hasUI = true;
+  pendingReopened.confirmations.push(true); // Explicitly switch without another checkpoint.
+  await pendingReopened.call("todo", { action: "resume", selector: sibling.todo.id });
+  assert.equal((await pendingReopened.emit("context", { messages: refreshedPass.messages }))[0].messages.filter(message => message.customType === preservationType).length, 0);
+  assert.equal((await pendingReopened.emit("turn_end", turn))[0].continue, true, "another owner has independent eligibility");
+
+  // Legacy passive 90% notes are still restored as owned messages.
+  const epoch = usageContext.messages.find(message => message.customType === "todo-context-v1").details.load_id;
+  const legacyUsage = await instance([...smallModel.stored,
+    { type: "custom_message", customType: "todo-context-usage-warning-v1", content: "Legacy 90%", details: { load_id: "legacy-90" }, timestamp: 1 },
+    { type: "custom", customType: "todo-context-anchor-v1", data: { id: "legacy-90", epoch, after: null } },
+  ]);
+  assert((await legacyUsage.emit("context", { messages: usageContext.messages }))[0].messages.some(message => message.content === "Legacy 90%"));
+
+  // Real SDK scheduling, tools and saver; only the provider transport is synthetic (including summaries).
+  const { createAgentSession, createCodemodeExtension, DefaultResourceLoader, ModelRuntime, SettingsManager } = await import(pathToFileURL(join(packageRoot, "dist/index.js")));
+  const { AssistantMessageEventStream } = await import(pathToFileURL(join(packageRoot, "node_modules/@earendil-works/pi-ai/dist/utils/event-stream.js")));
+  const sdkTodo = await create(root, "simple", "SDK preservation", "Verify ordinary-agent persistence and native priority");
+  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: true, reserveTokens: 10000, keepRecentTokens: 1000 }, retry: { enabled: false } });
+  const modelRuntime = await ModelRuntime.create({ authPath: join(scratch, "sdk-auth.json"), modelsPath: null, modelsStorePath: join(scratch, "sdk-models.json"), allowModelNetwork: false });
+  let phase = "preserve"; let providerTurns = 0; let summaries = 0;
+  const requests = [];
+  const largeRead = join(scratch, "large-tool-result.txt");
+  await writeFile(largeRead, "Synthetic tool evidence, with enough text per line to reach the byte limit.\n".repeat(1400));
+  modelRuntime.registerProvider("todo-synthetic", {
+    api: "anthropic-messages", apiKey: "synthetic", baseUrl: "https://invalid.example",
+    models: [{ id: "physical", name: "Synthetic", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 4096 }],
+    streamSimple(model, context) {
+      const stream = new AssistantMessageEventStream();
+      const isSummary = JSON.stringify(context).includes("You are a context summarization assistant");
+      let content; let input;
+      if (isSummary) { summaries++; content = [{ type: "text", text: "## Goal\nSynthetic preservation check.\n## Progress\nCheckpoint saved; verification remains synthetic." }]; input = 1000; }
+      else {
+        requests.push(structuredClone(context)); providerTurns++;
+        if (phase === "preserve" && providerTurns === 1) { content = [{ type: "text", text: "A meaningful finding is ready to preserve." }]; input = 81000; }
+        else if (phase === "preserve" && providerTurns === 2) { content = [{ type: "toolCall", id: "sdk-checkpoint", name: "codemode", arguments: { code: `text(await tools.todo_checkpoint(${JSON.stringify({ id: sdkTodo.todo.id, revision: 1, key: "sdk-pass", changes: { current_state: { evidence: ["Synthetic provider exercised the real checkpoint; no live-model compliance claim."] } } })}));` } }]; input = 82000; }
+        else if (phase === "jump" && providerTurns === 1) { content = [{ type: "toolCall", id: "sdk-large-read", name: "read", arguments: { path: largeRead } }]; input = 79000; }
+        else { content = [{ type: "text", text: "Continue within the existing assignment." }]; input = phase === "preserve" ? 83000 : 1000; }
+      }
+      const stopReason = content.some(block => block.type === "toolCall") ? "toolUse" : "stop";
+      const message = { role: "assistant", content, api: model.api, provider: model.provider, model: model.id, stopReason, timestamp: Date.now(), usage: { input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      stream.push({ type: "done", reason: stopReason, message }); stream.end(); return stream;
+    },
+  });
+  const resourceLoader = new DefaultResourceLoader({ cwd: scratch, agentDir: scratch, settingsManager, additionalExtensionPaths: [join(directory, "index.ts")], extensionFactories: [createCodemodeExtension({ models: false })], noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
+  await resourceLoader.reload();
+  const sdkManager = SessionManager.inMemory(scratch);
+  sdkManager.appendCustomEntry(selectionEntry, { id: sdkTodo.todo.id });
+  const { session } = await createAgentSession({ cwd: scratch, agentDir: scratch, model: modelRuntime.getModel("todo-synthetic", "physical"), modelRuntime, settingsManager, sessionManager: sdkManager, resourceLoader });
+  session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
+  const sdkEvents = [];
+  await session.bindExtensions({ onError: error => { throw error; } });
+  session.subscribe(event => sdkEvents.push(event));
+  try {
+    await session.prompt("Preserve the meaningful finding, without starting other work.");
+    assert.equal(providerTurns, 3, "boundary continuation plus natural tool follow-up, no competing run");
+    assert(JSON.stringify(requests[1]).includes("Before further substantive work"));
+    assert.equal((await locate(root, sdkTodo.todo.id)).todo.revision, 2);
+    assert.match((await locate(root, sdkTodo.todo.id)).todo.current_state.evidence[0], /real checkpoint/);
+    assert.equal(preservationState(sdkManager.getBranch(), sdkTodo.todo.id).outcome, "checkpoint");
+    assert(sdkManager.getBranch().some(entry => entry.type === "message" && entry.message.role === "toolResult" && entry.message.nestedCalls?.calls.some(call => call.name === "todo_checkpoint")), "checkpoint ran through real nested codemode execution");
+    assert.equal(sdkManager.getBranch().filter(entry => entry.customType === preservationType).length, 1);
+    await session.compact();
+    assert.equal(summaries, 1, "manual compaction uses the native compactor and synthetic summary transport");
+    phase = "jump"; providerTurns = 0;
+    await session.prompt("Read the synthetic evidence file, then continue normally.");
+    assert.equal(providerTurns, 2);
+    assert.equal(summaries, 2, "tool-result jump invokes native threshold compaction before follow-up");
+    assert(sdkEvents.some(event => event.type === "compaction_start" && event.reason === "threshold"));
+    assert.equal(sdkManager.getBranch().filter(entry => entry.type === "compaction").length, 2);
+    assert.equal(sdkManager.getBranch().filter(entry => entry.customType === preservationType).length, 1, "threshold jump does not force preservation ahead of native compaction");
+    assert(JSON.stringify(requests.at(-1)).includes("Compaction reconciliation pending"));
+  } finally { session.dispose(); }
 
   // Autonomous saving records existing user approval without another confirmation; no approval still fails closed.
   const autonomousTodo = await create(root, "simple", "Autonomous saving", "Original outcome");
