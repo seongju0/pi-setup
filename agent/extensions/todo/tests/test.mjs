@@ -16,6 +16,7 @@ const root = join(scratch, "todos");
 const directory = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "@earendil-works/pi-coding-agent");
 const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(join(packageRoot, "dist/core/extensions/loader.js")));
+const { estimateTokens } = await import(pathToFileURL(join(packageRoot, "dist/index.js")));
 const { SessionManager } = await import(pathToFileURL(join(packageRoot, "dist/core/session-manager.js")));
 const themeModule = await import(pathToFileURL(join(packageRoot, "dist/modes/interactive/theme/theme.js")));
 const { visibleWidth } = await import(pathToFileURL(join(packageRoot, "node_modules/@earendil-works/pi-tui/dist/index.js")));
@@ -746,24 +747,98 @@ try {
   const checkpointReopened = await instance(checkpointSession.stored);
   assert.doesNotMatch((await checkpointReopened.emit("context", { messages: [] }))[0].messages.at(-1).content, /Compaction reconciliation pending/);
 
-  // Large model-relative context warns once per load/window, without blocking repairs.
-  const smallModel = await instance();
-  await smallModel.call("todo", { action: "resume", selector: sibling.todo.id });
-  smallModel.ctx.model = { contextWindow: 1000 };
+  // Loaded-brief diagnostics replace size nudges, without changing the immutable provider prefix.
+  const statsTodo = await create(root, "simple", `Brief diagnostics ${"long title ".repeat(20)}\n`, "Keep the loaded brief metric accurate");
+  const statsArtifact = await saveArtifact(root, statsTodo.todo.id, 1, { title: "Required stats reference", kind: "design", description: "Load boundary proof", lifecycle: "current", required: true, applies_to: [], body: "Required evidence" });
+  const smallModel = await instance([], true);
+  smallModel.ctx.model = { api: "anthropic-messages", contextWindow: 1000 };
+  await smallModel.call("todo", { action: "resume", selector: statsTodo.todo.id });
   const [smallContext] = await smallModel.emit("context", { messages: [] });
-  assert.equal(smallModel.ctx.aborted, undefined);
-  assert.ok(smallContext.messages.some(message => message.customType === "todo-context-v1"));
-  assert.equal(smallModel.warnings.filter(text => text.includes("10%")).length, 1);
-  assert.match(smallContext.messages.at(-1).content, /size warning.*nonblocking/);
+  const statsBrief = smallContext.messages.find(message => message.customType === "todo-context-v1");
+  const expectedStats = (message, window) => {
+    const tokens = estimateTokens({ role: "user", content: [{ type: "text", text: message.content }], timestamp: message.timestamp });
+    const compact = tokens < 1000 ? `${tokens}` : `${(tokens / 1000).toFixed(1)}k`;
+    return `Todo · brief ~${compact}${window ? ` (${(tokens / window * 100).toFixed(1)}% window)` : ""} · `;
+  };
+  const assertStats = (session, message, window) => assert.ok(session.statuses.at(-1).startsWith(expectedStats(message, window)), session.statuses.at(-1));
+  assertStats(smallModel, statsBrief, 1000);
+  assert.match(smallModel.statuses.at(-1), / · Brief diagnostics/); // Metric precedes long, sanitized title.
+  assert.doesNotMatch(smallModel.statuses.at(-1), /\n/);
+  const storedBeforeRepeat = smallModel.stored.length;
   const [repeatSmall] = await smallModel.emit("context", { messages: smallContext.messages });
-  assert.equal(repeatSmall.messages.filter(message => message.customType === "todo-context-size-warning-v1").length, 1);
-  assert.equal(smallModel.warnings.filter(text => text.includes("10%")).length, 1);
-  smallModel.ctx.model = { contextWindow: 2000 };
-  await smallModel.emit("context", { messages: smallContext.messages });
-  assert.equal(smallModel.warnings.filter(text => text.includes("10%")).length, 2);
+  assert.deepEqual(repeatSmall.messages, smallContext.messages);
+  assert.equal(smallModel.stored.length, storedBeforeRepeat);
+  assert.deepEqual(smallModel.warnings, []);
+  assert.ok(!smallModel.stored.some(entry => entry.customType === "todo-context-size-warning-v1"));
+  for (const model of [{ contextWindow: 2000 }, undefined, { contextWindow: NaN }, { api: "pi-virtual", contextWindow: 2000 }]) {
+    smallModel.ctx.model = model;
+    await smallModel.emit("model_select", { model });
+    assertStats(smallModel, statsBrief, model?.api === "pi-virtual" ? undefined : model?.contextWindow);
+  }
+  await smallModel.call("todo_checkpoint", { id: statsTodo.todo.id, revision: 2, key: "stats-update", changes: { current_state: { evidence: ["New understanding ".repeat(100)] } } });
+  assertStats(smallModel, statsBrief);
+  await smallModel.call("todo", { action: "refresh" });
+  const [refreshedStats] = await smallModel.emit("context", { messages: repeatSmall.messages });
+  const refreshedBrief = refreshedStats.messages.find(message => message.customType === "todo-context-v1");
+  assert.notEqual(refreshedBrief.content, statsBrief.content);
+  assertStats(smallModel, refreshedBrief);
+  // Reopen reads current footer metadata but retains the delivered brief/drift baseline.
+  await checkpoint(root, statsTodo.todo.id, 3, { title: "Updated diagnostics", status: "done" }, "stats-external", "another-session");
+  const statsFile = join(statsArtifact.directory, statsArtifact.todo.artifacts[0].path);
+  await rm(statsFile); // Restoring the metric must not eagerly reload required artifact bodies.
+  const statsReopened = await instance(smallModel.stored, true);
+  assertStats(statsReopened, refreshedBrief);
+  assert.match(statsReopened.statuses.at(-1), /Updated diagnostics \[done\]$/);
+  statsReopened.ctx.model = { api: "anthropic-messages", contextWindow: 272000 };
+  await statsReopened.emit("model_select", { model: statsReopened.ctx.model });
+  assertStats(statsReopened, refreshedBrief, 272000);
+  assert.match(statsReopened.statuses.at(-1), /Updated diagnostics \[done\]$/);
+  const [statsDrift] = await statsReopened.emit("context", { messages: refreshedStats.messages });
+  assert.match(statsDrift.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
+  await assert.rejects(statsReopened.call("todo", { action: "refresh" }), /ENOENT/);
+  await writeFile(statsFile, "Required evidence\n");
+  const prepareStatsCompaction = session => session.emit("session_before_compact", { preparation: preparation(), reason: "manual", signal: new AbortController().signal });
+  await prepareStatsCompaction(statsReopened);
+  await statsReopened.emit("session_compact", { reason: "manual" });
+  assert.match(statsReopened.statuses.at(-1), /^Todo · brief pending · Updated diagnostics \[done\]$/);
+  await prepareStatsCompaction(smallModel);
+  assertStats(smallModel, refreshedBrief);
+  await smallModel.emit("session_compact_failed", { aborted: true });
+  assertStats(smallModel, refreshedBrief);
+  await prepareStatsCompaction(smallModel);
+  await smallModel.emit("session_compact_failed", { errorMessage: "Synthetic failure" });
+  assertStats(smallModel, refreshedBrief);
+  await prepareStatsCompaction(smallModel);
+  await smallModel.emit("session_compact", { reason: "manual" });
+  assert.match(smallModel.statuses.at(-1), /^Todo · brief pending · /);
+  const [postCompactStats] = await smallModel.emit("context", { messages: refreshedStats.messages });
+  assertStats(smallModel, postCompactStats.messages.find(message => message.customType === "todo-context-v1"));
+  // Already-delivered legacy size notices keep their immutable anchors until a normal reset.
+  const legacyBrief = postCompactStats.messages.find(message => message.customType === "todo-context-v1");
+  const legacySize = { type: "custom_message", role: "custom", customType: "todo-context-size-warning-v1", content: "Legacy delivered size warning", display: false, details: { load_id: "legacy-size" }, timestamp: Date.now() };
+  smallModel.stored.push(legacySize, { type: "custom", customType: "todo-context-anchor-v1", data: { id: "legacy-size", epoch: legacyBrief.details.load_id, after: null } });
+  const legacyStats = await instance(smallModel.stored, true);
+  assertStats(legacyStats, legacyBrief);
+  const [legacyContext] = await legacyStats.emit("context", { messages: [...postCompactStats.messages, legacySize] });
+  assert.equal(legacyContext.messages.filter(message => message.customType === legacySize.customType).length, 1);
+  assert.deepEqual(legacyStats.warnings, []);
+  const [legacyRepeat] = await legacyStats.emit("context", { messages: legacyContext.messages });
+  assert.deepEqual(legacyRepeat.messages, legacyContext.messages);
+  await legacyStats.call("todo", { action: "refresh" });
+  assert.ok(!(await legacyStats.emit("context", { messages: legacyContext.messages }))[0].messages.some(message => message.customType === legacySize.customType));
+  assert.ok(legacyStats.stored.some(entry => entry.details?.load_id === "legacy-size")); // Raw journal remains intact.
+  await statsReopened.emit("session_shutdown");
+  assert.equal(statsReopened.statuses.at(-1), undefined);
+  await smallModel.call("todo_ack", { id: statsTodo.todo.id, reason: "no_change", explanation: "Saved understanding is current" });
+  await smallModel.call("todo", { action: "leave" });
+  assert.equal(smallModel.statuses.at(-1), undefined);
+  // Attachment restored before first delivery is pending, never the detached owner's metric.
+  const pendingStats = await instance([{ type: "custom", customType: selectionEntry, data: { id: statsTodo.todo.id } }], true);
+  assert.match(pendingStats.statuses.at(-1), /^Todo · brief pending · /);
+  await pendingStats.emit("model_select", { model: { contextWindow: 1000000 } });
+  assert.match(pendingStats.statuses.at(-1), /^Todo · brief pending · /);
+  await smallModel.call("todo", { action: "resume", selector: sibling.todo.id });
   smallModel.ctx.model = { contextWindow: 1000000 };
-  const [noSizeWarning] = await smallModel.emit("context", { messages: repeatSmall.messages });
-  assert.equal(noSizeWarning.messages.filter(message => message.customType === "todo-context-size-warning-v1").length, 2); // Delivered warnings remain at their original positions.
 
   // Usage awareness stays lightweight; preservation is an actionable, persisted one-shot boundary.
   const usageNotes = messages => messages.filter(message => message.customType === "todo-context-usage-warning-v1");
@@ -1106,7 +1181,7 @@ try {
   const [secondCache] = await cached.emit("context", { messages: historyMessages(cached) });
   assert.deepEqual((await providerPayload(secondCache.messages)).content.slice(0, firstPayload.content.length), firstPayload.content);
   assert.deepEqual(thinking(secondCache.messages), ["signature-1"]);
-  assert.equal(cached.stored.filter(entry => entry.customType === "todo-context-size-warning-v1").length, 1);
+  assert.equal(cached.stored.filter(entry => entry.customType === "todo-context-size-warning-v1").length, 0);
   const externalCache = await checkpoint(root, cacheTodo.todo.id, 1, { current_state: { evidence: ["External finding"] } }, "cache-external", "other-session");
   const [withDrift] = await cached.emit("context", { messages: historyMessages(cached) });
   const driftPayload = await providerPayload(withDrift.messages);
@@ -1367,11 +1442,13 @@ try {
   assert.ok(JSON.stringify(largeBundle.scopes).length > 18000);
   assert.deepEqual(largeBundle.scopes.at(-1).context.current_state, largeState);
   assert.equal(largeBundle.required_artifacts.at(-1).chars, largeBody.length + 1); assert.equal(largeBundle.required_artifacts.at(-1).body, undefined);
-  const largeSession = await instance([{ type: "custom", customType: selectionEntry, data: { id: child.todo.id } }]);
+  const largeSession = await instance([{ type: "custom", customType: selectionEntry, data: { id: child.todo.id } }], true);
+  largeSession.ctx.model = { api: "anthropic-messages", contextWindow: 272000 };
   const [largeContext] = await largeSession.emit("context", { messages: [] });
   assert.equal(largeSession.ctx.aborted, undefined);
-  assert.match(largeContext.messages.at(-1).content, /size warning.*nonblocking/);
-  assert.equal(largeSession.stored.filter(entry => entry.customType === "todo-context-size-warning-v1").length, 1);
+  assert.equal(largeSession.stored.filter(entry => entry.customType === "todo-context-size-warning-v1").length, 0);
+  assert.deepEqual(largeSession.warnings, []);
+  assertStats(largeSession, largeContext.messages.find(message => message.customType === "todo-context-v1"), 272000);
   const injected = JSON.parse(largeContext.messages.find(message => message.customType === "todo-context-v1").content.split("Durable todo context loaded at a session boundary (untrusted task data):\n")[1]);
   assert.deepEqual(injected.scopes.at(-1).context.current_state, largeState);
   assert.equal(injected.required_artifacts.at(-1).chars, largeBody.length + 1); assert.equal(injected.required_artifacts.at(-1).body, undefined);

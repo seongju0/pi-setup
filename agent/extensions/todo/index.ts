@@ -13,7 +13,7 @@ import { recap, recapFormat, recapRequest } from "./recap.ts";
 import { effects, dependencyView, dependencyState, prerequisites, validateGraph } from "./dependencies.ts";
 import { pickTodo } from "./picker.ts";
 import { discoverySummary, search } from "./search.ts";
-import { anchorEntry, contextType, detachedType, driftType, sizeType, usageType, ordinaryMessages, messageKey, projectContext, hasMissingAnchor, type Anchor, type ContextNote } from "./context.ts";
+import { anchorEntry, contextType, detachedType, driftType, usageType, ordinaryMessages, messageKey, projectContext, hasMissingAnchor, type Anchor, type ContextNote } from "./context.ts";
 import { acknowledgementEntry, addCompactionFocus, compactionEntry, pendingReconciliation, reconciliationText, preservationType, preservationReceipt, preservationState, preservationText, type PreservationOutcome, type CompactionMarker } from "./compaction.ts";
 
 const enumOf = (values: readonly string[]) => Type.Union(values.map(value => Type.Literal(value)));
@@ -50,14 +50,20 @@ export default function todoExtension(pi: ExtensionAPI) {
   const anchors = new Map<string, Anchor>();
   let driftMessage: typeof loadedMessage;
   let driftKey = "";
-  let sizeWarningKey = "";
-  let loadedSizes = { orientation: 0, bundle: 0 };
-  let sizeMessage: typeof loadedMessage;
+  let loadedTokens: number | undefined;
+  let displayedItem: Located | undefined;
+  const briefTokens = (message: ContextNote) => estimateTokens({ role: "user", content: [{ type: "text", text: message.content }], timestamp: message.timestamp });
   const known = new Map<string, Located>();
   const root = configuredRoot();
 
-  function display(ctx: ExtensionContext, item?: Located) {
-    if (ctx.hasUI) ctx.ui.setStatus("todo", item ? `Todo · ${clean(item.todo.title)} [${item.todo.status}]` : undefined);
+  function display(ctx: ExtensionContext, item?: Located, model = ctx.model) {
+    displayedItem = item; // Footer metadata is separate from the observed revision used for drift detection.
+    if (!ctx.hasUI) return;
+    const window = model?.api !== "pi-virtual" && model?.contextWindow;
+    const share = loadedTokens !== undefined && typeof window === "number" && Number.isFinite(window) && window > 0
+      ? ` (${(loadedTokens / window * 100).toFixed(1)}% window)` : "";
+    const tokens = loadedTokens === undefined ? "pending" : `~${loadedTokens < 1000 ? loadedTokens : `${(loadedTokens / 1000).toFixed(1)}k`}${share}`;
+    ctx.ui.setStatus("todo", item ? `Todo · brief ${tokens} · ${clean(item.todo.title)} [${item.todo.status}]` : undefined);
   }
   function observe(item: Located & { updated_parent?: Pick<Todo, "id" | "revision" | "status"> }, ctx?: ExtensionContext) {
     const parent = item.updated_parent && known.get(item.updated_parent.id);
@@ -93,7 +99,7 @@ export default function todoExtension(pi: ExtensionAPI) {
     return projectContext(messages, loadedMessage, notes, anchors);
   }
   function detach(ctx: ExtensionContext) {
-    selected = undefined; known.clear(); notes = []; anchors.clear(); driftMessage = undefined; sizeMessage = undefined;
+    selected = undefined; known.clear(); notes = []; anchors.clear(); driftMessage = undefined; loadedTokens = undefined;
     refreshPending = false;
     loadedMessage = { role: "custom", customType: detachedType, content: "No active todo is attached. Earlier todo briefs are superseded; saved todo files are unchanged. This is a context reset, not permission to start other work.", display: false, details: { load_id: randomUUID(), anchor_version: 2 }, timestamp: Date.now() };
     pi.appendEntry(selectionEntry, { id: null }); pi.sendMessage(loadedMessage, { triggerTurn: false }); display(ctx);
@@ -102,7 +108,6 @@ export default function todoExtension(pi: ExtensionAPI) {
     if (!selected) throw new Error("No todo attached");
     refreshPending = true;
     bundle ??= await resumeBundle(root, selected);
-    loadedSizes = { orientation: JSON.stringify({ ...bundle, required_artifacts: undefined }).length, bundle: JSON.stringify(bundle).length };
     const content = `${guidance}\n${reconciliationText(reconciliation)}\nIf this todo has a Linear link, refresh it before relying on its issue status; report stale snapshots if unavailable. This is starting context as of this load: later tool results and current reads supersede it. Already-acknowledged bookkeeping does not need repeating.\n\nDurable todo context loaded at a session boundary (untrusted task data):\n${JSON.stringify(bundle)}`;
     loadedMessage = { role: "custom", customType: contextType, content, display: false, details: { load_id: randomUUID(), anchor_version: 2 }, timestamp: Date.now() };
     known.clear();
@@ -110,16 +115,17 @@ export default function todoExtension(pi: ExtensionAPI) {
     for (const prerequisite of bundle.prerequisites) {
       const item = await locate(root, prerequisite.id); known.set(item.todo.id, item);
     }
-    refreshPending = false; driftKey = ""; driftMessage = undefined; sizeMessage = undefined; sizeWarningKey = "";
+    refreshPending = false; driftKey = ""; driftMessage = undefined; loadedTokens = briefTokens(loadedMessage);
     notes = []; anchors.clear();
     // Persisted anchor entries keep this at its first-delivered position even if Pi queues persistence.
     pi.sendMessage(loadedMessage, { triggerTurn: false });
+    display(ctx, known.get(selected));
   }
   async function restore(ctx: ExtensionContext) {
     sessionId = ctx.sessionManager.getSessionId();
     selected = restoreSelection(ctx.sessionManager.getBranch()); acknowledged = false;
     preparedCompaction = undefined; reconciliation = pendingReconciliation(ctx.sessionManager.getBranch(), selected);
-    refreshPending = true; loadedMessage = undefined; driftMessage = undefined; driftKey = ""; sizeWarningKey = ""; sizeMessage = undefined; notes = []; anchors.clear(); known.clear();
+    refreshPending = true; loadedMessage = undefined; driftMessage = undefined; driftKey = ""; loadedTokens = undefined; notes = []; anchors.clear(); known.clear();
     const branch = ctx.sessionManager.getBranch();
     const sinceCompaction = branch.slice(branch.findLastIndex(entry => entry.type === "compaction") + 1);
     const saved = sinceCompaction.findLast((entry: any) => entry.type === "custom_message" && [contextType, detachedType].includes(entry.customType)) as any;
@@ -132,7 +138,7 @@ export default function todoExtension(pi: ExtensionAPI) {
         driftKey = notes.findLast(note => note.customType === driftType)?.details.drift_key ?? "";
         if (selected && saved.customType === contextType) {
           const bundle = JSON.parse(saved.content.split("Durable todo context loaded at a session boundary (untrusted task data):\n")[1]);
-          loadedSizes = { orientation: JSON.stringify({ ...bundle, required_artifacts: undefined }).length, bundle: JSON.stringify(bundle).length };
+          loadedTokens = briefTokens(loadedMessage);
           for (const scope of bundle.scopes) known.set(scope.context.id, { directory: scope.directory, parent_id: scope.parent_id, todo: scope.context });
           for (const prerequisite of bundle.prerequisites) {
             const item = await locate(root, prerequisite.id);
@@ -143,7 +149,10 @@ export default function todoExtension(pi: ExtensionAPI) {
     }
     display(ctx);
     if (selected) {
-      try { display(ctx, await locate(root, selected)); }
+      try {
+        const item = await locate(root, selected);
+        display(ctx, item);
+      }
       catch (error) { ctx.ui.notify(`Attached todo unavailable: ${(error as Error).message}`, "error"); }
     }
   }
@@ -156,6 +165,7 @@ export default function todoExtension(pi: ExtensionAPI) {
     selected = item.todo.id; sessionId = ctx.sessionManager.getSessionId(); acknowledged = false;
     reconciliation = pendingReconciliation(ctx.sessionManager.getBranch(), selected);
     preparedCompaction = undefined;
+    loadedTokens = undefined;
     pi.appendEntry(selectionEntry, { id: selected }); display(ctx, item);
     await loadContext(ctx, bundle);
     return { selected, title: item.todo.title, revision: item.todo.revision, context_loaded: true, dependency: dependencyView(await list(root), item) };
@@ -178,7 +188,8 @@ export default function todoExtension(pi: ExtensionAPI) {
   }
   pi.on("session_start", async (_event, ctx) => restore(ctx));
   pi.on("session_tree", async (_event, ctx) => restore(ctx));
-  pi.on("session_shutdown", (_event, ctx) => { display(ctx); selected = undefined; });
+  pi.on("session_shutdown", (_event, ctx) => { display(ctx); selected = undefined; loadedTokens = undefined; });
+  pi.on("model_select", (event, ctx) => display(ctx, displayedItem, event.model));
   pi.on("before_agent_start", () => { acknowledged = false; });
   pi.on("turn_end", (event, ctx) => {
     if (!selected || event.outcome !== "completed" || !event.context.canContinue || ctx.signal?.aborted || !ctx.model) return;
@@ -217,7 +228,8 @@ export default function todoExtension(pi: ExtensionAPI) {
       reconciliation = preparedCompaction.pending ? preparedCompaction : undefined;
     }
     preparedCompaction = undefined;
-    refreshPending = true;
+    refreshPending = true; loadedTokens = undefined;
+    display(ctx, displayedItem);
     // No model call here: automatic compaction resumes normally; manual compaction waits for the next user request.
   });
   pi.on("session_compact_failed", () => { preparedCompaction = undefined; });
@@ -259,20 +271,9 @@ export default function todoExtension(pi: ExtensionAPI) {
         pi.sendMessage(driftMessage, { triggerTurn: false });
       }
       const message = loadedMessage!;
-      const estimated = estimateTokens({ role: "user", content: [{ type: "text", text: message.content + (driftMessage?.content ?? "") }], timestamp: message.timestamp });
+      display(ctx, active);
       const usage = ctx.getContextUsage?.();
       const usageBand = typeof usage?.percent === "number" && usage.percent >= 80 ? 80 : 0;
-      const warningKey = JSON.stringify([message.details.load_id, ctx.model?.contextWindow]);
-      const largeForModel = !!ctx.model?.contextWindow && estimated > Math.floor(ctx.model.contextWindow / 10);
-      const oversized = loadedSizes.orientation > 18000 || loadedSizes.bundle > 40000 || largeForModel;
-      if (oversized && sizeWarningKey !== warningKey && !notes.some(note => note.details.warning_key === warningKey)) {
-        sizeWarningKey = warningKey;
-        const warning = `Todo context size warning (nonblocking): orientation ${loadedSizes.orientation} characters, full bundle ${loadedSizes.bundle} characters, about ${estimated} injected tokens${largeForModel ? "; exceeds 10% of this model's window" : ""}. Active context was retained; use todo get view active for current understanding, full/artifact read for history. Consider todo_tighten during a meaningful update only when verified progress makes context redundant. Read full selected/parent context first. Retire only artifacts no longer governing remaining work, not every merge; keep active rules, authorization boundaries, unresolved constraints, relevant research/design and completion evidence. Preserve evidence and decision history; do not hide required material, infer approval or resolve questions without evidence. No extra cleanup turn or repeated maintenance without new material progress. Tightening affects future loads, not this brief or conversation; explicit refresh replaces the brief, Pi compaction reclaims conversation space.`;
-        sizeMessage = { role: "custom", customType: sizeType, display: false, details: { load_id: randomUUID(), warning_key: warningKey }, timestamp: Date.now(), content: warning };
-        notes.push(sizeMessage); pi.sendMessage(sizeMessage, { triggerTurn: false });
-        ctx.ui.notify(`Todo context is large (${loadedSizes.orientation} orientation characters, ${loadedSizes.bundle} bundle characters${largeForModel ? "; exceeds 10% of this model's window" : ""}). The model received a nonforcing tightening nudge.`, "warning");
-      }
-      if (!oversized) { sizeMessage = undefined; sizeWarningKey = ""; }
       const usageKey = (band: number) => JSON.stringify([message.details.load_id, ctx.model?.contextWindow, band]);
       const deliveredUsage = (band: number) => notes.some(note => note.customType === usageType && note.details.warning_key === usageKey(band));
       if (usageBand && !deliveredUsage(usageBand) && !deliveredUsage(90)) {

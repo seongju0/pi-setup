@@ -179,7 +179,7 @@ Recap reads do not save, attach, refresh, acknowledge or observe state, so drift
 
 ## Maintenance without a second planning system
 
-During meaningful updates, preserve new knowledge, replace obsolete findings, consolidate duplication and update the owning design/research document. Do not add periodic compression jobs, extra model calls, cleanup-only turns, hard semantic size caps or automatic hiding.
+During meaningful updates, preserve new knowledge, replace obsolete findings, consolidate duplication and update the owning design/research document. Do not add periodic compression jobs, extra model calls, cleanup-only turns, hard semantic size caps or automatic hiding. The status bar estimates the full loaded starting brief (guidance/boundary text and bundle metadata included) and its share of a known physical model's total window; it does not account for supplemental notes, artifact reads, ordinary tool history or billing. Checkpoints do not replace this immutable brief. Unknown/virtual windows omit the percentage, and a not-yet-loaded brief is pending. See the [loaded-brief diagnostic contract](../README.md#resume-and-checkpoint-behavior). No new size popup or injected tightening nudge is emitted; a large estimate does not require shrinking still-relevant context. Legacy delivered notices remain anchored until a normal reset.
 
 Visibility changes can be reversed with restore IDs. Replaced mutable text is not automatically archived: `todo_tighten` no longer creates `context-history` artifacts. Ordinary checkpoints were never a complete manifest event log either. The revision counter detects drift; it is not a recovery history. Immutable artifact body revisions remain, but that does not guarantee recovery of overwritten fields.
 
