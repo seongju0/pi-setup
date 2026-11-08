@@ -222,9 +222,14 @@ export default function (pi: ExtensionAPI) {
       }
     }
     listen(ctx);
-    await publishSessionIdentity(ctx);
   }
-  pi.on("session_start", (_event, ctx) => restore(ctx));
+  pi.on("session_start", async (_event, ctx) => {
+    try {
+      await publishSessionIdentity(ctx);
+    } finally {
+      await restore(ctx);
+    }
+  });
   pi.on("session_tree", (_event, ctx) => restore(ctx));
 
   async function startResearch(params: { tasks: { label: string; brief: string }[]; model?: string; appendSystemPrompt?: string; workspace?: string; cwd?: string; reportDirectory?: string }, signal: AbortSignal | undefined, ctx: ExtensionContext) {

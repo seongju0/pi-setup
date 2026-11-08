@@ -114,8 +114,8 @@ export async function getCoreTerminal(terminalId: string, signal?: AbortSignal) 
 }
 
 export async function publishSessionIdentity(ctx: ExtensionContext) {
-  if (ctx.mode !== "tui" || process.env.PI_HERDR_MANAGED !== "1" || !process.env.HC_TERMINAL_ID) return;
-  await core("terminal.label", { terminal: process.env.HC_TERMINAL_ID, labels: { "pi.session-id": ctx.sessionManager.getSessionId() } });
+  if (ctx.mode !== "tui" || !process.env.HC_TERMINAL_ID) return;
+  await core("terminal.label", { terminal: process.env.HC_TERMINAL_ID, labels: { "pi.session-id": ctx.sessionManager.getSessionId(), "pi.session-cwd": ctx.cwd } });
 }
 
 async function app<T>(args: string[], signal?: AbortSignal): Promise<T> {

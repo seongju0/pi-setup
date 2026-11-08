@@ -8,8 +8,14 @@ policy. It never reads a named skill's guidance file.
 Requires `hc` (herdr-core) and an interactive Pi TUI with a live
 `HC_TERMINAL_ID`. The caller terminal is validated before launching. Public tool
 and command names stay unchanged; the launch/control backend is core-only, with
-no legacy `herdr` worker-control fallback. Pi publishes native OSC status; managed
-children also publish their current Pi session identity as a terminal label.
+no legacy `herdr` worker-control fallback. Pi publishes native OSC status.
+Every interactive Pi session with `HC_TERMINAL_ID`, whether started manually or
+as a managed child, publishes `pi.session-id` and `pi.session-cwd` terminal labels
+at session start, including replacement after `/move` or `/resume`. Both labels
+refer to the current Pi session; the cwd is not the shell or terminal launch cwd.
+Consumers should use these labels only while the terminal actively reports Pi,
+not after it returns to a shell. Publication is independent of research mailbox
+restoration and does not change research ownership.
 Do not copy a tool-generated Pi integration into this project.
 
 ## Tools

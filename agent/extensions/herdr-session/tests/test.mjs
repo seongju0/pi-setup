@@ -24,8 +24,8 @@ const runDirs = [];
 global.setInterval = (callback) => { const timer = { callback, unref() {} }; timers.add(timer); return timer; };
 global.clearInterval = (timer) => timers.delete(timer);
 
-async function instance(id, branch = [], worker, catchStartupError = false) {
-  const coreId = worker?.terminalId ?? 't1';
+async function instance(id, branch = [], worker, catchStartupError = false, options = {}) {
+  const coreId = options.terminalId ?? worker?.terminalId ?? 't1';
   function activate() {
     process.env.HC_TERMINAL_ID = coreId;
     process.env.HERDR_RESEARCH_DIR = worker?.run ?? '';
@@ -49,7 +49,7 @@ async function instance(id, branch = [], worker, catchStartupError = false) {
   assert.equal(runtime.pendingVirtualModelRegistrations.length, 0);
   const models = [{ provider: 'test', id: 'chosen' }, { provider: 'anthropic', id: 'claude-sonnet-5-5' }, { provider: 'anthropic', id: 'claude-opus-5-5' }, { provider: 'openai', id: 'gpt-6.1-sol' }, { provider: 'anthropic', id: 'unsafe-router', api: 'pi-virtual' }];
   const ctx = {
-    cwd: scratch, mode: 'tui', model: models.find(model => model.provider === 'openai'),
+    cwd: options.cwd ?? scratch, mode: options.mode ?? 'tui', model: models.find(model => model.provider === 'openai'),
     sessionManager: { getSessionId: () => id, getSessionFile: () => join(scratch, `${id}.jsonl`), getBranch: () => state.branch },
     modelRegistry: { find: (provider, name) => models.find(model => provider === model.provider && name === model.id), getAvailable: () => models },
     ui: { notify: (message) => state.warnings.push(message) },
@@ -66,7 +66,7 @@ async function instance(id, branch = [], worker, catchStartupError = false) {
   const item = { ...state, state, ctx, call, emit, extension, activate };
   instances.push(item);
   try {
-    await emit({ type: 'session_start', reason: 'startup' });
+    await emit({ type: 'session_start', reason: options.startReason ?? 'startup' });
   } catch (error) {
     if (!catchStartupError) throw error;
     // Pi's ExtensionRunner catches lifecycle errors and leaves tools callable.
@@ -164,7 +164,8 @@ if (program === 'hc') {
     } else if (method === 'terminal.label') {
       result = terminal(state, params.terminal);
       if (!result) throw new Error('Unknown label target');
-      Object.assign(result.labels, params.labels); save(state);
+      if (process.env.TEST_LABEL_FAILURE === '1') error = { code: -32000, message: 'simulated label failure' };
+      else { Object.assign(result.labels, params.labels); save(state); }
     } else throw new Error('Unsupported method: ' + method);
     console.log(JSON.stringify(error ? { jsonrpc: '2.0', id: request.id, error } : { jsonrpc: '2.0', id: request.id, result }));
   });
@@ -216,6 +217,22 @@ if (program === 'hc') {
   // The extension runs in Pi's CLI, not in this test runner.
   process.argv[1] = join(packageRoot, 'dist/cli.js');
   const parent = await instance('parent');
+  assert.equal(process.env.PI_HERDR_MANAGED, undefined);
+  assert.deepEqual((await calls()).filter(call => call.method === 'terminal.label').map(call => call.params), [
+    { terminal: 't1', labels: { 'pi.session-id': 'parent', 'pi.session-cwd': scratch } },
+  ]);
+  await parent.emit({ type: 'session_shutdown', reason: 'resume' });
+  const moved = await instance('moved', [], undefined, false, { cwd: join(scratch, 'nested'), startReason: 'resume' });
+  assert.deepEqual((await coreState()).terminals.t1.labels, {
+    'herdr.space': 'test-space', 'pi.session-id': 'moved', 'pi.session-cwd': join(scratch, 'nested'),
+  });
+  assert.equal((await calls()).filter(call => call.method === 'terminal.label').length, 2);
+  await moved.emit({ type: 'session_shutdown', reason: 'resume' });
+  const beforeNoninteractive = (await calls()).length;
+  await instance('rpc', [], undefined, false, { mode: 'rpc' });
+  await instance('outside-herdr', [], undefined, false, { terminalId: '' });
+  assert.equal((await calls()).length, beforeNoninteractive);
+  await parent.emit({ type: 'session_start', reason: 'resume' });
   assert.equal(timers.size, 0);
   const beforePreflight = (await launches()).length;
   await assert.rejects(parent.call('herdr_new_session', { handoff: 'missing.md' }), /ENOENT/);
@@ -351,9 +368,12 @@ if (program === 'hc') {
   assert.equal(parent.state.messages.length, 1);
   assert.equal(parent.state.warnings.filter(warning => warning.includes('invalid')).length, 2);
   await parent.emit({ type: 'session_shutdown', reason: 'reload' });
-  const reloaded = await instance('parent', parent.state.branch);
+  process.env.TEST_LABEL_FAILURE = '1';
+  const reloaded = await instance('parent', parent.state.branch, undefined, true);
+  delete process.env.TEST_LABEL_FAILURE;
+  assert(reloaded.state.warnings.some(warning => /simulated label failure/.test(warning)));
   await tick();
-  assert.equal(reloaded.state.messages.length, 1);
+  assert.equal(reloaded.state.messages.length, 1, 'research polling restores even when session publication fails');
   await reloaded.emit({ type: 'session_shutdown', reason: 'reload' });
   const restored = await instance('parent', reloaded.state.branch);
   await tick();
@@ -428,6 +448,10 @@ if (program === 'hc') {
   assert(restored.state.messages.at(-1).message.content.includes(`Shareable report: ${safeReport}`));
   assert(!restored.state.messages.at(-1).message.content.includes('PRIVATE_RECOVERED_SUMMARY'));
   const recoveredFork = await instance('forked-recovered-worker', savedWorkerBranch, undefined, true);
+  assert(recoveredFork.state.warnings.some(warning => /different Pi session/.test(warning)));
+  assert.deepEqual((await coreState()).terminals.t1.labels, {
+    'herdr.space': 'test-space', 'pi.session-id': 'forked-recovered-worker', 'pi.session-cwd': scratch,
+  }, 'new identity is published before copied worker ownership is rejected');
   const beforeForkReport = restored.state.messages.length;
   await assert.rejects(recoveredFork.call('herdr_research_report', { summary: 'Unauthorized fork', report: safeReport }), /Only research workers|different Pi session/);
   await tick();
