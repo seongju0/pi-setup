@@ -24,6 +24,8 @@ Read research reports and primary references, not just summaries; separate facts
 
 ## Necessity and design
 
+For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md). Settle the caller contract, responsibility owners and consequential effects; compare materially different interfaces only for a real unresolved choice, then carry the decision into the specification.
+
 **Build for supported behavior, not constructible states.** Before adding or requesting a guard, fallback, recovery path, compatibility behavior, storage or abstraction, establish the real caller sequence, consequential outcome, and why the existing owner does not already protect it. A code citation, spec prescription or reviewer recommendation alone does not establish necessity. If a fix creates another edge case, reconsider the original mechanism before adding exceptions.
 
 Hypothetical callers, states only tests construct, rare user-action races, brief staleness and upstream re-checks are non-requirements unless the task says otherwise. Leave speculative extras out; ask one concrete question with a recommended default only when the answer materially changes behavior, scope or safety. Respect settled non-requirements and surface conflicts with approved requirements rather than silently changing them.

@@ -24,6 +24,7 @@
   "skills": [
     "agent/skills/build",
     "agent/skills/checkout",
+    "agent/skills/codebase-design",
     "agent/skills/deliver",
     "agent/skills/design",
     "agent/skills/handoff",
