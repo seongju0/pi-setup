@@ -9,6 +9,7 @@ import { searchKnowledge } from "./knowledge.ts";
 import { tighten, type TighteningInput } from "./tightening.ts";
 import { compact, guidance, restoreSelection, resumeBundle, selectionEntry, summary } from "./session.ts";
 import { syncLinear } from "./linear.ts";
+import { recap, recapFormat, recapRequest } from "./recap.ts";
 import { effects, dependencyView, dependencyState, prerequisites, validateGraph } from "./dependencies.ts";
 import { pickTodo } from "./picker.ts";
 import { discoverySummary, search } from "./search.ts";
@@ -324,6 +325,21 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
+    name: "todo_recap", label: "Todo recap",
+    description: `Read-only grounding for the attached TODO's status: current saved active selected/parent context, child/prerequisite summaries, artifact metadata/read targets and bounded visible active-branch journal excerpts with provenance. Returns source evidence, not generated session-progress prose; the ordinary main agent synthesizes the card with relevant conversation. No attachment means an explicit unattached result, never automatic selection. No artifact-body reads, external verification, refresh, observation, acknowledgement or writes. ${recapFormat}`,
+    promptSnippet: "Ground conversational requests about the attached TODO's status, what has been done or recap, then synthesize a concise status card.",
+    promptGuidelines: [
+      "For conversational requests about the attached TODO's status, what has been done or recap, call todo_recap and render its shared status-card format using relevant conversation and evidence. Do not reroute generic service or Git status questions to todo_recap. todo action status remains lightweight attachment metadata; /todo status changes local progress.",
+      `After todo_recap, ${recapFormat}`,
+    ],
+    parameters: object({}), outputSchema: Type.Unknown(),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    async execute(_callId, _params, signal, _onUpdate, ctx) {
+      signal?.throwIfAborted();
+      return result(await recap(root, selected, ctx));
+    },
+  });
+  pi.registerTool({
     name: "todo_knowledge", label: "Todo knowledge",
     description: "Find saved findings, decisions, questions, references and artifact text using case-insensitive literal substring matching (punctuation preserved). Does not search title/goal or old body revisions. Omit selector for the whole TODO store; a project includes its direct children, a simple item only itself. Includes completed owners. view defaults to active visibility; full includes retained hidden/superseded/resolved material. Returns bounded excerpts, provenance and explicit read targets; follow next_cursor with unchanged query/scope/view. Search is live, not a snapshot. Never attaches, starts work or changes files. Read sources before relying on them; history and saved drafts are not current state or permission.",
     promptSnippet: "Find curated project knowledge without loading every document.",
@@ -420,15 +436,19 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
 
-  const choices = ["new simple", "new project", "resume", "refresh", "checkpoint", "tighten", "leave", "status", "sync"];
+  const choices = ["new simple", "new project", "resume", "refresh", "recap", "checkpoint", "tighten", "leave", "status", "sync"];
   pi.registerCommand("todo", {
-    description: "Select/resume durable work, create simple/project todos, checkpoint, detach, change status, or refresh Linear",
+    description: "Select/resume durable work, create simple/project todos, recap, checkpoint, detach, change status, or refresh Linear",
     getArgumentCompletions: prefix => choices.filter(value => value.startsWith(prefix)).map(value => ({ value, label: value })),
     handler: async (args, ctx) => {
       try {
         await ctx.waitForIdle();
         const command = args.trim();
         if (command === "refresh") { await loadContext(ctx); ctx.ui.notify("Todo context refreshed; no work was started.", "info"); return; }
+        if (command === "recap") {
+          if (!selected) throw new Error("No TODO attached; /todo recap does not select an owner");
+          pi.sendUserMessage(recapRequest); return;
+        }
         if (command === "checkpoint") {
           if (!selected) throw new Error("No todo attached");
           pi.sendUserMessage("Checkpoint the active todo now: preserve consequential understanding and substantial goal completion through todo tools; save substantial documents only when future work needs them, not QA receipts or every output. Do not begin further work. If nothing changed, call todo_ack."); return;

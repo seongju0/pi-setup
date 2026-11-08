@@ -247,6 +247,95 @@ try {
   assert.deepEqual(await fresh.call("todo", { action: "status" }), { selected: null });
   assert.equal(await readFile(join(owner.directory, "todo.json"), "utf8"), beforeStatus);
 
+  // Recap joins live scoped memory to bounded native journal evidence without observing or saving it.
+  {
+    const root = join(scratch, "recap-todos");
+    process.env.PI_TODO_PATH = root;
+    const recapProject = await create(root, "project", "Recap rollout", "Preserve identity across conversion");
+    const recapChild = await create(root, "simple", "Recap conversion", "Convert identifiers", recapProject.todo.id);
+    const recapPrereq = await create(root, "simple", "Recap prerequisite", "Review compatibility", recapProject.todo.id);
+    let recapParent = await saveArtifact(root, recapProject.todo.id, 1, { ...metadata, title: "Scoped recap design", applies_to: [recapChild.todo.id], body: "RECAP_BODY_NOT_EAGERLY_READ" });
+    recapParent = await saveArtifact(root, recapProject.todo.id, recapParent.todo.revision, { ...metadata, title: "Other child design", applies_to: [recapPrereq.todo.id] });
+    let recapSaved = await checkpoint(root, recapChild.todo.id, 1, { ...changes, depends_on: [recapPrereq.todo.id] }, "recap-saved", "earlier-session");
+    recapSaved = await saveArtifact(root, recapChild.todo.id, recapSaved.todo.revision, { ...metadata, title: "Hidden recap research", required: false, applies_to: [] });
+    const recapPi = await instance();
+    await recapPi.call("todo", { action: "resume", selector: recapChild.todo.id });
+    await recapPi.call("todo_tighten", { id: recapChild.todo.id, revision: recapSaved.todo.revision, reason: "No longer needed in orientation", consult_on_demand_artifacts: [recapSaved.todo.artifacts[0].id] });
+    await recapPi.call("todo", { action: "refresh" });
+    await recapPi.emit("before_agent_start"); // A read-only recap must not acknowledge pending work.
+    const [recapContext] = await recapPi.emit("context", { messages: [] });
+    const marker = { id: recapChild.todo.id, revision: recapSaved.todo.revision, pending: true, reason: "manual" };
+    recapPi.stored.push(
+      ...Array.from({ length: 15 }, (_, i) => ({ type: "message", id: `recap-old-${i}`, timestamp: "2026-01-01T00:00:00Z", message: { role: "user", content: [{ type: "text", text: `Earlier request ${i}` }] } })),
+      { type: "compaction", id: "recap-compact", timestamp: "2026-01-01T00:01:00Z", summary: "Earlier work summarized, not freshly verified", firstKeptEntryId: "recap-user" },
+      { type: "custom", customType: compactionEntry, data: marker },
+      { type: "message", id: "recap-user", timestamp: "2026-01-01T00:02:00Z", message: { role: "user", content: [{ type: "text", text: "Check conversion only" }] } },
+      { type: "message", id: "recap-assistant", timestamp: "2026-01-01T00:03:00Z", message: { role: "assistant", content: [{ type: "thinking", thinking: "PRIVATE_RECAP_THINKING" }, { type: "text", text: "Inspecting conversion" }] } },
+      { type: "message", id: "recap-tool", timestamp: "2026-01-01T00:04:00Z", message: { role: "toolResult", toolName: "bash", toolCallId: "failed-test", isError: true, content: [{ type: "text", text: "Test failed: " + "x".repeat(1500) }] } },
+      { type: "custom_message", id: "recap-hidden", display: false, content: "PRIVATE_RECAP_NOTE" },
+    );
+    recapSaved = await checkpoint(root, recapChild.todo.id, (await locate(root, recapChild.todo.id)).todo.revision, { current_state: { evidence: ["External finding: deployment remains unverified"] } }, "recap-external", "another-session");
+    const recapFiles = await Promise.all([recapParent, recapSaved, recapPrereq].map(row => readFile(join(row.directory, "todo.json"), "utf8")));
+    const requiredRecapPath = join(recapParent.directory, recapParent.todo.artifacts[0].path);
+    const requiredRecapBody = await readFile(requiredRecapPath, "utf8");
+    await rm(requiredRecapPath); // Even a required artifact body is not opened by recap.
+    const beforeRecapEntries = structuredClone(recapPi.stored);
+    const recapData = await recapPi.call("todo_recap", {});
+    assert.equal(recapData.selected, recapChild.todo.id);
+    assert.deepEqual(recapData.scopes.map(scope => scope.context.id), [recapProject.todo.id, recapChild.todo.id]);
+    assert.equal(recapData.scopes[1].context.revision, recapSaved.todo.revision);
+    assert.deepEqual(recapData.scopes[1].context.current_state.evidence, ["External finding: deployment remains unverified"]);
+    assert.equal(recapData.scopes[1].context.decisions[0].approval, "draft");
+    assert.deepEqual(recapData.scopes.flatMap(scope => scope.context.artifacts.map(a => a.title)), ["Scoped recap design"]);
+    assert.deepEqual(recapData.scopes[0].context.artifacts[0].read, { tool: "todo_artifact", arguments: { action: "read", id: recapProject.todo.id, artifact_id: recapParent.todo.artifacts[0].id } });
+    assert.deepEqual(recapData.prerequisites.map(row => row.id), [recapPrereq.todo.id]);
+    assert.equal(recapData.children.length, 2);
+    assert.equal(recapData.session_evidence.entries.length, 12);
+    assert.equal(recapData.session_evidence.compaction_present, true);
+    assert.match(recapData.session_evidence.coverage, /Bounded sample.*inherited/);
+    const recapFailure = recapData.session_evidence.entries.at(-1);
+    assert.equal(recapFailure.is_error, true);
+    assert.equal(recapFailure.tool_name, "bash");
+    assert.equal(recapFailure.tool_call_id, "failed-test");
+    assert.equal(recapFailure.truncated, true);
+    assert.equal(recapFailure.ref, "pi-history:v1/test-session/recap-tool");
+    assert.equal(recapFailure.read.arguments.ref, recapFailure.ref);
+    assert.equal(recapData.session_evidence.entries.find(row => row.entry_id === "recap-compact").provenance, "derived_summary");
+    assert.doesNotMatch(JSON.stringify(recapData), /PRIVATE_RECAP|RECAP_BODY_NOT_EAGERLY_READ|Earlier request 0/);
+    assert.deepEqual(await recapPi.call("todo_recap", {}), recapData);
+    assert.deepEqual(recapPi.stored, beforeRecapEntries);
+    assert.deepEqual(await Promise.all([recapParent, recapSaved, recapPrereq].map(row => readFile(join(row.directory, "todo.json"), "utf8"))), recapFiles);
+    await assert.rejects(resumeBundle(root, recapChild.todo.id), /ENOENT/); // Resume still validates mandatory bodies.
+    await writeFile(requiredRecapPath, requiredRecapBody);
+    const [recapDrift] = await recapPi.emit("context", { messages: recapContext.messages });
+    assert.match(recapDrift.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
+    await recapPi.call("todo_recap", {});
+    const [recapDriftAgain] = await recapPi.emit("context", { messages: recapDrift.messages });
+    assert.equal(recapDriftAgain.messages.find(message => message.customType === "todo-context-drift-v1").content, recapDrift.messages.find(message => message.customType === "todo-context-drift-v1").content);
+    await assert.rejects(recapPi.call("todo", { action: "leave" }), /Checkpoint or acknowledge/);
+    assert.deepEqual(pendingReconciliation(recapPi.stored, recapChild.todo.id), marker);
+    const recapTool = recapPi.extension.tools.get("todo_recap").definition;
+    assert.equal(recapTool.annotations.readOnlyHint, true);
+    assert.match(recapTool.promptGuidelines.join(" "), /generic service or Git status/);
+    const recapCommand = recapPi.extension.commands.get("todo");
+    assert.ok(recapCommand.getArgumentCompletions("rec").some(row => row.value === "recap"));
+    const beforeRecapCommand = structuredClone(recapPi.stored);
+    let recapWaited = false;
+    await recapCommand.handler("recap", { ...recapPi.ctx, waitForIdle: async () => { recapWaited = true; } });
+    assert.equal(recapWaited, true);
+    assert.deepEqual(recapPi.stored.slice(0, -1), beforeRecapCommand);
+    assert.equal(recapPi.stored.at(-1).type, "user_request");
+    assert.match(recapPi.stored.at(-1).content, /Call todo_recap.*read-only/s);
+    for (const heading of ["## Status —", "### This session", "### Preserved understanding", "### Artifacts to know", "### Remaining"]) assert.ok(recapPi.stored.at(-1).content.includes(heading));
+    assert.match(recapPi.stored.at(-1).content, /do not save, refresh, acknowledge, change progress or begin implementation/);
+    const unattachedRecap = await instance();
+    assert.equal((await unattachedRecap.call("todo_recap", {})).attached, false);
+    await unattachedRecap.extension.commands.get("todo").handler("recap", unattachedRecap.ctx);
+    assert.match(unattachedRecap.warnings.at(-1), /No TODO attached/);
+    assert.deepEqual(unattachedRecap.stored, []);
+    process.env.PI_TODO_PATH = continuationRoot;
+  }
+
   // Saved activity starts only its owner and parent; reads, retries and terminal edits do not restart work.
   const activityRoot = join(scratch, "activity-todos");
   process.env.PI_TODO_PATH = activityRoot;

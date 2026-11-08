@@ -154,6 +154,29 @@ Unknown: downstream notification timing; unverified.
 
 User-facing explanations stay natural and readable. Lead with the conclusion; use short headings, bullets or small diagrams when clearer. Preserve exact technical identifiers, attribution, uncertainty, negation and conditions. Do not concatenate words or invent opaque abbreviations. "Appears to be a timing issue" must not become "Timing issue."
 
+## Read-only recap: evidence versus synthesis
+
+Conversational requests for the attached TODO's status / what has been done use `todo_recap`; `/todo recap` sends one ordinary main-agent request to call the same tool and present the same format:
+
+```markdown
+## Status — <TODO title>
+<one-sentence current state>
+### This session
+- Work supported by this conversation and session evidence.
+### Preserved understanding
+- Saved facts, decisions and uncertainty, with draft/approval state explicit.
+### Artifacts to know
+- Document title/purpose plus todo_artifact read target or stable reference.
+### Remaining
+- Pending work/decisions, not execution permission.
+```
+
+Use one or two high-signal bullets per nonempty section, omit empty sections and deduplicate. The [README example](../README.md#read-only-status-recap) illustrates presentation, not verified project state. This is ephemeral agent synthesis, not another authored status field or saved recap artifact.
+
+The tool supplies live active selected/parent context, relevant visible artifact catalog/read targets, useful child/prerequisite summaries and bounded recent active-branch evidence. It does not generate semantic session-progress prose or eagerly load artifact bodies. Native journal excerpts retain IDs/history refs, provenance and tool failure identity; thinking and hidden injected notes are excluded. A bounded sample is not full-session coverage: compaction summaries are derived and branch ancestry may be partial/inherited. Use existing `session_history` search/read when evidence is missing. Do not infer completion from tool success, attribute all ancestry to this session or present historical test/publication/status evidence as freshly verified external state. No automatic archived-session or external-service inspection occurs.
+
+Recap reads do not save, attach, refresh, acknowledge or observe state, so drift and pending checkpoint/leave behavior remain intact. No attachment yields an explicit unattached result; there is no owner search/inference. The manual command waits for idle and invokes the current main model, not a background summarizer or zero-model renderer. The agent combines evidence with relevant conversation and admits consequential coverage limits. `todo` action `status` remains lightweight attachment metadata, `/todo status` still changes local progress, and generic service/Git status requests are not redirected.
+
 ## Maintenance without a second planning system
 
 During meaningful updates, preserve new knowledge, replace obsolete findings, consolidate duplication and update the owning design/research document. Do not add periodic compression jobs, extra model calls, cleanup-only turns, hard semantic size caps or automatic hiding.

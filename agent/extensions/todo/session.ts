@@ -17,7 +17,7 @@ export function compact(todo: Todo) {
   const { next_actions: _legacyActions, current_state, ...current } = todo;
   return { ...current, current_state: { evidence: current_state.evidence }, context_policy: undefined, decisions: todo.decisions.filter(d => !superseded.has(d.id) && !policy?.consult_on_demand_decisions.includes(d.id)), open_questions: todo.open_questions.filter(q => !q.resolution), artifacts: todo.artifacts.filter(a => a.lifecycle === "current" && !policy?.consult_on_demand_artifacts.includes(a.id)), last_checkpoint: undefined };
 }
-export async function resumeBundle(root: string, id: string) {
+async function assembleOrientation(root: string, id: string) {
   const item = await locate(root, id);
   const parent = item.parent_id ? await locate(root, item.parent_id) : undefined;
   const rows = await list(root);
@@ -31,10 +31,18 @@ export async function resumeBundle(root: string, id: string) {
   });
   const dependencyItems = prerequisites(rows, item);
   const orientation = { selected: item.todo.id, scopes: contexts, children, prerequisites: dependencyItems.map(row => ({ ...summary(row), directory: row.directory })) };
+  return { orientation, scopes };
+}
+/** Live active metadata only: no artifact-body validation or session observation. */
+export async function orientationBundle(root: string, id: string) {
+  return (await assembleOrientation(root, id)).orientation;
+}
+export async function resumeBundle(root: string, id: string) {
+  const { orientation, scopes } = await assembleOrientation(root, id);
   // Like skills: list required artifacts with what they are; the agent reads only those relevant to the session focus.
   const required: { owner_id: string; artifact_id: string; title: string; kind: string; description: string; chars: number }[] = [];
   for (const scope of scopes) for (const artifact of scope.todo.artifacts) {
-    if (artifact.lifecycle !== "current" || !artifact.required || (artifact.applies_to.length && !artifact.applies_to.includes(item.todo.id))) continue;
+    if (artifact.lifecycle !== "current" || !artifact.required || (artifact.applies_to.length && !artifact.applies_to.includes(orientation.selected))) continue;
     const body = await readArtifact(root, scope, artifact.id); // Still fails visibly when required material is missing.
     required.push({ owner_id: scope.todo.id, artifact_id: artifact.id, title: artifact.title, kind: artifact.kind, description: artifact.description, chars: body.length });
   }

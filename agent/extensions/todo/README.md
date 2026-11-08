@@ -162,6 +162,7 @@ See [the detailed contract](docs/memory.md) for examples, artifact lifecycle, de
 | `/todo new simple` | Create and attach a standalone item; optionally place it in the active project. |
 | `/todo resume <ID, unique ID prefix, exact title, or full Linear URL>` | Attach existing work without starting implementation. |
 | `/todo refresh` | Reload attached context once without starting work. |
+| `/todo recap` | Ask the ordinary main agent to call read-only `todo_recap` and synthesize a status card; no saving or progress changes. |
 | `/todo checkpoint` | Ask the agent to preserve only material discoveries/progress/artifacts, then stop. |
 | `/todo tighten` | Ask the agent to reduce obsolete active context, then stop. Visibility is restorable; replaced text is not automatically archived. |
 | `/todo leave` | Detach; warn if this turn has not been checkpointed/acknowledged. |
@@ -169,6 +170,29 @@ See [the detailed contract](docs/memory.md) for examples, artifact lifecycle, de
 | `/todo sync` | Ask the agent for a read-only refresh of the linked Linear issue. |
 
 Commands use Pi's built-in dialogs and a themed terminal picker. Selection does not change the working directory, checkout a branch, launch work, or resume an automatic work loop. Ask the agent what to do next, or use your existing research/analysis/design/build/walkthrough skills.
+
+### Read-only status recap
+
+Ask conversationally for the attached TODO's status / what has been done, or run `/todo recap`. Both use `todo_recap` for live grounding, then the ordinary main agent combines it with relevant conversation into the same card:
+
+```markdown
+## Status — Identifier migration
+Implementation is ready for review; deployment remains unverified.
+### This session
+- Added conversion checks; the focused local suite passed.
+### Preserved understanding
+- IDs must remain stable; the alternative mapping design is still a draft.
+### Artifacts to know
+- Migration design — identity contract; todo_artifact read with id=<owner ID>, artifact_id=<artifact ID>.
+### Remaining
+- Independent review and a deployment decision; neither is authorized by this recap.
+```
+
+This is an illustrative format, not a verified project status. Normally each nonempty section has one or two high-signal bullets; empty sections are omitted. Keep session work separate from saved understanding and distinguish drafts, approvals and uncertainty. Artifact references should be actionable, not just UUIDs. Remaining work does not grant permission.
+
+The tool returns **source evidence, not generated progress prose**: current saved active selected/parent context (including relevance/visibility rules), child/prerequisite summaries, artifact metadata/read targets, and up to 12 recent visible active-branch journal excerpts of at most 1000 characters each. Artifact bodies are not eagerly read, including required bodies; resume retains its mandatory-body validation. Journal IDs/refs, provenance and tool failure identity support targeted `session_history` search/read. Thinking, hidden notes and image bytes are excluded. Samples are bounded; compaction summaries are derived, and ancestry can be partial or inherited. The agent must disclose consequential coverage gaps, deduplicate and avoid a tool-call diary or treating tool success as task completion. Saved tests, publication and external status snapshots are not freshly verified state. No archived sessions or external services are inspected automatically.
+
+`todo_recap` never selects an owner, saves, refreshes the loaded brief, observes/clears drift, acknowledges pending bookkeeping or changes progress. Without an attachment it reports that explicitly. `/todo recap` waits for idle, requires attachment, then sends one ordinary main-agent request (like checkpoint/sync); it is not zero-model deterministic rendering or a background model call. Generic service/Git status questions are not routed here. `todo` action `status` remains lightweight attachment metadata, and `/todo status` still **changes local progress**.
 
 Creation does not automatically harvest the conversation. Ask the agent to adopt the relevant discoveries or skill outputs using checkpoint/artifact tools; it should select useful knowledge, not copy the transcript.
 
