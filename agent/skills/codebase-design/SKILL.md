@@ -25,7 +25,7 @@ After:  callers → coherent operation → explicit outcome
                          └─ owns the shared decisions and ordering
 ```
 
-Keep distinct permissions, lifecycles and responsibilities separate when they need different owners. Similar syntax alone is not a reason to merge flows. Consume an owner's decision at every real enforcement boundary; centralizing a rule does not remove authorization or input validation at a trust boundary.
+Keep distinct permissions, lifecycles and responsibilities separate when they need different owners. Share the same rule or operation, not merely similar syntax. Compose actual variation at its owner; shared components should not enumerate consuming workflows or duplicate their policy. Consume an owner's decision at every real enforcement boundary; centralizing a rule does not remove authorization or input validation at a trust boundary. Rejecting malformed input does not require supporting every well-formed combination.
 
 ## Make changes local, effects honest
 
@@ -45,13 +45,13 @@ Reuse project-native mechanisms:
 - **Owned remote services:** keep domain decisions with their owner and transport details at the appropriate boundary. A transport stub does not prove the remote service's behavior or cross-service persistence.
 - **Third-party services:** isolate vendor interaction where useful and stub the external boundary for local tests; distinguish that confidence from real integration verification.
 
-Do not force ports, adapters or dependency injection across the application. Add or change them only where the actual flow benefits.
+Do not force ports, adapters or dependency injection across the application. Extract when a coherent responsibility or simpler reasoning outweighs indirection, not to satisfy size metrics. Use SOLID to diagnose current responsibility, contract and dependency problems—not to demand interfaces or future extension points.
 
 ## Test the meaningful interface
 
 Exercise the operation real callers use with real internal collaborators. Assert results, persisted state and consequential effects, not incidental internal wiring. Do not stub the decision or writer the scenario claims to prove.
 
-When consolidating implementation, replace redundant tests rather than layering another suite over the same guarantee—but delete only after identifying retained or replacement coverage. Preserve distinct authorization, rollback, partial-effect and compatibility protection. Keep focused tests for complex internal logic when they add unique confidence. Interface-level testing is not a ban on useful internal tests; follow the stage's test policy.
+When consolidating implementation, replace redundant tests rather than layering another suite over the same guarantee—but delete only after identifying retained or replacement coverage. Preserve distinct authorization, rollback, partial-effect and compatibility protection. Keep focused tests for complex logic when they protect a distinct regression that caller-level scenarios do not adequately cover; purity is not the deciding criterion. Interface-level testing is not a ban on useful internal tests; follow the stage's test policy.
 
 ## Compare alternatives for a real choice
 

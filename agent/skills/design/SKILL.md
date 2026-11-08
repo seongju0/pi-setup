@@ -9,7 +9,7 @@ Settle what to build, then define exactly how to build it. Produce an implementa
 
 The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions; do not reopen what the product should do. Do not automatically implement or start another session. Delegate bounded research or specification work when useful under the global delegation contract; retain ownership of the final design.
 
-Apply the global AGENTS.md role-aware task-memory policy before substantial enduring design. Standalone/current parents resolve/attach the task/outcome's durable owner and read relevant bodies; parent-owned workers use supplied ownership and bounded context, not independently establish shared ownership. If TODO access is unavailable to a worker, request sufficient relevant context from the parent. Explicitly declined/unavailable tracking uses the shared policy's disclosed fallback; it does not prevent design.
+Follow the global AGENTS.md task-memory and delegation contract. Standalone parents resolve ownership; workers use supplied context and request missing material from the parent. Honor tracking opt-out and disclose fallback limits; it does not prevent design.
 
 ## Direction checkpoint
 
@@ -24,23 +24,11 @@ Read research reports and primary references, not just summaries; separate facts
 
 ## Necessity and design
 
-For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md). Settle the caller contract, responsibility owners and consequential effects; compare materially different interfaces only for a real unresolved choice, then carry the decision into the specification.
+For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md). Settle the caller contract, responsibility owners and consequential effects; compare alternatives only for a real unresolved choice and carry the decision into the specification.
 
-**Build for supported behavior, not constructible states.** Before adding or requesting a guard, fallback, recovery path, compatibility behavior, storage or abstraction, establish the real caller sequence, consequential outcome, and why the existing owner does not already protect it. A code citation, spec prescription or reviewer recommendation alone does not establish necessity. If a fix creates another edge case, reconsider the original mechanism before adding exceptions.
+Justify each proposed mechanism with its supported caller sequence, consequence and why the existing owner is insufficient. A code citation, pattern or spec prescription alone does not establish need. If a mechanism creates another edge case, reconsider it before layering exceptions. Reapply this check when revising from research or review; reusing behavior does not require transplanting its defensive machinery.
 
-Hypothetical callers, states only tests construct, rare user-action races, brief staleness and upstream re-checks are non-requirements unless the task says otherwise. Leave speculative extras out; ask one concrete question with a recommended default only when the answer materially changes behavior, scope or safety. Respect settled non-requirements and surface conflicts with approved requirements rather than silently changing them.
-
-**Non-negotiable:** authorization, rejecting malformed input at a trust boundary, data loss, money and PHI exposure. Default non-requirements do not waive these consequences. "The UI never sends it" does not dismiss authorization, privacy, money or data-integrity risks at a trust boundary. Boundary validation rejects bad input; it need not handle every well-formed combination.
-
-**Optimize for comprehension, not minimum lines or maximum abstraction.** On the changed flow:
-- Give each rule one owner; consume its decision at every real enforcement boundary. Central navigation is not command authorization.
-- Make the main path, domain names, inputs/outputs and side effects explicit; avoid hidden mutation and ordering dependencies.
-- Compose actual variation at its owning boundary. Shared components should not enumerate consuming workflows or duplicate their policy.
-- Extract when a coherent responsibility or simpler reasoning outweighs indirection, not to meet size metrics. Share the same rule or operation, not merely similar syntax with different lifecycle semantics.
-
-Use SOLID to diagnose current responsibility, contract and dependency problems, not to demand interfaces or future extension points. This guidance does not authorize unrelated refactoring, new requirements or reopening settled architecture. Report broader changes separately.
-
-Apply the necessity decision on every revision, including research and review feedback. Remove mechanisms that only support unnecessary complexity; ask before changing an explicit approved requirement. Reusing behavior does not require transplanting its defensive mechanisms into a different flow.
+Treat hypothetical callers, artificial test states, rare user-action races, brief staleness and upstream re-checks as non-requirements unless requested. **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity.** UI behavior is not enforcement. Ask before changing approved requirements or adding guarantees; surface conflicts rather than silently restoring excluded behavior.
 
 ## Ground the specification
 
@@ -62,13 +50,13 @@ Give ordered, actionable steps. For each substantial step, specify:
 
 ## Test plan: few flow-level specs
 
-Plan tests once for the whole change, from the user-visible flow inward. Build follows this plan and adds nothing beyond it.
+Plan tests once for the whole change, from the user-visible flow inward, using [Codebase Design's interface-testing principles](../codebase-design/SKILL.md#test-the-meaningful-interface). Retained coverage may suffice. Build follows the agreed plan; if implementation reveals a concrete coverage gap, it surfaces the regression and smallest correction before expanding the plan.
 
 - **Scenarios, not files.** List the few caller-level scenarios (request/system/job/integration spec) that prove the outcome end to end with real internal collaborators. Stub only external HTTP/vendor boundaries. For each: spec file (extend an existing one first), setup, trigger, asserted outcome or readback, and the regression it catches.
 - **Choose the workflow owner.** For substantial browser-facing features, prefer one representative existing Playwright/system scenario spanning navigation, actions and persisted outcome; keep backend-only contracts and detailed permutations in focused integration tests. Name real/stubbed boundaries and optional same-run capture.
-- **Default budget:** new classes covered by a scenario get no spec file of their own. A unit spec is allowed only for complex pure logic, named with its reason.
+- **Focused tests:** do not plan a file per class. Justify focused tests for complex logic by the distinct regression protection that caller-level scenarios do not adequately provide—not by whether the logic is pure.
 - **Deliberately not tested:** list what stays out (log/metric shape, permutation matrices, guarantees another layer already owns) so build does not add it.
-- **Consolidate:** name existing specs the new scenarios make redundant, and whether to merge or delete them.
+- **Consolidate:** name redundant specs and retained or replacement coverage before proposing merges or deletions.
 - Commands, environmental prerequisites and remaining manual checks, stated separately.
 
 Avoid vague instructions such as “handle errors,” “add tests,” or “update callers” without naming which behavior, failures, or callers matter. A builder may choose routine syntax and formatting, but should not need to choose architecture or infer intended semantics.
@@ -95,4 +83,4 @@ Unanswered flow questions block only when the answer changes the core design; ot
 
 **Presentation and preservation are independent choices.** Present the spec in the conversation unless the user or workflow requests another output. Under delegation, return the specification body and relevant context to the parent; follow deliver's default final-answer report policy when applicable, without a duplicate report file.
 
-Preserve consequential understanding under the global task-memory policy, not as a mandatory artifact for every design discussion or output. When future work needs the body, the standalone owner or parent curator preserves one authoritative design for that responsibility using available TODO/artifact tools, or retains an existing persisted document as canonical with a concise durable finding and stable reference. Inline presentation does not exempt an essential body from preservation; a `/tmp/` pointer alone is insufficient. Do not keep duplicate current copies or have workers independently checkpoint shared memory. Saving or labeling a spec ready does not approve it. Do not implement or automatically invoke `/skill:build`; stop after the spec.
+The standalone owner or parent preserves reusable design under the global task-memory contract, with one authoritative body rather than competing copies; inline presentation alone is not preservation. Workers return the specification for the parent to curate. Saving or labeling a spec ready does not approve implementation. Stop after the spec; do not automatically invoke `/skill:build`.
