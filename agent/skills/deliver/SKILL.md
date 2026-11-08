@@ -1,7 +1,6 @@
 ---
 name: deliver
-description: "Deliver an approved change end to end: firm up the spec if rough, build, independently review, remediate and verify, open a draft PR, then notify the user for review. Explicit invocation authorizes scoped implementation and the commit/push/draft-PR steps needed for delivery, subject to the user's restrictions and repository rules. Does not merge, deploy or enable flags."
-disable-model-invocation: true
+description: "Deliver an approved specification or sufficiently explicit change end to end. Use when the user asks to deliver a change, deliver a finalized design, or take it through implementation, independent review and a draft PR. Honor requested worktree instructions and report completion or blockers. An explicit delivery request authorizes scoped implementation, commit, push and draft-PR creation, subject to repository rules and user restrictions; not merge, deploy or flag enablement."
 ---
 
 # Deliver
@@ -11,7 +10,7 @@ Own the delivery loop for a specification, rough plan or sufficiently explicit r
 ## 1. Prepare and accept the approach
 
 - Read the request, specification, repository instructions and relevant code/tests. Establish the outcome, supported flow, exclusions, accepted trade-offs, checks, branch/worktree, dependencies and permissions. Preserve settled product decisions; ask only about material ambiguity or unsafe prerequisites.
-- Explicit invocation authorizes scoped implementation, review/remediation, commits, push and a draft PR. More restrictive instructions still apply. Do not stage unrelated work, force-push, merge, deploy, enable flags or alter external trackers without separate authorization. Preserve credentials, data and other owners' work.
+- An explicit user request to run the delivery workflow—including a natural-language request such as “deliver this design”—authorizes scoped implementation, review/remediation, commits, push and a draft PR. Merely loading or mentioning this skill does not grant publication permission. More restrictive instructions still apply. Do not stage unrelated work, force-push, merge, deploy, enable flags or alter external trackers without separate authorization. Preserve credentials, data and other owners' work.
 - Stay in the current session/worktree unless requested otherwise. For a requested new worktree, follow repository guidance, refresh/verify the base and use an unoccupied branch/path. Never reset or steal another owner's checkout.
 - For stacked work, read [Stack foundations](../build/references/stack-foundations.md) and the upstream `gh-stack` skill during preparation. Establish helper tracking and worktree ownership before implementation; include the verified stack/base/owners in stage assignments and serialize stack mutations across the clone.
 - **Check readiness and necessity before build.** A build-ready spec resolves behavior, implementation locations, non-requirements and checks. For rough input, delegate design first for a direction checkpoint and build-ready spec. Before accepting either a supplied spec or the design report, identify the ordinary operation, actual variation and rule owners. Challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.

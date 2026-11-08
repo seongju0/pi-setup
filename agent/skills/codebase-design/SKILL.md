@@ -1,6 +1,6 @@
 ---
 name: codebase-design
-description: Design and assess module boundaries, caller contracts, ownership and testability. Use for consequential structural choices during design, build or review, or when simplifying scattered orchestration and evaluating alternative interfaces.
+description: Shared architecture guidance for module boundaries, caller contracts, ownership and testability. Use for consequential structural choices during design, build, review or delivery, or when simplifying scattered orchestration and comparing interfaces. Supports the stage skills; does not orchestrate their workflow.
 ---
 
 # Codebase Design

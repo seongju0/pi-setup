@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review a code change for correctness, regressions, conventions, maintainability, and relevant performance issues. Use when asked to review a diff or implementation.
+description: Review code changes for correctness, regressions, conventions, maintainability and relevant performance issues. Use when asked to review a diff, review the implementation, or check code changes. Read-only; does not automatically fix findings or publish.
 ---
 
 # Code Review

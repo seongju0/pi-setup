@@ -1,6 +1,6 @@
 ---
 name: build
-description: Execute an approved implementation specification or sufficiently explicit user request efficiently and cleanly. Use when the intended behavior and approach are settled and implementation is requested.
+description: Implement and verify an approved specification or sufficiently explicit change request. Use when asked to build a change, implement the plan, or implement a feature with settled behavior and approach. Does not automatically run the full delivery workflow or authorize publication.
 ---
 
 # Build

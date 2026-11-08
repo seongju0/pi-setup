@@ -1,6 +1,6 @@
 ---
 name: design
-description: Settle direction and turn it into a detailed, codebase-verified implementation specification that a fresh build session can execute with minimal inference. Use after research or whenever an outcome needs an approach and spec before implementation.
+description: Settle an approach and produce a codebase-verified, build-ready implementation specification. Use when asked to design a change, flesh out a plan, finalize the design, or make it ready for implementation. Stops at the specification; does not automatically build or deliver.
 ---
 
 # Design
