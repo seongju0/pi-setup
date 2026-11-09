@@ -69,6 +69,7 @@ usage. Dependencies are installed and configured separately:
 | --- | --- |
 | Herdr sessions, handoff, research | [Herdr App / `hc`](https://github.com/herdrdev/herdr-app); run Pi inside Herdr |
 | `/view` | Your configured editor; defaults to [Zed](https://zed.dev) |
+| `/move` directory discovery | [`fd`](https://github.com/sharkdp/fd) on PATH, or Pi’s existing managed `bin/fd`; setup does not install it |
 | GitHub skill updates | [GitHub CLI](https://cli.github.com/) with `gh skill` support |
 | Web search / delegation | Available models and provider authentication; see [search auth support](agent/extensions/web-search/README.md) |
 | Optional Linear features | Your configured Linear MCP integration |
