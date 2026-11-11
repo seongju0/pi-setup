@@ -4,16 +4,16 @@ import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent
 import { stripTerminalSequences, truncateToWidth, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { SPINNERS } from "./spinners.ts";
 
-// Keep native input, shortcuts, completion and embedded loader; add only a gap.
+// Keep native input, shortcuts, completion and loader; space around the top border.
 class SpacedEditor extends CustomEditor {
 	render(width: number): string[] {
 		const lines = super.render(width);
 		lines.splice(1, 0, "");
-		return lines;
+		return ["", ...lines];
 	}
 
 	handleMouse(event: TuiMouseEvent) {
-		return super.handleMouse({ ...event, y: Math.max(0, event.y - 1) });
+		return super.handleMouse({ ...event, y: Math.max(0, event.y - 2) });
 	}
 }
 
@@ -168,7 +168,7 @@ export default function statusline(pi: ExtensionAPI) {
 						? [
 							truncateToWidth(first, width),
 							theme.fg("borderMuted", `${padding}${"─".repeat(width - inset * 2)}${padding}`),
-							truncateToWidth(statuses.join(" · "), width),
+							...statuses.map(status => truncateToWidth(status, width)),
 						]
 						: [truncateToWidth(first, width)];
 				},

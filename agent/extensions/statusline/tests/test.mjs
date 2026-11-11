@@ -107,10 +107,12 @@ test("interactive-only footer; live wide/narrow Unicode, ANSI and context semant
 	h.statuses.set("on-call-mode", "\x1b[31mON-CALL · ⚠ unsafe\nprovider\x1b[0m");
 	const lines = h.component.render(100);
 	assert.equal(lines[1], `\x1b[90m  ${"─".repeat(96)}  \x1b[0m`, "subtle divider is centered with a two-column inset");
-	assert.match(plain(lines[2]), /^ON-CALL · ⚠ unsafe provider · TODO/);
+	assert.equal(lines.length, 4, "main status, divider and one row per extension");
+	assert.equal(plain(lines[2]), "ON-CALL · ⚠ unsafe provider");
+	assert.match(plain(lines[3]), /^TODO /);
 	assert.ok(lines[2].includes("\x1b[31m"), "keep warning status ANSI");
-	assert.ok(lines[2].includes("\x1b[2mTODO"), "TODO uses the footer's live muted theme");
-	assert.ok(!lines[2].includes("\x1b[36m"), "TODO publisher colors do not override the footer style");
+	assert.ok(lines[3].includes("\x1b[2mTODO"), "TODO uses the footer's live muted theme");
+	assert.ok(!lines[3].includes("\x1b[36m"), "TODO publisher colors do not override the footer style");
 	for (const width of [0, 1, 4, 9, 15, 24, 40, 80, 120]) {
 		for (const line of h.component.render(width)) {
 			assert.ok(visibleWidth(line) <= width, `fits ${width}: ${JSON.stringify(line)}`);
@@ -230,7 +232,7 @@ test("cache uses latest active-branch call, counts writes in denominator and yie
 	h.emit("session_shutdown");
 });
 
-test("native editor gains one top gap while keeping cursor, mouse and app shortcuts", async () => {
+test("native editor spaces the top border while keeping cursor, mouse and app shortcuts", async () => {
 	const { CustomEditor, initTheme, getSelectListTheme } = await import(codingURL);
 	const { KeybindingsManager } = await import(pathToFileURL(join(root, "dist/core/keybindings.js")).href);
 	initTheme("dark", false);
@@ -249,13 +251,13 @@ test("native editor gains one top gap while keeping cursor, mouse and app shortc
 	}
 	for (const width of [12, 80]) {
 		const base = native.render(width);
-		assert.deepEqual(spaced.render(width), [base[0], "", ...base.slice(1)], "native cursor marker and input lines are preserved");
+		assert.deepEqual(spaced.render(width), ["", base[0], "", ...base.slice(1)], "one gap above and below the border preserves native cursor/input lines");
 	}
-	assert.match(plain(spaced.render(80)[0]), /Working/);
+	assert.match(plain(spaced.render(80)[1]), /Working/);
 	const click = { type: "click", button: "left", x: 4, y: 1, width: 80, height: 6 };
 	native.handleMouse(click);
-	spaced.handleMouse({ ...click, y: 2 });
-	assert.deepEqual(spaced.getCursor(), native.getCursor(), "mouse coordinates follow the inserted gap");
+	spaced.handleMouse({ ...click, y: 3 });
+	assert.deepEqual(spaced.getCursor(), native.getCursor(), "mouse coordinates follow both inserted gaps");
 	spaced.handleInput("X");
 	native.handleInput("X");
 	assert.equal(spaced.getText(), native.getText());

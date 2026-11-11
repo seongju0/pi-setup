@@ -6,12 +6,13 @@ additional dependencies or persisted session state. Loader
 preferences live in the adjacent editable `loader.json`.
 
 On `session_start` in interactive TUI mode it installs the footer and a thin
-native `CustomEditor` subclass that adds one blank row below the top border:
+native `CustomEditor` subclass with one blank row above and below the top border:
 
 ```text
 worktree (branch*)      claude-sonnet-5-5 · high · ctx 43%/200k · cache 92%
   ──────────────────────────────────────────────────────────────────
-ON-CALL · … · ⚠ … · TODO …
+on-call · … · ⚠ …
+todo · in progress · brief ~3.2k (1.2%) · Title
 ```
 
 - Left: working-directory basename (including a worktree's own name), native
@@ -21,7 +22,7 @@ ON-CALL · … · ⚠ … · TODO …
   percentage/window capacity. Provider is omitted to keep the row compact.
   Unknown occupancy is `?`, never a fabricated zero. Context uses semantic
   `warning` at 70% and `error` at 90%; everything else is muted.
-- Optional info row, separated from the main line by a thin, centered grey
+- Optional info rows, one per extension, separated from the main line by a thin, centered grey
   divider inset two columns on each side (`borderMuted` theme color): existing
   `setStatus()` values. The divider is omitted when there is no info. The
   `on-call-mode` status comes first so a long TODO does not hide its safety warning. Existing ANSI
@@ -49,10 +50,11 @@ or general configuration framework.
 
 ## Input spacing and loader
 
-A single empty row separates the embedded loader/top border from the input.
+A blank row separates task/subagent widgets from the embedded loader/top border;
+a second blank row separates that border from the input. Widget contents are unchanged.
 The editor inherits native rendering, input, shortcuts and autocomplete, without
 copying Pi's editor implementation or patching prototypes. Mouse rows are shifted
-back by one before delegating to the native editor; cursor/IME markers remain in
+back by two before delegating to the native editor; cursor/IME markers remain in
 the native input lines. Pi still supplies horizontal padding, completion settings,
 app handlers and theme.
 
