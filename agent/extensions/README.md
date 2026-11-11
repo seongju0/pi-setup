@@ -7,6 +7,7 @@ Commands and configuration by extension:
 | `continue/` | Idle-only continue shortcut |
 | `move/` | Move a session using Pi's session APIs |
 | `no-sleep/` | macOS sleep prevention using caffeinate |
+| [`personal-status/`](personal-status/README.md) | Minimal directory/Git, model/context/cache footer; separated extension info, native input spacing and configurable loading animations/phrases |
 | `task/` | Session-local task tracking |
 | `todo/` | Durable local work context, paged artifacts and curated knowledge search; optional user-configured Linear integration |
 | [`session-history/`](session-history/README.md) | Read-only current-branch history search and exact same-project evidence references |

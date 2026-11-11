@@ -386,7 +386,7 @@ try {
   await activity.emit("context", { messages: activity.stored.filter(entry => entry.type === "custom_message") });
   assert.equal(activity.stored.filter(entry => entry.customType === "todo-context-v1").length, 1);
   assert.equal(activity.stored.filter(entry => entry.customType === "todo-context-drift-v1").length, 0);
-  assert.match(activity.statuses.at(-1), /\[in_progress\]/);
+  assert.match(activity.statuses.at(-1), /^todo · in progress · /);
   await assert.rejects(activity.call("todo_checkpoint", { id: activityChild.todo.id, revision: 3, key: "too-soon", changes: { status: "done" } }), /waiting on/);
   const activityPicker = await instance([], true);
   activityPicker.customSteps.push(component => component.handleInput("\r"), component => {
@@ -420,7 +420,7 @@ try {
   assert.ok(artifactRead.content[0].text.endsWith(artifactRead.structuredContent.body));
   assert.equal(artifactStarted.todo.status, "in_progress");
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.status, "in_progress");
-  assert.match(activity.statuses.at(-1), /Activity \[in_progress\]/);
+  assert.match(activity.statuses.at(-1), /^todo · in progress · .* · Activity$/);
   await activity.emit("context", { messages: activity.stored.filter(entry => entry.type === "custom_message") });
   assert.equal(activity.stored.filter(entry => entry.customType === "todo-context-drift-v1").length, 0);
   for (const status of ["done", "canceled"]) {
@@ -758,9 +758,12 @@ try {
   const expectedStats = (message, window) => {
     const tokens = estimateTokens({ role: "user", content: [{ type: "text", text: message.content }], timestamp: message.timestamp });
     const compact = tokens < 1000 ? `${tokens}` : `${(tokens / 1000).toFixed(1)}k`;
-    return `Todo · brief ~${compact}${window ? ` (${(tokens / window * 100).toFixed(1)}% window)` : ""} · `;
+    return ` · brief ~${compact}${window ? ` (${(tokens / window * 100).toFixed(1)}%)` : ""} · `;
   };
-  const assertStats = (session, message, window) => assert.ok(session.statuses.at(-1).startsWith(expectedStats(message, window)), session.statuses.at(-1));
+  const assertStats = (session, message, window) => {
+    assert.match(session.statuses.at(-1), /^todo · (todo|in progress|done|canceled) · brief /);
+    assert.ok(session.statuses.at(-1).includes(expectedStats(message, window)), session.statuses.at(-1));
+  };
   assertStats(smallModel, statsBrief, 1000);
   assert.match(smallModel.statuses.at(-1), / · Brief diagnostics/); // Metric precedes long, sanitized title.
   assert.doesNotMatch(smallModel.statuses.at(-1), /\n/);
@@ -788,11 +791,11 @@ try {
   await rm(statsFile); // Restoring the metric must not eagerly reload required artifact bodies.
   const statsReopened = await instance(smallModel.stored, true);
   assertStats(statsReopened, refreshedBrief);
-  assert.match(statsReopened.statuses.at(-1), /Updated diagnostics \[done\]$/);
+  assert.match(statsReopened.statuses.at(-1), /^todo · done · .* · Updated diagnostics$/);
   statsReopened.ctx.model = { api: "anthropic-messages", contextWindow: 272000 };
   await statsReopened.emit("model_select", { model: statsReopened.ctx.model });
   assertStats(statsReopened, refreshedBrief, 272000);
-  assert.match(statsReopened.statuses.at(-1), /Updated diagnostics \[done\]$/);
+  assert.match(statsReopened.statuses.at(-1), /^todo · done · .* · Updated diagnostics$/);
   const [statsDrift] = await statsReopened.emit("context", { messages: refreshedStats.messages });
   assert.match(statsDrift.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
   await assert.rejects(statsReopened.call("todo", { action: "refresh" }), /ENOENT/);
@@ -800,7 +803,7 @@ try {
   const prepareStatsCompaction = session => session.emit("session_before_compact", { preparation: preparation(), reason: "manual", signal: new AbortController().signal });
   await prepareStatsCompaction(statsReopened);
   await statsReopened.emit("session_compact", { reason: "manual" });
-  assert.match(statsReopened.statuses.at(-1), /^Todo · brief pending · Updated diagnostics \[done\]$/);
+  assert.match(statsReopened.statuses.at(-1), /^todo · done · brief pending · Updated diagnostics$/);
   await prepareStatsCompaction(smallModel);
   assertStats(smallModel, refreshedBrief);
   await smallModel.emit("session_compact_failed", { aborted: true });
@@ -810,7 +813,7 @@ try {
   assertStats(smallModel, refreshedBrief);
   await prepareStatsCompaction(smallModel);
   await smallModel.emit("session_compact", { reason: "manual" });
-  assert.match(smallModel.statuses.at(-1), /^Todo · brief pending · /);
+  assert.match(smallModel.statuses.at(-1), /^todo · (in progress|done) · brief pending · /);
   const [postCompactStats] = await smallModel.emit("context", { messages: refreshedStats.messages });
   assertStats(smallModel, postCompactStats.messages.find(message => message.customType === "todo-context-v1"));
   // Already-delivered legacy size notices keep their immutable anchors until a normal reset.
@@ -834,9 +837,9 @@ try {
   assert.equal(smallModel.statuses.at(-1), undefined);
   // Attachment restored before first delivery is pending, never the detached owner's metric.
   const pendingStats = await instance([{ type: "custom", customType: selectionEntry, data: { id: statsTodo.todo.id } }], true);
-  assert.match(pendingStats.statuses.at(-1), /^Todo · brief pending · /);
+  assert.match(pendingStats.statuses.at(-1), /^todo · done · brief pending · /);
   await pendingStats.emit("model_select", { model: { contextWindow: 1000000 } });
-  assert.match(pendingStats.statuses.at(-1), /^Todo · brief pending · /);
+  assert.match(pendingStats.statuses.at(-1), /^todo · done · brief pending · /);
   await smallModel.call("todo", { action: "resume", selector: sibling.todo.id });
   smallModel.ctx.model = { contextWindow: 1000000 };
 

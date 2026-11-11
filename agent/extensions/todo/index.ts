@@ -61,9 +61,9 @@ export default function todoExtension(pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
     const window = model?.api !== "pi-virtual" && model?.contextWindow;
     const share = loadedTokens !== undefined && typeof window === "number" && Number.isFinite(window) && window > 0
-      ? ` (${(loadedTokens / window * 100).toFixed(1)}% window)` : "";
+      ? ` (${(loadedTokens / window * 100).toFixed(1)}%)` : "";
     const tokens = loadedTokens === undefined ? "pending" : `~${loadedTokens < 1000 ? loadedTokens : `${(loadedTokens / 1000).toFixed(1)}k`}${share}`;
-    ctx.ui.setStatus("todo", item ? `Todo · brief ${tokens} · ${clean(item.todo.title)} [${item.todo.status}]` : undefined);
+    ctx.ui.setStatus("todo", item ? `todo · ${item.todo.status.replaceAll("_", " ")} · brief ${tokens} · ${clean(item.todo.title)}` : undefined);
   }
   function observe(item: Located & { updated_parent?: Pick<Todo, "id" | "revision" | "status"> }, ctx?: ExtensionContext) {
     const parent = item.updated_parent && known.get(item.updated_parent.id);

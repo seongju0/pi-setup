@@ -1,0 +1,15 @@
+{
+  "spinner": "native",
+  "intervalMs": 80,
+  "messages": [
+    "Thinking it through",
+    "Deleting everything",
+    "Improving everything",
+    "Kind of working",
+    "Breaking things",
+    "Hacking away",
+    "Fucking up",
+    "Fixing",
+    "Woopsies"
+  ]
+}

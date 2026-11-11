@@ -50,7 +50,7 @@ You: /todo commands                  Agent / research / plan / design skills
 | `registerTool` + TypeBox schemas | Validated inputs; `structuredContent` and an output schema expose results to codemode. |
 | Sequential tool execution | Most state-changing tools serialize within a Pi batch; filesystem locking also protects against other Pi processes. |
 | `select`, `input`, `editor`, `confirm`, `notify`, `custom` | Native dialogs and themed checklist picker; RPC falls back to selection dialogs. |
-| `setStatus` + `model_select` | Displays loaded-brief token estimate/window share before the selected item and local status; model changes update the denominator immediately. |
+| `setStatus` + `model_select` | Publishes `todo · in progress · brief ~3.2k (1.2%) · Title`: readable local state and compact loaded-brief token estimate/window share before the unchanged title; model changes update the denominator immediately. The footer owns colors. |
 | `appendEntry` + `getBranch` | Persists attachment, acknowledgement, and compaction receipts; reconstructs active-branch selection. |
 | `session_start`, `session_tree`, `session_shutdown` | Restores/clears session attachment without rewinding durable files. |
 | `before_agent_start` | Resets turn acknowledgement. Pending compaction reconciliation remains until acknowledged. |
