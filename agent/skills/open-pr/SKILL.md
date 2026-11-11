@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Create or refine pull request titles and descriptions so reviewers quickly grasp the change and its purpose. Choose concise prose, diagrams, concrete examples or tables to reduce reading effort. Verify claims against the diff and read back published edits.
+description: Create or refine pull request titles and descriptions as source-grounded walkthroughs that give reviewers an intuitive mental model of the change. Explain behavior in a natural order with concise prose, examples and small illustrations. Verify claims against the diff and read back published edits.
 ---
 
 # Open PR
@@ -11,6 +11,11 @@ Lead with the reason, then choose the clearest way to explain the change: a
 journey, responsibility split, decision flow, concrete example or before/after.
 Use implementation names where they help the reader follow the real system.
 Do not make reviewers reconstruct the story from rules, caveats or test inventories.
+
+Before drafting the explanation, read [Walkthrough](../walkthrough/SKILL.md) and
+apply its approach and illustration guidance. Open PR owns publication, template
+adaptation and verification; Walkthrough supplies the explanatory method. Its
+session-output default does not override an authorized PR publication request.
 
 ## Create or refresh
 
@@ -31,9 +36,43 @@ not duplicates or appended summaries.
 - Prefer **add, fix, remove, keep, route, extract** over vague “improvements,” “hardening,” or “enhancements.” Drop promotional adjectives such as “robust” or “seamless.” Use necessary domain terms, not unexplained internal shorthand.
 - Name what this PR delivers, not the larger initiative or future capability: **“Retry failed file uploads”**, not “Robust upload workflow improvements.”
 
+## Explain the change as a walkthrough
+
+Write for the reviewer asking, **“Walk me through this changeset.”** The goal is
+an intuitive mental model, not merely a shorter technical document.
+
+Build understanding rather than just listing facts:
+
+```text
+Central idea
+    ↓
+Explain the behavior
+    ↓
+Show how the pieces connect
+    ↓
+Explain consequential choices beside the relevant step
+    ↓
+Show the proof and remaining limits
+```
+
+This is an explanatory progression, not a required set of headings or diagrams.
+
+- **Start with one plain-English central idea.** Establish what this change does and why before stack position, implementation names or exceptions. Distinguish this delivery from future work without implying that a proposed campaign, flow or guarantee already exists.
+- **Follow the operation in a natural order.** Explain the important steps and how they connect: what starts the flow, where decisions happen, what changes, and what outcome follows. Use behavior-led subheadings within the required template when they help; do not impose a fixed number of sections or narrate every file.
+- **Prefer tracing interacting parts from entry to resolution.** When understanding the change depends on how multiple parts interact, follow Walkthrough's tracing guidance so reviewers can see how the implementation produces the described behavior. Use a simpler explanation for a localized change that is clear without tracing handoffs. The walkthrough is the preferred explanation for interacting parts; a diagram or exhaustive call graph is not required.
+- **Explain purpose before naming machinery.** Introduce a class, method or file when it gives the reader a useful place to look, after explaining the responsibility it owns. A selective code pointer is useful; a file inventory is not an explanation.
+- **Make consequential distinctions concrete.** Use a small example, contrast or decision tree to explain an abstract rule. Put failure, transaction, privacy and compatibility boundaries beside the step they affect rather than collecting an unexplained caveat list.
+- **Keep the explanation, trim repetition.** Concise means low reading effort, not the fewest words. Do not compress a clear walkthrough into a dense paragraph or a list of disconnected rules merely to shorten it. Scale the detail to the change and honor repository constraints and the user's requested depth.
+- **Reuse an explanation the user selected.** When asked to adopt an existing walkthrough, preserve its explanatory sequence, examples and useful illustrations. Adapt only what is needed for factual corrections, the required template, current evidence and the requested edits; do not silently replace it with a synopsis.
+
 ## Description: context, change, proof
 
 Use the repository's headings; this is a reading order, not extra mandatory sections.
+Where the template separates background, changes and testing, give each a distinct job:
+
+- **Background/context:** the TL;DR and context the reviewer needs to understand the change. Establish the central idea and motivation; leave the detailed walkthrough to the change section.
+- **What the PR does:** the behavioral walkthrough. Number its steps or subsections when that helps the reader follow the flow; keep that numbering within this section rather than continuing it into testing.
+- **Testing:** walk through what is covered, how it was exercised and what the evidence establishes. Use unnumbered coverage subheadings; numbered manual action steps are fine when useful. Separate completed automated or manual checks from suggested steps and remaining gaps. Do not reduce this section to commands or a pass count.
 
 - **Set the scene.** Briefly explain the prior problem and why the change is needed, without requiring a ticket read. Put motivation before implementation names or stack position; skip project history and repeated TL;DRs.
 - **Show the delta.** Explain what a user or system did before, what it does now and why the difference matters. A list of new rules is not an explanation of the change. Organize around behavior, not files or commits; label future work as future.
@@ -155,7 +194,7 @@ layout or interaction; label what it demonstrates and any unverified effects.
 
 ## Final check
 
-- Can an unfamiliar reviewer quickly say what changed and why without reconstructing it from the diff or testing section?
+- Can an unfamiliar reviewer retell the main flow, what changed and why without reconstructing it from the diff or testing section? Does the description build understanding step by step rather than merely enumerate facts?
 - Does each illustration answer a useful reviewer question? Is a journey, responsibility view, example or sentence clearer for this change?
 - Does each table make scanning easier? Do complementary views add understanding rather than repeat it? Can removing a grid, paragraph or caveat reduce effort without hiding a material boundary?
 - Are current versus future behavior, required template fields, testing claims and material boundaries accurate?
