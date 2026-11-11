@@ -8,7 +8,7 @@
     "agent/extensions/subagent",
     "agent/extensions/move/index.ts",
     "agent/extensions/no-sleep",
-    "agent/extensions/personal-status",
+    "agent/extensions/statusline",
     "agent/extensions/task",
     "agent/extensions/todo",
     "agent/extensions/session-history",

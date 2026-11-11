@@ -139,7 +139,7 @@ test("interactive-only footer; live wide/narrow Unicode, ANSI and context semant
 });
 
 test("loader presets/custom frames and one phrase per run; config errors restore native loader", async t => {
-	const dir = mkdtempSync(join(tmpdir(), "personal-status-loader-"));
+	const dir = mkdtempSync(join(tmpdir(), "statusline-loader-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	copyFileSync(new URL("../index.ts", import.meta.url), join(dir, "index.ts"));
 	copyFileSync(new URL("../spinners.ts", import.meta.url), join(dir, "spinners.ts"));

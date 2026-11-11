@@ -1,4 +1,4 @@
-# Personal status footer
+# Statusline
 
 A small standalone footer for **Pi 1.5.2**, using only the public
 `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` APIs. No
@@ -58,7 +58,7 @@ app handlers and theme.
 
 ### Configurable loader
 
-Edit `~/.pi/agent/extensions/personal-status/loader.json`, then `/reload`.
+Edit `~/.pi/agent/extensions/statusline/loader.json`, then `/reload`.
 With a managed pi-setup link this edits tracked checkout source; preserve or
 commit your customizations before updating, since updates require a clean checkout.
 
@@ -130,7 +130,7 @@ watchers. The footer is advisory, not an authorization or data-safety gate.
 From the pi-setup repository root, run `npm test` for all foundation checks, or:
 
 ```sh
-node agent/extensions/personal-status/tests/test.mjs
+node agent/extensions/statusline/tests/test.mjs
 ```
 
 Requires the installed Node runtime with native TypeScript stripping (tested on

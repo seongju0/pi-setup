@@ -40,7 +40,7 @@ function readLoaderConfig(): LoaderConfig {
 	return { frames, intervalMs: config.intervalMs, messages: config.messages };
 }
 
-export default function personalStatus(pi: ExtensionAPI) {
+export default function statusline(pi: ExtensionAPI) {
 	let loader: LoaderConfig | undefined;
 	let refresh: (() => void) | undefined;
 	let dispose: (() => void) | undefined;
@@ -57,7 +57,7 @@ export default function personalStatus(pi: ExtensionAPI) {
 			ctx.ui.setWorkingIndicator(loader.frames ? { frames: loader.frames, intervalMs: loader.intervalMs } : undefined);
 		} catch {
 			ctx.ui.setWorkingIndicator();
-			ctx.ui.notify("personal-status: invalid or unreadable loader.json; using the native loader. Fix the file and /reload.", "warning");
+			ctx.ui.notify("statusline: invalid or unreadable loader.json; using the native loader. Fix the file and /reload.", "warning");
 		}
 		ctx.ui.setEditorComponent((tui, theme, keybindings) =>
 			new SpacedEditor(tui, theme, keybindings, { embedWorkingStatus: true }));
