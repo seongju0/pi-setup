@@ -15,7 +15,7 @@ Follow the global AGENTS.md task-memory and delegation contract. Standalone pare
 
 Before specifying, state direction in a few lines:
 - **Outcome and success criteria:** what changes for the user, and how we know it works.
-- **Approach and ownership:** identify the ordinary operation, what actually varies, and who owns decisions, data and side effects before prescribing files or classes. Reuse existing behavior; compare alternatives only for a real unresolved trade-off and recommend one.
+- **Approach and ownership:** ground the direction in a representative real path traced through the live code from entry to resolution. Identify the ordinary operation, what actually varies, and who owns decisions, data and side effects before prescribing files or classes. Reuse existing behavior; compare alternatives only for a real unresolved trade-off and recommend one.
 - **Scope, non-goals and non-requirements:** what this change will deliberately not handle.
 - **Flow questions:** at most 3 material questions, each with a default; omit hypothetical gap inventories.
 - **Slices:** for larger work, small reviewable segments in dependency order, each with what it delivers.
@@ -28,7 +28,7 @@ For consequential structural choices, read [Codebase Design](../codebase-design/
 
 Justify each proposed mechanism with its supported caller sequence, consequence and why the existing owner is insufficient. A code citation, pattern or spec prescription alone does not establish need. If a mechanism creates another edge case, reconsider it before layering exceptions. Reapply this check when revising from research or review; reusing behavior does not require transplanting its defensive machinery.
 
-Treat hypothetical callers, artificial test states, rare user-action races, brief staleness and upstream re-checks as non-requirements unless requested. **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity.** UI behavior is not enforcement. Ask before changing approved requirements or adding guarantees; surface conflicts rather than silently restoring excluded behavior.
+Do not add support for hypothetical callers, artificial test states, race or staleness recovery, upstream re-checks or security hardening merely because a failure can be imagined. Default to omitting speculative extras. For material hardening you recommend, explain the triggering sequence, plausibility and uncertainty, consequence, and implementation and maintenance cost as a flow question; get agreement before including it. Record notable exclusions under considered-but-omitted, not an inventory of imagined failures. **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. Preserve approved requirements and surface conflicts rather than silently restoring excluded behavior.
 
 ## Ground the specification
 

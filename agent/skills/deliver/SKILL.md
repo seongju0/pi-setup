@@ -19,7 +19,7 @@ Own the delivery loop for a specification, rough plan or sufficiently explicit r
 
 ## 2. Build and verify
 
-Delegate the accepted scope to a build child. Inspect the integrated diff, confirmed gaps/spec conflicts and test delta against the build skill's necessity, design and test policies. Worker confidence or completion alone is not verification.
+Delegate the accepted scope to a build child. Inspect the integrated diff, confirmed gaps/spec conflicts and test delta against the build skill's necessity, design and test policies. Worker confidence or completion alone is not verification. Treat out-of-scope hardening as a deviation to resolve, not a harmless improvement to retain by default.
 
 Run or independently confirm relevant checks, including affected retained acceptance specs before publication, even for shared copy/components. Honor environment ownership, DB isolation and external-service mocks. Never run children concurrently against shared databases, competing branch operations or the same files; never let them independently reset, migrate or seed shared data. An unsafe test environment is a blocker, not permission to use shared or real data. Distinguish mocked regressions from separately authorized real integration acceptance. Report commands actually run and results, not merely starts or worker claims.
 
@@ -38,7 +38,7 @@ Use a second reviewer only for a distinct material risk or required project revi
 ## 4. Disposition, remediate and verify
 
 - Check every finding against code, supported behavior and existing protection. Fix confirmed defects in specified behavior at their existing owner and behavior-preserving clarity problems. Record concise evidence-backed reasons for declining findings. No accepted fixes is a valid result.
-- **New behavior still needs a scope decision.** New guarantees, policies, recovery behavior, storage or architectural contracts are not routine corrections. Ask the user before accepting them; decline proposals contradicting settled non-requirements. A security label does not expand permissions: preserve required trust-boundary protections and escalate changes that materially alter approved behavior or conflict with an accepted trade-off.
+- **New behavior still needs a scope decision.** New guarantees, policies, recovery behavior, storage or architectural contracts are not routine corrections. Decline speculative extras or proposals contradicting settled non-requirements with a brief reason; ask about a material trade-off only when you recommend accepting it. A security label does not expand permissions: preserve required trust-boundary protections and escalate changes that materially alter approved behavior or conflict with an accepted trade-off.
 - Apply justified test consolidation and stub repairs while retaining distinct regression protection. Added tests must meet review's missing-test bar, not merely cover another branch.
 - Record the report and disposition, then delegate accepted fixes to a fresh remediation child—not the builder or reviewer. Supply the spec, prior reports and exact accepted scope. Skip this stage when no fixes are accepted.
 - Rerun affected checks. One review round by default; use focused fresh review when remediation materially changes behavior, security boundaries or architecture, not for trivial corrections. Inspect the final integrated diff/generated outputs and disclose meaningful post-review deltas.

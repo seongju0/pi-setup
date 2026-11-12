@@ -21,9 +21,9 @@ For consequential structural changes, read [Codebase Design](../codebase-design/
 
 Challenge unnecessary mechanisms even when prescribed by the spec: guards, locks, re-checks, recovery paths and abstractions must serve a real supported flow rather than duplicate an existing owner's protection. Preserve approved outcomes and surface conflicts; do not silently redefine requirements or demand an unrelated redesign. If a proposed fix creates more edge cases, reconsider its mechanism before requesting exceptions.
 
-A missing-guard concern must name the triggering caller sequence, consequence and why existing validation, policy ownership or retained coverage is insufficient. Hypothetical callers, artificial test states, rare user-action races, brief staleness and upstream re-checks are non-requirements unless requested.
+A missing-guard concern must name the triggering caller sequence, plausibility and uncertainty, consequence, and why existing validation, policy ownership or retained coverage is insufficient. A constructible race, failure or attack is not by itself a required fix. Decline speculative extras rather than turning them into findings or questions; if material hardening seems worth recommending, explain its implementation and maintenance cost and distinguish it from a confirmed defect in required behavior. Do not revive accepted non-requirements without a concrete conflict.
 
-**These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity.** UI behavior is not enforcement. A security label does not expand scope or permissions; surface material conflicts with accepted behavior or trade-offs.
+**These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. A security label does not expand scope or permissions; surface material conflicts with accepted behavior or trade-offs.
 
 ## Test review
 

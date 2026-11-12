@@ -9,7 +9,7 @@ Carry out the approved implementation specification; do not reopen settled produ
 
 The usual sequence is research → design → build, but no prior skill invocation or particular artifact is required. Use the provided design, an explicit user request, or sufficiently settled conversation context. A spec labeled ready for build is not user approval by itself. Do not require a separate planning/design ceremony for straightforward work, and do not automatically start another session.
 
-1. Read project instructions, the supplied specification/context, and relevant code/tests. Resolve the repository/worktree, intended flow, constraints, permissions, checks and stop condition. Follow the global AGENTS.md task-memory and delegation contract: parents resolve ownership; workers use supplied context and request missing material from the parent. Honor tracking opt-out and disclose fallback limits.
+1. Read project instructions, the supplied specification/context, and relevant code/tests. Resolve the repository/worktree, intended flow, constraints, permissions, checks and stop condition. Trace the specified flow through live callers from entry to resolution before editing. Follow the global AGENTS.md task-memory and delegation contract: parents resolve ownership; workers use supplied context and request missing material from the parent. Honor tracking opt-out and disclose fallback limits.
    For stacked work, read [Stack foundations](references/stack-foundations.md) and the upstream `gh-stack` skill before changing layers or history. Establish tracking and worktree ownership first.
 2. Follow the specification's execution order and file-level guidance. Keep the diff focused; prefer the simplest implementation that meets the requirements and codebase conventions. Avoid speculative abstractions and unrelated cleanup.
 3. If the specification conflicts with the live code, lacks an implementation-critical decision, or a material constraint makes it unsafe/incomplete, pause and report the specific gap instead of silently redesigning. Resolve minor implementation details using local conventions.
@@ -24,9 +24,9 @@ The usual sequence is research → design → build, but no prior skill invocati
 
 When implementing consequential structural changes, read [Codebase Design](../codebase-design/SKILL.md). Preserve the accepted caller contract and ownership; report material discoveries rather than silently redesigning.
 
-Before adding a mechanism, establish the real caller sequence, consequence and why the existing owner is insufficient. If a fix creates another edge case, reconsider the mechanism before layering exceptions. Hypothetical callers, artificial test states, rare user-action races, brief staleness and upstream re-checks remain non-requirements unless requested.
+Before adding a mechanism, establish the real caller sequence, consequence and why the existing owner is insufficient. If a fix creates another edge case, reconsider the mechanism before layering exceptions. Do not add hypothetical-caller support, artificial-test-state handling, race or staleness recovery, upstream re-checks or security hardening merely because a failure can be imagined. Omit speculative extras; if you recommend material added complexity, explain the triggering sequence, plausibility and uncertainty, consequence, and implementation and maintenance cost, and get buy-in before implementing it.
 
-**These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity.** UI behavior is not enforcement. Preserve those protections and escalate conflicts with approved scope or accepted trade-offs; a security label does not grant extra authority.
+**These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. Preserve those protections and escalate conflicts with approved scope or accepted trade-offs; a security label does not grant extra authority.
 
 ## Testing
 

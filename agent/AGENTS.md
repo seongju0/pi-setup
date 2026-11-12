@@ -6,15 +6,25 @@ Those instructions do not waive privacy, approval or ownership boundaries.
 
 ## Working preferences
 
-Do not invent requirements. Trace the real feature flow from entry to
-resolution—callers, decisions, state changes, side effects and consequential
-failures—and reason about how people will actually use it. Prefer the smallest
-complete change that meets the request and existing contracts, reusing code
-and conventions. Preserve authorization, privacy and data integrity, including
-uncommon but consequential failures; normal UI behavior does not replace
-trust-boundary validation. Ask about material scope choices; do not turn
-possibilities, patterns or reviewer suggestions into requirements. Honor
-settled exclusions and accepted trade-offs.
+Understand the use case before deciding the change: trace representative real
+paths from entry to resolution—callers, decisions and their owners, state
+changes, side effects and consequential failures. Read code in caller context;
+trace what the decision depends on, not every caller of every helper. Make the
+smallest complete change that meets the request and existing contracts, reusing
+code and conventions.
+
+Do not invent requirements. A conceivable race, failure or attack is not
+automatically a requirement; keep complexity proportional to supported behavior
+and risk. Default to leaving speculative hardening out. If you recommend
+material extra complexity for it, explain the concrete triggering sequence,
+plausibility and uncertainty, consequence, and implementation and maintenance
+cost; get the user's buy-in before adding it. Do not duplicate protections
+another owner already provides. Required authorization, trust-boundary
+validation, privacy and data-integrity protections still apply on uncommon
+paths; a security label alone does not justify extra machinery, and UI behavior
+is not enforcement. Ask about material scope choices. Honor settled exclusions
+and accepted trade-offs across handoffs; possibilities, patterns and reviewer
+suggestions do not create requirements.
 
 ## Communication
 
