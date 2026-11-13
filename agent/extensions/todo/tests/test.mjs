@@ -651,7 +651,12 @@ try {
     if (name.endsWith("save_issue")) { issue = { ...issue, status: "Done", statusType: "completed", updatedAt: "two" }; data = issue; }
     return { isError: false, result: { content: [{ type: "text", text: JSON.stringify(data) }] } };
   } };
-  const refreshed = await pi.call("todo_linear", { id: sibling.todo.id, revision: linked.todo.revision }, linearCtx);
+  const refreshResult = await pi.callRaw("todo_linear", { id: sibling.todo.id, revision: linked.todo.revision }, linearCtx);
+  const refreshed = refreshResult.structuredContent;
+  assert.deepEqual(refreshResult.details, refreshed);
+  assert.deepEqual(JSON.parse(refreshResult.content[0].text), { saved: true, id: sibling.todo.id, revision: refreshed.todo.revision, linear: refreshed.todo.linear });
+  assert.deepEqual(refreshed.todo, (await locate(root, sibling.todo.id)).todo);
+  assert.equal(refreshed.todo.revision, linked.todo.revision + 1);
   assert.equal(refreshed.todo.status, linked.todo.status); assert.equal(refreshed.todo.linear.status, "In Review");
   await assert.rejects(pi.call("todo_linear", { id: sibling.todo.id, revision: refreshed.todo.revision, target_status: "Done" }, linearCtx), /Partial/);
   assert.ok(!calls.some(call => call.name.endsWith("save_issue")));
@@ -1473,14 +1478,18 @@ try {
   const retrievalProject = await create(retrievalRoot, "project", "Knowledge", "Own shared investigation");
   const retrievalChild = await create(retrievalRoot, "simple", "Completed work", "A stable delivery", retrievalProject.todo.id);
   const retrievalOther = await create(retrievalRoot, "simple", "Other owner", "Separate responsibility");
+  const journalReference = "pi-history:v1/synthetic-session/tool-result";
+  const evidenceText = `queue.id: consumer deduplication remains unverified ${journalReference}`;
+  const decisionEvidence = [...Array.from({ length: 29 }, (_, index) => `${index}: ${"x".repeat(1900)}`), "x".repeat(1800) + " queue.id: late decision evidence"];
+  const decisionText = ["Inspect consumer first", "Avoid duplicate side effects", ...decisionEvidence].join("\n");
   const oldKnowledge = await checkpoint(retrievalRoot, retrievalChild.todo.id, 1, {
-    current_state: { evidence: ["queue.id: consumer deduplication remains unverified"] },
+    current_state: { evidence: [evidenceText, "Unrelated owner finding"] },
     decisions: [{ summary: "queue.id: old assumption", rationale: "Earlier synthetic observation", approval: "draft", evidence: [] }],
     questions: [{ text: "queue.id: did the consumer run?", resolution: "Synthetic run only" }],
     references: ["pi-history:v1/synthetic-session/tool-result"],
   }, "knowledge-first", "test");
   const currentKnowledge = await checkpoint(retrievalRoot, retrievalChild.todo.id, 2, {
-    status: "done", decisions: [{ summary: "queue.id: inspect consumer first", rationale: "Avoid duplicate side effects", approval: "draft", evidence: [], supersedes: oldKnowledge.todo.decisions[0].id }],
+    status: "done", decisions: [{ summary: "Inspect consumer first", rationale: "Avoid duplicate side effects", approval: "draft", evidence: decisionEvidence, supersedes: oldKnowledge.todo.decisions[0].id }],
   }, "knowledge-current", "test");
   await checkpoint(retrievalRoot, retrievalOther.todo.id, 1, { current_state: { evidence: ["queue.id: outside project"] } }, "knowledge-other", "test");
   await saveArtifact(retrievalRoot, retrievalProject.todo.id, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.revision, { ...metadata, applies_to: [], required: false, body: "queue.id: parent-only research" });
@@ -1491,6 +1500,8 @@ try {
   await mutate(retrievalRoot, retrievalChild.todo.id, documentOwner.todo.revision, todo => { todo.artifacts[0].kind = "verification"; return todo; });
   process.env.PI_TODO_PATH = retrievalRoot;
   const retrieval = await instance();
+  const initialOwner = await locate(retrievalRoot, retrievalChild.todo.id);
+  await retrieval.call("todo_tighten", { id: retrievalChild.todo.id, revision: initialOwner.todo.revision, reason: "Retain old assumption on demand", consult_on_demand_decisions: [oldKnowledge.todo.decisions[0].id] });
   await retrieval.call("todo", { action: "resume", selector: retrievalChild.todo.id });
   const retrievalFiles = [...await list(retrievalRoot)].map(row => join(row.directory, "todo.json"));
   const retrievalBefore = await Promise.all(retrievalFiles.map(path => readFile(path, "utf8")));
@@ -1528,9 +1539,79 @@ try {
     const { tool, ...args } = hit.read;
     assert.ok(await retrieval.call(tool, args));
   }
+  const evidenceHit = knowledgeHits.find(hit => hit.source_kind === "evidence");
+  const { tool: evidenceTool, ...evidenceArgs } = evidenceHit.read;
+  const evidencePage = await retrieval.callRaw(evidenceTool, evidenceArgs);
+  assert.equal(evidencePage.structuredContent.body, evidenceText);
+  assert.deepEqual(evidencePage.details, evidencePage.structuredContent);
+  assert.equal(evidencePage.content[0].text.split("\n\n").slice(1).join("\n\n"), evidenceText);
+  assert.doesNotMatch(JSON.stringify(evidencePage), /Unrelated owner finding|todo\.json/);
+  const referenceHit = (await retrieval.call("todo_knowledge", { query: journalReference, selector: retrievalChild.todo.id })).results.find(hit => hit.source_kind === "reference");
+  const { tool: referenceTool, ...referenceArgs } = referenceHit.read;
+  assert.equal((await retrieval.call(referenceTool, referenceArgs)).body, journalReference);
+  assert.equal(referenceHit.in_active_context, true);
+
+  const decisionHit = knowledgeHits.find(hit => hit.source_kind === "decision");
+  assert.equal(decisionHit.read.offset, decisionText.toLowerCase().indexOf("queue.id") - 80);
+  assert.ok(decisionHit.read.offset > 12000);
+  const { tool: recordTool, ...decisionArgs } = decisionHit.read;
+  assert.match((await retrieval.call(recordTool, decisionArgs)).body, /late decision evidence/);
+  let recordTarget = { ...decisionHit.read, offset: 0, limit: 9000 }; let reconstructedRecord = "";
+  do {
+    const { tool, ...args } = recordTarget;
+    const raw = await retrieval.callRaw(tool, args);
+    const page = raw.structuredContent;
+    assert.deepEqual(raw.details, page);
+    assert.equal(raw.content[0].text.split("\n\n").slice(1).join("\n\n"), page.body);
+    assert.ok(page.body.length <= 9000);
+    assert.equal(page.total_chars, decisionText.length);
+    assert.equal(page.offset, reconstructedRecord.length);
+    assert.equal(page.complete, page.next_offset === null);
+    assert.equal("text" in page, false);
+    reconstructedRecord += page.body;
+    recordTarget = page.read;
+  } while (recordTarget);
+  assert.equal(reconstructedRecord, decisionText);
+  const artifactHit = knowledgeHits.find(hit => hit.source_kind === "artifact");
+  assert.equal(artifactHit.match_field, "body");
+  assert.equal(artifactHit.match_offset, pagedBody.indexOf("queue.id"));
+  assert.equal(artifactHit.read.offset, artifactHit.match_offset - 80);
+  assert.equal(artifactHit.read.expected_version, expectedVersion);
+  const { tool: artifactTool, ...artifactArgs } = artifactHit.read;
+  assert.match((await retrieval.call(artifactTool, artifactArgs)).body, /exact document evidence/);
+  const metadataHit = (await retrieval.call("todo_knowledge", { query: document.title, selector: retrievalChild.todo.id })).results.find(hit => hit.source_kind === "artifact");
+  assert.equal(metadataHit.match_field, "metadata");
+  assert.equal(metadataHit.read.offset, 0);
+  assert.equal("match_offset" in metadataHit, false);
+  const boundaryHit = (await retrieval.call("todo_knowledge", { query: `${document.title}\n${document.description}`, selector: retrievalChild.todo.id })).results.find(hit => hit.source_kind === "artifact");
+  assert.equal(boundaryHit.match_field, "metadata");
+  assert.equal(boundaryHit.read.offset, 0);
+  await assert.rejects(retrieval.call("todo_record", { ...evidenceArgs, record_id: oldKnowledge.todo.decisions[0].id }), /index and no record_id/);
+  const { index: _index, ...missingIndex } = evidenceArgs;
+  await assert.rejects(retrieval.call("todo_record", missingIndex), /require index/);
+  await assert.rejects(retrieval.call("todo_record", { ...decisionArgs, record_id: retrievalOther.todo.id }), /Record not found/);
+  await assert.rejects(retrieval.call("todo_record", { ...decisionArgs, index: 0 }), /record_id and no index/);
+  await assert.rejects(retrieval.call("todo_record", { ...evidenceArgs, offset: evidenceText.length + 1 }), /Offset/);
+  const { expected_revision: _revision, ...missingRevision } = evidenceArgs;
+  await assert.rejects(retrieval.call("todo_record", missingRevision), /expected_revision/);
+
   const fullKnowledge = await retrieval.call("todo_knowledge", { ...knowledgeQuery, view: "full", limit: 20 });
   assert.ok(fullKnowledge.results.some(hit => hit.record_id === oldKnowledge.todo.decisions[0].id));
   assert.ok(fullKnowledge.results.some(hit => hit.source_kind === "question"));
+  for (const hit of fullKnowledge.results.filter(hit => !hit.in_active_context)) {
+    const { tool, ...args } = hit.read;
+    const page = await retrieval.call(tool, args);
+    assert.equal(page.in_active_context, false);
+    if (hit.source_kind === "decision") {
+      assert.deepEqual(page.inactive_reasons, ["hidden", "superseded"]);
+      assert.equal(page.hidden, true);
+      assert.equal(page.superseded_by, currentKnowledge.todo.decisions[1].id);
+    } else {
+      assert.deepEqual(page.inactive_reasons, ["resolved"]);
+      assert.equal(page.resolved, true);
+    }
+    await assert.rejects(retrieval.call(tool, { ...args, view: "active" }), /not in active context/);
+  }
   const projectKnowledge = await retrieval.call("todo_knowledge", { query: "queue.id", selector: retrievalProject.todo.id, limit: 20 });
   assert.deepEqual(new Set(projectKnowledge.results.map(hit => hit.owner_id)), new Set([retrievalProject.todo.id, retrievalChild.todo.id]));
   assert.ok((await retrieval.call("todo_knowledge", { query: "queue.id", limit: 20 })).results.some(hit => hit.owner_id === retrievalOther.todo.id));
@@ -1541,6 +1622,16 @@ try {
   assert.deepEqual(await Promise.all(retrievalFiles.map(path => readFile(path, "utf8"))), retrievalBefore);
   assert.equal(JSON.stringify(retrieval.stored), retrievalEntries);
   assert.equal((await locate(retrievalRoot, retrievalChild.todo.id)).todo.status, "done");
+  const beforeReplacement = await locate(retrievalRoot, retrievalChild.todo.id);
+  await retrieval.call("todo_checkpoint", { id: retrievalChild.todo.id, revision: beforeReplacement.todo.revision, key: "replace-indexed-source", changes: { current_state: { evidence: ["Unrelated owner finding"] } } });
+  const replacementFiles = await Promise.all(retrievalFiles.map(path => readFile(path, "utf8")));
+  const replacementEntries = JSON.stringify(retrieval.stored);
+  await assert.rejects(retrieval.call("todo_record", evidenceArgs), /Owner revision changed/);
+  await assert.rejects(retrieval.call("todo_record", decisionArgs), /Owner revision changed/);
+  const replacementOwner = await locate(retrievalRoot, retrievalChild.todo.id);
+  assert.equal((await retrieval.call("todo_record", { ...evidenceArgs, expected_revision: replacementOwner.todo.revision })).body, "Unrelated owner finding");
+  assert.deepEqual(await Promise.all(retrievalFiles.map(path => readFile(path, "utf8"))), replacementFiles);
+  assert.equal(JSON.stringify(retrieval.stored), replacementEntries);
   const latestDocumentOwner = await locate(retrievalRoot, retrievalChild.todo.id);
   await retrieval.call("todo_artifact", { action: "upsert", id: retrievalChild.todo.id, revision: latestDocumentOwner.todo.revision, artifact_id: document.id, ...metadata, applies_to: [], required: false, body: "New current document" });
   await assert.rejects(retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: 12000, expected_version: expectedVersion }), /Artifact changed/);

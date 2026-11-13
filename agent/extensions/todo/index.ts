@@ -6,6 +6,7 @@ import { checkpoint, configuredRoot, create, list, locate, readKnown, type Locat
 import { readArtifactPage, saveArtifact } from "./artifacts.ts";
 import { pageResult, PAGE_CHARS } from "../lib/retrieval.ts";
 import { searchKnowledge } from "./knowledge.ts";
+import { readRecordPage } from "./records.ts";
 import { tighten, type TighteningInput } from "./tightening.ts";
 import { compact, guidance, restoreSelection, resumeBundle, selectionEntry, summary } from "./session.ts";
 import { syncLinear } from "./linear.ts";
@@ -342,12 +343,22 @@ export default function todoExtension(pi: ExtensionAPI) {
   });
   pi.registerTool({
     name: "todo_knowledge", label: "Todo knowledge",
-    description: "Find saved findings, decisions, questions, references and artifact text using case-insensitive literal substring matching (punctuation preserved). Does not search title/goal or old body revisions. Omit selector for the whole TODO store; a project includes its direct children, a simple item only itself. Includes completed owners. view defaults to active visibility; full includes retained hidden/superseded/resolved material. Returns bounded excerpts, provenance and explicit read targets; follow next_cursor with unchanged query/scope/view. Search is live, not a snapshot. Never attaches, starts work or changes files. Read sources before relying on them; history and saved drafts are not current state or permission.",
+    description: "Find saved findings, decisions, questions, references and artifact text using case-insensitive literal substring matching (punctuation preserved). Does not search title/goal or old body revisions. Omit selector for the whole TODO store; a project includes its direct children, a simple item only itself. Includes completed owners. view defaults to active visibility; full includes retained hidden/superseded/resolved material. Returns bounded excerpts, active-context/visibility/supersession/resolution provenance and positioned todo_record or version-pinned todo_artifact read targets. Artifact match_field distinguishes body offsets from metadata-only matches at page 0. Follow next_cursor with unchanged query/scope/view. Search is live, not a snapshot. Never attaches, starts work or changes files. Read sources before relying on them; history and saved drafts are not current state or permission.",
     promptSnippet: "Find curated project knowledge without loading every document.",
     parameters: object({ query: str(), selector: Type.Optional(str()), view: Type.Optional(enumOf(["active", "full"])), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })), cursor: Type.Optional(str(6000)) }),
     outputSchema: Type.Unknown(), annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async execute(_callId, params, signal) {
       return result(await searchKnowledge(root, params, signal));
+    },
+  });
+  pi.registerTool({
+    name: "todo_record", label: "Todo record",
+    description: "Read only one saved evidence/reference/decision/question as a bounded text page (at most 12000 characters, same page in structured output). Follow positioned todo_knowledge targets or continuation read targets. expected_revision is required on every page, including offset 0; if the owner changes, search again or restart with the current revision. evidence/reference require index and no record_id; decision/question require record_id and no index. view defaults to active and refuses hidden/superseded/resolved records; full explicitly reads retained content. Provenance distinguishes active context, hidden visibility, supersession, resolution and approval; hidden is not obsolete and approved is not necessarily current. No attachment, refresh, acknowledgement, observation or writes.",
+    parameters: object({ id, expected_revision: revision, source_kind: enumOf(["evidence", "reference", "decision", "question"]), index: Type.Optional(Type.Integer({ minimum: 0 })), record_id: Type.Optional(id), view: Type.Optional(enumOf(["active", "full"])), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: PAGE_CHARS })) }),
+    outputSchema: Type.Unknown(), annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    async execute(_callId, params, signal) {
+      const page = await readRecordPage(root, params, signal);
+      return pageResult(page, page.body);
     },
   });
   pi.registerTool({
@@ -429,11 +440,11 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
-    name: "todo_linear", label: "Todo Linear", description: "Refresh the linked Linear issue snapshot without changing local progress. Optionally request an exact team status; whole-issue coverage and interactive confirmation are required for writes. Partial todos never change the parent issue. Uses the existing Linear MCP tools, not separate credentials. Refreshed status is a timestamped snapshot, not a completion signal.",
+    name: "todo_linear", label: "Todo Linear", description: "Refresh the linked Linear issue snapshot without changing local progress. Optionally request an exact team status; whole-issue coverage and interactive confirmation are required for writes. Partial todos never change the parent issue. Uses the existing Linear MCP tools, not separate credentials. Refreshed status is a timestamped snapshot, not a completion signal. Native success text is a compact saved/id/revision/new Linear snapshot receipt; the full existing structured result remains available. Await known successful writes without printing the full return value.",
     parameters: object({ id, revision, target_status: Type.Optional(str(100)) }), outputSchema: Type.Unknown(), executionMode: "sequential", annotations: { ...annotations, openWorldHint: true },
     async execute(_callId, params, signal, _onUpdate, ctx) {
       const updated = await syncLinear(root, params.id, params.revision, ctx, params.target_status, signal);
-      observe(updated); return result(updated);
+      observe(updated); return result(updated, { saved: true, id: updated.todo.id, revision: updated.todo.revision, linear: updated.todo.linear });
     },
   });
 

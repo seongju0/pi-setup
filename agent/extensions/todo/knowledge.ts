@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import { excerpt } from "../lib/retrieval.ts";
 import { readArtifact } from "./artifacts.ts";
-import { compact } from "./session.ts";
+import { recordTexts, recordTarget, artifactProvenance, type Provenance } from "./records.ts";
 import { list, locate, type Located } from "./storage.ts";
 
 export type KnowledgeInput = { query: string; selector?: string; view?: "active" | "full"; limit?: number; cursor?: string };
-type Hit = {
+type Hit = Partial<Provenance> & {
+  index?: number; match_field?: "body" | "metadata"; match_offset?: number;
   owner_id: string; owner_title: string; parent_id: string | null; owner_revision: number;
   source_kind: string; record_id?: string; artifact_id?: string; artifact_version?: string;
-  approval?: "draft" | "approved"; lifecycle?: string; excerpt: string; read: Record<string, unknown>;
+  lifecycle?: string; excerpt: string; read: Record<string, unknown>;
 };
 type Match = { key: string; historical: boolean; hit: Hit };
 type Cursor = { v: 1; query: string; scope: string | null; view: string; after: string };
@@ -59,31 +60,33 @@ export async function searchKnowledge(root: string, input: KnowledgeInput, signa
   return response();
 
   async function collect(row: Located) {
-    const todo = view === "active" ? compact(row.todo) : row.todo;
-    const active = compact(row.todo);
-    const activeDecisions = new Set(active.decisions.map(record => record.id));
-    const activeQuestions = new Set(active.open_questions.map(record => record.id));
-    const activeArtifacts = new Set(active.artifacts.map(record => record.id));
-    const read = { tool: "todo", action: "get", selector: todo.id, view };
-    function add(key: string, source_kind: string, text: string, extra: Partial<Hit> = {}, historical = false) {
+    const todo = row.todo;
+    function add(key: string, source_kind: string, text: string, extra: Partial<Hit> & Pick<Hit, "read">, historical = false) {
       if (!text.toLowerCase().includes(query)) return;
       matches.push({ key: `${todo.id}/${key}`, historical, hit: {
         owner_id: todo.id, owner_title: todo.title, parent_id: row.parent_id ?? null, owner_revision: todo.revision,
-        source_kind, excerpt: excerpt(text, query), read, ...extra,
+        source_kind, excerpt: excerpt(text, query), ...extra,
       } });
     }
-    todo.current_state.evidence.forEach((text, index) => add(`evidence/${index}`, "evidence", text));
-    todo.references.forEach((text, index) => add(`reference/${index}`, "reference", text));
-    for (const decision of todo.decisions) add(`decision/${decision.id}`, "decision", [decision.summary, decision.rationale, ...decision.evidence].join("\n"), { record_id: decision.id, approval: decision.approval }, !activeDecisions.has(decision.id));
-    for (const question of todo.open_questions) add(`question/${question.id}`, "question", [question.text, question.resolution ?? ""].join("\n"), { record_id: question.id }, !activeQuestions.has(question.id));
+    for (const record of recordTexts(todo)) {
+      if (view === "active" && !record.in_active_context) continue;
+      const { text, ...metadata } = record;
+      add(`${record.source_kind}/${record.index ?? record.record_id}`, record.source_kind, text, {
+        ...metadata, read: recordTarget(todo, record, view, Math.max(0, text.toLowerCase().indexOf(query) - 80)),
+      }, !record.in_active_context);
+    }
     for (const artifact of todo.artifacts) {
+      const provenance = artifactProvenance(todo, artifact);
+      if (view === "active" && !provenance.in_active_context) continue;
       signal?.throwIfAborted();
       const body = await readArtifact(root, row, artifact.id);
       signal?.throwIfAborted();
+      const bodyMatch = body.toLowerCase().indexOf(query);
       add(`artifact/${artifact.id}`, "artifact", [artifact.title, artifact.description, body].join("\n"), {
-        artifact_id: artifact.id, artifact_version: artifact.path, lifecycle: artifact.lifecycle,
-        read: { tool: "todo_artifact", action: "read", id: todo.id, artifact_id: artifact.id, expected_version: artifact.path },
-      }, !activeArtifacts.has(artifact.id));
+        artifact_id: artifact.id, artifact_version: artifact.path, lifecycle: artifact.lifecycle, ...provenance,
+        match_field: bodyMatch >= 0 ? "body" : "metadata", ...(bodyMatch >= 0 ? { match_offset: bodyMatch } : {}),
+        read: { tool: "todo_artifact", action: "read", id: todo.id, artifact_id: artifact.id, expected_version: artifact.path, offset: Math.max(0, bodyMatch - 80) },
+      }, !provenance.in_active_context);
     }
   }
 }
