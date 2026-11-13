@@ -35,6 +35,21 @@ Use [design](../design/SKILL.md) for spec refinement, [build](../build/SKILL.md)
 
 Use a fresh child for each applicable stage when coding-subagent tools are available, even for small stage work. Each reports to the parent, never launches the next stage. Do not substitute Herdr sessions or research/analysis launchers. If subagents are unavailable, do the work in the parent and label review parent-only; ask before publication when independent review is an explicit prerequisite that cannot be met.
 
+### Delegated-stage model defaults
+
+These preferences apply only to children launched by deliver—not the parent session or direct `/skill:…` invocations. They are instructions to the parent, not automatic skill-based routing.
+
+| Delegated stage | Default physical model |
+| --- | --- |
+| Design | `anthropic/claude-opus-5-5` |
+| Build and remediation | `openai/gpt-6.1-sol` |
+| Review, including focused re-review | `anthropic/claude-opus-5-5` |
+| Open-pr, including publication corrections | Inherit the parent's current physical model |
+
+Honor explicit user model overrides first. Otherwise resolve the table's model and pass its exact `provider/model` in the subagent spawn's `model` field. For open-pr inheritance, explicitly pass the parent's current physical model rather than omitting `model`, so `--subagent-model` does not override that inheritance. Do not pass virtual-router aliases.
+
+If the selected model is unavailable, report the affected launch as blocked rather than silently substituting another model. Model unavailability is not subagent-tool unavailability and does not trigger the parent-only fallback above.
+
 ### Assignment context
 
 Follow global AGENTS.md delegation policy. In each assignment, distinguish authoritative context (owner TODO ID and canonical design artifact/document) and evidence/report paths from transient execution scope (worktree, exact base/revision and task-owned files, permissions and stop condition). Carry the accepted flow, caller contracts, owners/effects, decisions, exclusions and consequential unsaved deltas. Require relevant full reads; supply bounded material when TODO access is unavailable. Put task context in `message` and task-specific boundaries/quality gates in `instructions`.
