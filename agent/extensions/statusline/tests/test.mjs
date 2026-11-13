@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { copyFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 const root = process.env.PI_TEST_PACKAGE_ROOT || join(
 	execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(),
@@ -107,7 +107,9 @@ test("interactive-only footer; live wide/narrow Unicode, ANSI and context semant
 	h.statuses.set("on-call-mode", "\x1b[31mON-CALL · ⚠ unsafe\nprovider\x1b[0m");
 	const lines = h.component.render(100);
 	assert.equal(lines[1], `\x1b[90m  ${"─".repeat(96)}  \x1b[0m`, "subtle divider is centered with a two-column inset");
-	assert.equal(lines.length, 4, "main status, divider and one row per extension");
+	assert.equal(lines.length, 5, "main status, divider, one row per extension and current path");
+	assert.equal(plain(lines[4]), h.ctx.cwd, "full session directory is beneath extension statuses");
+	assert.ok(lines[4].includes("\x1b[2m"), "path uses the live muted theme");
 	assert.equal(plain(lines[2]), "ON-CALL · ⚠ unsafe provider");
 	assert.match(plain(lines[3]), /^TODO /);
 	assert.ok(lines[2].includes("\x1b[31m"), "keep warning status ANSI");
@@ -122,7 +124,22 @@ test("interactive-only footer; live wide/narrow Unicode, ANSI and context semant
 	assert.match(plain(h.component.render(24)[0]), /ctx 50%\/200k$/);
 	assert.match(plain(h.component.render(24)[2]), /^ON-CALL/);
 	h.statuses.clear();
-	assert.equal(h.component.render(100).length, 1, "no divider without status info");
+	assert.equal(h.component.render(100).length, 2, "path remains without a divider when no extensions publish status");
+	for (const [cwd, expected] of [
+		[homedir(), "~"],
+		[join(homedir(), "Projects", "工作🌿"), "~/Projects/工作🌿"],
+		[`${homedir()}-other/project`, `${homedir()}-other/project`],
+		["/", "/"],
+		["/projects/\x1b[31mcolored\x1b[0m\npath\x07", "/projects/colored path"],
+	]) {
+		h.ctx.cwd = cwd;
+		assert.equal(plain(h.component.render(200).at(-1)), expected, "path reads session cwd on every render, not process.cwd or initial cwd");
+	}
+	h.ctx.cwd = "/projects/" + "工作🌿".repeat(50);
+	for (const width of [1, 4, 9, 24, 80]) {
+		assert.ok(visibleWidth(h.component.render(width).at(-1)) <= width, "long Unicode path fits narrow panes");
+	}
+	assert.equal(h.calls.length, 1, "path rendering starts no pwd or additional Git process");
 	h.usage = { tokens: null, percent: null, contextWindow: 200_000 };
 	assert.match(plain(h.component.render(100)[0]), /ctx \?\/200k/);
 	h.usage = undefined;

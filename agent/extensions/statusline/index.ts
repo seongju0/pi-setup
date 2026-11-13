@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { homedir } from "node:os";
 import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, truncateToWidth, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { SPINNERS } from "./spinners.ts";
@@ -62,6 +63,7 @@ export default function statusline(pi: ExtensionAPI) {
 		ctx.ui.setEditorComponent((tui, theme, keybindings) =>
 			new SpacedEditor(tui, theme, keybindings, { embedWorkingStatus: true }));
 		ctx.ui.setFooter((tui, theme, footerData) => {
+			const home = homedir();
 			let cacheLeaf: string | null | undefined;
 			let cacheRate: number | undefined;
 			const cacheLabel = () => {
@@ -164,13 +166,17 @@ export default function statusline(pi: ExtensionAPI) {
 						.filter(value => visibleWidth(value) > 0);
 					const inset = Math.min(2, Math.floor((width - 1) / 2));
 					const padding = " ".repeat(inset);
-					return statuses.length
-						? [
-							truncateToWidth(first, width),
+					const cwd = ctx.cwd === home ? "~"
+						: ctx.cwd.startsWith(`${home}/`) ? `~${ctx.cwd.slice(home.length)}` : ctx.cwd;
+					const path = oneLine(stripTerminalSequences(cwd)).replace(/[\x00-\x1f\x7f]/g, "");
+					return [
+						truncateToWidth(first, width),
+						...(statuses.length ? [
 							theme.fg("borderMuted", `${padding}${"─".repeat(width - inset * 2)}${padding}`),
 							...statuses.map(status => truncateToWidth(status, width)),
-						]
-						: [truncateToWidth(first, width)];
+						] : []),
+						theme.fg("muted", truncateToWidth(path, width)),
+					];
 				},
 			};
 		});

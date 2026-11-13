@@ -13,6 +13,7 @@ worktree (branch*)      claude-sonnet-5-5 · high · ctx 43%/200k · cache 92%
   ──────────────────────────────────────────────────────────────────
 on-call · … · ⚠ …
 todo · in progress · brief ~3.2k (1.2%) · Title
+~/Projects/worktree
 ```
 
 - Left: working-directory basename (including a worktree's own name), native
@@ -31,6 +32,11 @@ todo · in progress · brief ~3.2k (1.2%) · Title
   spaces. TODO supplies its own compact wording, for example
   `todo · in progress · brief ~3.2k (1.2%) · Title`; the percentage is the loaded
   brief's share of the model window, not overall session context occupancy.
+- Bottom path row: the session's current `ctx.cwd`, below all extension info rows
+  (or directly below the main row when no extensions publish status). The home
+  directory is shortened to `~` only at a directory boundary. The muted path is
+  read on every render, stripped of terminal controls and clipped to the pane's
+  Unicode-aware width. No `pwd` shell command, polling or separate extension.
 - `cache`: cached-read tokens / (uncached input + cached reads + cache writes)
   for the latest assistant/model call on the active session branch. Output tokens
   are excluded. A real zero is `0%`; missing/zero-total usage is `—`, without
