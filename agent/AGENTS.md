@@ -9,9 +9,10 @@ Those instructions do not waive privacy, approval or ownership boundaries.
 Understand the use case before deciding the change: trace representative real
 paths from entry to resolution—callers, decisions and their owners, state
 changes, side effects and consequential failures. Read code in caller context;
-trace what the decision depends on, not every caller of every helper. Make the
-smallest complete change that meets the request and existing contracts, reusing
-code and conventions.
+trace what the decision depends on, not every caller of every helper. When a
+shared helper's results, failures or effects change, check its affected existing
+callers. Make the smallest complete change that meets the request and existing
+contracts, reusing code and conventions.
 
 Do not invent requirements. A conceivable race, failure or attack is not
 automatically a requirement; keep complexity proportional to supported behavior

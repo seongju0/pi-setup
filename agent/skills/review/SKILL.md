@@ -10,18 +10,27 @@ Review the requested change. If none is specified, review staged and unstaged ch
 ## Establish intent and scope
 
 - Read the diff, relevant surrounding code, implementation plan/spec and primary references named in the request. Find repository guidance in the changed files' directory ancestry; follow relevant references, not unrelated documentation broadly.
-- Establish supported behavior, exclusions and accepted trade-offs before judging. Trace affected callers and outcomes; a spec describes intent but does not prove its mechanism is necessary.
+- Establish supported behavior, exclusions and accepted trade-offs before judging. Trace affected callers and outcomes; a spec describes intent but does not prove its mechanism is necessary or its outcome correct. For a new writer or newly admitted actor/client/variant, verify the existing readers and effects that consume its output. A settled mechanism or exclusion is not acceptance of a changed existing invariant; if it conflicts with a business contract, escalate the conflict rather than silently reopening or fixing it.
 - For relevant React/Next changes, apply `/skill:vercel-react-best-practices`; also read `/skill:vercel-composition-patterns` for component API or composition design. Follow the global AGENTS.md memory and delegation contract; worker confidence or severity is not evidence for added behavior.
 
 ## Inspect the changed flow
 
-Review the whole affected flow on the first pass: correctness, conventions, relevant performance, responsibility owners, data transformations and consequential effects. Check parallel workflows, scattered mode checks, misleading names and obscuring indirection within the change.
+Review the whole affected flow on the first pass using this qualitative rubric. Apply relevant dimensions; do not invent work for inapplicable ones. These are reasoning prompts, not numerical scores or mandatory per-dimension report sections. Strength in one dimension does not compensate for a defect in another.
+
+| Dimension | Establish |
+| --- | --- |
+| **Business correctness** | The supported user sequence produces the intended business outcome and preserves established invariants—not merely spec conformance. |
+| **State, consumers and effects** | Existing consumers interpret new records/events correctly; required downstream decisions and effects are preserved or intentionally changed. |
+| **Actors, variants and trust boundaries** | Admitted actors, client types and versions with materially different paths have correct authorization, context, privacy and evidence semantics. |
+| **Compatibility and failure contracts** | Existing callers retain intended inputs, results, errors and partial-effect behavior when shared helpers or interfaces change. |
+| **Necessity and code quality** | Mechanisms serve supported needs; responsibilities are coherent, code is understandable and follows conventions, and performance concerns have concrete consequences. Check parallel workflows, scattered mode checks, misleading names and obscuring indirection within the change. |
+| **Verification and assurance** | Tests protect the meaningful caller-to-outcome and consumer contracts; the review's scope, checks and remaining gaps support its conclusion. Apply **Test review** below. |
 
 For consequential structural changes, read [Codebase Design](../codebase-design/SKILL.md). Assess caller burden, scattered policy, change locality and honest effect contracts—not conformity to a preferred pattern. A readability finding must identify a concrete reasoning burden, maintenance impact and smaller clear alternative.
 
 Challenge unnecessary mechanisms even when prescribed by the spec: guards, locks, re-checks, recovery paths and abstractions must serve a real supported flow rather than duplicate an existing owner's protection. Preserve approved outcomes and surface conflicts; do not silently redefine requirements or demand an unrelated redesign. If a proposed fix creates more edge cases, reconsider its mechanism before requesting exceptions.
 
-A missing-guard concern must name the triggering caller sequence, plausibility and uncertainty, consequence, and why existing validation, policy ownership or retained coverage is insufficient. A constructible race, failure or attack is not by itself a required fix. Decline speculative extras rather than turning them into findings or questions; if material hardening seems worth recommending, explain its implementation and maintenance cost and distinguish it from a confirmed defect in required behavior. Do not revive accepted non-requirements without a concrete conflict.
+A missing-guard concern must name the triggering caller sequence, plausibility and uncertainty, consequence, and why existing validation, policy ownership or retained coverage is insufficient. A constructible race, failure or attack is not by itself a required fix. Decline speculative extras rather than turning them into findings or questions; if material hardening seems worth recommending, explain its implementation and maintenance cost and distinguish it from a confirmed defect in required behavior. Do not revive accepted non-requirements without a concrete conflict. Conversely, a supported actor, version or existing consumer that the change reaches is a real path, not speculation.
 
 **These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. A security label does not expand scope or permissions; surface material conflicts with accepted behavior or trade-offs.
 
@@ -40,7 +49,9 @@ Audit every changed test on the first pass, not just missing coverage. Apply [Co
 
 ## Report
 
-- Report only confirmed, actionable findings, with severity, `file:line`, impact and minimal correction. No taste-based findings or unsupported blockers; no findings is a valid result.
-- Put unresolved flow questions separately, naming the sequence that needs confirmation and why it matters. An unconfirmed concern is not a required fix or a blocker.
+Use the repository's severity scale. Where none is defined, calibrate **Critical** to severe security, privacy, integrity or availability harm; **Major** to material breakage of a supported workflow or business invariant; and **Minor** to bounded lower-impact correctness, usability or maintainability issues. Optional suggestions remain optional and need a demonstrated benefit. Judge severity by consequence, realistic triggering conditions and existing mitigation—not diff size, missing tests alone, a security label or uncertainty about the remedy.
+
+- Report only confirmed, actionable findings, with severity, `file:line`, impact and smallest justified correction or decision needed. A defect can be confirmed even when its correction needs a product or scope decision. No taste-based findings or unsupported blockers; no findings is a valid result.
+- Put unresolved flow questions separately, naming the sequence that needs confirmation and why it matters. An unconfirmed concern is not automatically a required fix or blocker. If the answer could change the correctness verdict on a consequential path, resolve it from code where practical; otherwise qualify the verdict instead of reporting that flow clean.
 - Include a short **Test review**: actionable merge/delete/repair recommendations with retained protection, justified missing tests and proposed net delta in files/scenarios. Otherwise say “no test changes recommended” or “no test changes to review,” as appropriate; do not list routine keep receipts.
-- Name the reviewed scope, checks actually performed and material unreviewed risks. Do not equate spec conformance or a worker's confidence with verification.
+- Name the reviewed scope, checks actually performed and material unreviewed risks. Do not equate spec conformance or a worker's confidence with verification, or a clean patch review with whole-feature approval.
