@@ -38,7 +38,7 @@ These are task-entry and semantic-saving rules, not forced per-turn checkpoints,
 | Concise goal and scope: what this work owns and excludes | `outcome`, displayed as **Goal and scope** |
 | Lifecycle | `status` |
 | Actual prerequisites | `depends_on`; readiness is computed, not authored |
-| Consequential findings, qualifications and useful supporting pointers | `current_state.evidence` |
+| Consequential findings, qualifications and useful supporting pointers | Read `current_state.evidence` as `{id,text}` records; write `evidence` edits by ID |
 | Governing choices and their decisive reasons | `decisions`, including approval state and necessary evidence |
 | Delivery-affecting uncertainty | `open_questions`; resolve only with supporting evidence |
 | Routes to authoritative material | `references` |
@@ -135,7 +135,7 @@ Recall uses flat candidates with type, status, goal and parent ID/title (null fo
 
 ### Recoverable sources, not a receipt archive
 
-Use `session_history` when the original journal evidence matters. Store its emitted `pi-history:v1/<encoded-session-id>/<encoded-entry-id>` reference in an existing evidence/reference string beside the concise finding and qualifications. No schema migration, automatic harvesting or per-tool bookkeeping is required. Default search stays on current ancestry (including pre-compaction entries); exact reference reads can resolve same-project session files. Other-project or deleted sources fail visibly rather than expanding scope.
+Use `session_history` when the original journal evidence matters. Store its emitted `pi-history:v1/<encoded-session-id>/<encoded-entry-id>` reference in evidence record text or a reference string beside the concise finding and qualifications. Journal pointers need no additional schema fields, automatic harvesting or per-tool bookkeeping. Default search stays on current ancestry (including pre-compaction entries); exact reference reads can resolve same-project session files. Other-project or deleted sources fail visibly rather than expanding scope.
 
 Historical user text, assistant claims, tool evidence, coordination and derived summaries keep distinct provenance. Reading them does not revive approval or prove live state. Verify actual state before repeating consequential actions. Journal edits/compaction are not deletion; retrieved historical originals may differ from the current conversation projection. Retrieved text enters the selected model/provider context; thinking, system messages, hidden extension state and image bytes are excluded. The history tool does not guarantee recovery of overwritten TODO fields.
 
@@ -178,6 +178,55 @@ Use one or two high-signal bullets per nonempty section, omit empty sections and
 The tool supplies live active selected/parent context, relevant visible artifact catalog/read targets, useful child/prerequisite summaries and bounded recent active-branch evidence. It does not generate semantic session-progress prose or eagerly load artifact bodies. Native journal excerpts retain IDs/history refs, provenance and tool failure identity; thinking and hidden injected notes are excluded. A bounded sample is not full-session coverage: compaction summaries are derived and branch ancestry may be partial/inherited. Use existing `session_history` search/read when evidence is missing. Do not infer completion from tool success, attribute all ancestry to this session or present historical test/publication/status evidence as freshly verified external state. No automatic archived-session or external-service inspection occurs.
 
 Recap reads do not save, attach, refresh, acknowledge or observe state, so drift and pending checkpoint/leave behavior remain intact. No attachment yields an explicit unattached result; there is no owner search/inference. The manual command waits for idle and invokes the current main model, not a background summarizer or zero-model renderer. The agent combines evidence with relevant conversation and admits consequential coverage limits. `todo` action `status` remains lightweight attachment metadata, `/todo status` still changes local progress, and generic service/Git status requests are not redirected.
+
+## Safe evidence curation and schema cutover
+
+Canonical stored/get/resume/recap evidence is schema 2 `{id,text}[]`, not a
+string-array projection. Write with checkpoint `changes.evidence` or tightening
+`evidence`: `{add:["New qualification"], update:[{id,text}], remove:[id]}`.
+Unmentioned records remain exact, updates keep position/identity and adds append.
+Empty edits never clear. Bulk replacement/clear enumerates every deliberately
+removed ID; no destructive switch or automatic curation exists.
+
+At most 30 records, nonempty verbatim text up to 2000 characters, checked after
+all edits and automatic outcome-approval attribution. Explicitly consolidate or
+remove IDs in the same change to make room. Unknown/conflicting IDs fail without
+manifest effects. References and nested decision evidence retain string-array
+semantics. Approval receipt records are editable/removable like other evidence;
+exact-text attribution dedupe remains. Edits/removals have no recovery history.
+Evidence IDs appear as metadata on knowledge hits and revision-pinned indexed
+record pages; search matches factual text, not JSON or IDs.
+
+Explicit additions have owner/accepted-base-revision/ordinal identities;
+approval attribution has a separate namespace. Checkpoint's compact and full
+structured `evidence_ids` report the original explicit additions from saved
+`last_checkpoint.base_revision`, even on refreshed-revision retries after
+tightening removed one. Full state/effects remain current. Old receipts without
+a base omit IDs; existing digest/key/session/revision semantics remain.
+Tightening reports from its checked revision; read after uncertain effects before
+retrying. Do not print a full successful write merely to retrieve generated IDs.
+
+Whole-list `current_state` writes are always rejected, including null/empty
+values and old successful-key retries, before approval or mutation. The schemas'
+unknown-valued slot exists only to deliver actionable rejection instructions;
+it does not accept legacy writes.
+
+Schema 1 pure reads normalize IDs deterministically from owner ID/index/verbatim
+text, preserving order/duplicate texts, metadata and historical digests without
+saving or advancing revision. The first canonical save persists schema 2;
+malformed schema 2 strings/mixed rows fail rather than being normalized. This is
+lazy conversion, not a migration-free rollout.
+
+Before deployment, quiesce **all** old Pi/Herdr/subagent writers, preserve existing
+store/docs, update authorized source and reload all writers. Mixed versions are
+unsupported: first schema 2 file makes old full-store list/locate fail store-wide,
+but cannot stop unsafe old writes before conversion. Attached old sessions may
+abort until reloaded/detached. Scripts must change both writes and reads to use
+`record.text`. No automatic reload/eager migration/live conversion is included.
+After new writes, code rollback alone cannot read schema 2 with old code; prefer
+a forward fix. Reverse conversion requires separate assessment/approval and data
+preservation; never restore an old backup over newer facts. The [README](../README.md#evidence-records-and-explicit-edits)
+owns concrete read/write/bulk examples.
 
 ## Maintenance without a second planning system
 

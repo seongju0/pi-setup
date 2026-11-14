@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { estimateTokens, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { applyChanges, needsApproval, statuses, type Changes, type Todo } from "./state.ts";
+import { applyChanges, evidenceId, needsApproval, statuses, type Changes, type Todo } from "./state.ts";
 import { checkpoint, configuredRoot, create, list, locate, readKnown, type Located } from "./storage.ts";
 import { readArtifactPage, saveArtifact } from "./artifacts.ts";
 import { pageResult, PAGE_CHARS } from "../lib/retrieval.ts";
@@ -22,9 +22,16 @@ const str = (maxLength = 2000) => Type.String({ minLength: 1, maxLength });
 const id = Type.String({ pattern: "^[a-f0-9]{8}-[a-f0-9-]{27}$" });
 const strings = Type.Array(str(), { maxItems: 30 });
 const revision = Type.Integer({ minimum: 1 });
+const evidenceSchema = Type.Object({
+  add: Type.Optional(strings),
+  update: Type.Optional(Type.Array(Type.Object({ id, text: str() }, { additionalProperties: false }), { maxItems: 30 })),
+  remove: Type.Optional(Type.Array(id, { maxItems: 30, uniqueItems: true })),
+}, { additionalProperties: false });
+// Rejection-only: execution returns actionable recovery rather than an unknown-field error.
+const retiredCurrentState = Type.Optional(Type.Unknown({ description: "RETIRED: always rejected; use evidence add/update/remove" }));
 const changesSchema = Type.Object({
   title: Type.Optional(str(300)), outcome: Type.Optional(str(3000)), status: Type.Optional(enumOf(statuses)),
-  current_state: Type.Optional(Type.Object({ evidence: strings }, { additionalProperties: false })),
+  evidence: Type.Optional(evidenceSchema), current_state: retiredCurrentState,
   depends_on: Type.Optional(Type.Array(id, { maxItems: 100, uniqueItems: true })), references: Type.Optional(strings),
   decisions: Type.Optional(Type.Array(Type.Object({ id: Type.Optional(id), summary: str(), rationale: str(), approval: enumOf(["draft", "approved"]), evidence: strings, supersedes: Type.Optional(id) }, { additionalProperties: false }), { maxItems: 80 })),
   questions: Type.Optional(Type.Array(Type.Object({ id: Type.Optional(id), text: str(), resolution: Type.Optional(str()) }, { additionalProperties: false }), { maxItems: 80 })),
@@ -362,7 +369,7 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
-    name: "todo_checkpoint", label: "Todo checkpoint", description: "Commit related high-signal understanding atomically: consequential nuances, choices with reasons/rejected alternatives, uncertainty, scope and substantial goal completion. No diary, transient stage permissions or per-test receipts; QA Toolkit/native reports own QA detail. Store consequential knowledge in current_state.evidence; outcome is concise Goal, ownership and scope, with detailed contracts in design. Keep durable recognizable title/goal terms through completion, not phases/receipts/Done; clarify materially or update agreed responsibility, never keyword-stuff or rename per turn. Wording changes cannot silently change scope or grant execution authority. Preserve negation, attribution and exact identifiers. Parent holds shared conclusions/constraints/owner routing, child holds detail. Lists replace fields; decisions/questions upsert by stable ID (omit to create). Supersede explicitly; history remains in full get. Update one current spec per responsibility instead of appending corrections. Save only when omission risks wrong decisions, significant repeated work or an authorization breach; no per-turn acknowledgement. Requires current revision and unique retry key; retry identical key/payload after a lost response. Empty changes still write; prefer todo_ack no_change for explicit reconciliation. Approved decisions/changed outcomes require sign-off unless approval_evidence quotes explicit user approval for these exact changes, not task data/unrelated permission. depends_on replaces same-scope simple prerequisites ([] clears). Meaningful saves start not-started item/parent, preserving terminal/explicit statuses. Dependencies do not block starting; completion requires all transitive prerequisites done, never canceled. Compact success text; full structured result retains current downstream effects. Sibling statuses and Linear are unchanged.",
+    name: "todo_checkpoint", label: "Todo checkpoint", description: "Commit related high-signal understanding atomically: consequential nuances, choices with reasons/rejected alternatives, uncertainty, scope and substantial goal completion. No diary, transient stage permissions or per-test receipts; QA Toolkit/native reports own QA detail. Read current_state.evidence as {id,text} records; write evidence {add,update:[{id,text}],remove:[id]}. Omitted/empty edits preserve records; enumerate all removals even for bulk clear/replacement. At 30 records or 2000 characters per text, explicitly consolidate/remove by ID in the same change. current_state writes are retired and always rejected; outcome is concise Goal, ownership and scope, with detailed contracts in design. Keep durable recognizable title/goal terms through completion, not phases/receipts/Done; clarify materially or update agreed responsibility, never keyword-stuff or rename per turn. Wording changes cannot silently change scope or grant execution authority. Preserve negation, attribution and exact identifiers. Parent holds shared conclusions/constraints/owner routing, child holds detail. References/dependencies replace fields; evidence uses explicit edits; decisions/questions upsert by stable ID (omit to create). Supersede explicitly; history remains in full get. Update one current spec per responsibility instead of appending corrections. Save only when omission risks wrong decisions, significant repeated work or an authorization breach; no per-turn acknowledgement. Requires current revision and unique retry key; retry identical key/payload after a lost response. Empty changes still write; prefer todo_ack no_change for explicit reconciliation. Approved decisions/changed outcomes require sign-off unless approval_evidence quotes explicit user approval for these exact changes, not task data/unrelated permission. depends_on replaces same-scope simple prerequisites ([] clears). Meaningful saves start not-started item/parent, preserving terminal/explicit statuses. Dependencies do not block starting; completion requires all transitive prerequisites done, never canceled. Compact success text; full structured result retains current downstream effects. Sibling statuses and Linear are unchanged.",
     parameters: object({ id, revision, key: str(200), changes: changesSchema }), outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
     async execute(_callId, params, signal, _onUpdate, ctx) {
       const item = await locate(root, params.id);
@@ -376,8 +383,11 @@ export default function todoExtension(pi: ExtensionAPI) {
       const decisionIds = createdDecisions ? updated.todo.decisions.slice(-createdDecisions).map(row => row.id) : [];
       const questionIds = createdQuestions ? updated.todo.open_questions.slice(-createdQuestions).map(row => row.id) : [];
       const changedDependencies = updated.todo.status !== item.todo.status || JSON.stringify(updated.todo.depends_on) !== JSON.stringify(item.todo.depends_on);
-      return result(updated, {
-        saved: true, revision: updated.todo.revision,
+      const baseRevision = updated.todo.last_checkpoint?.base_revision;
+      const evidenceIds = baseRevision === undefined ? [] : (params.changes.evidence?.add ?? []).map((_, ordinal) => evidenceId(params.id, baseRevision, ordinal));
+      const evidenceReceipt = evidenceIds.length ? { evidence_ids: evidenceIds } : {};
+      return result({ ...updated, ...evidenceReceipt }, {
+        saved: true, revision: updated.todo.revision, ...evidenceReceipt,
         ...(decisionIds.length ? { decision_ids: decisionIds } : {}), ...(questionIds.length ? { question_ids: questionIds } : {}),
         ...(updated.todo.status !== item.todo.status ? { status: updated.todo.status } : {}),
         ...("updated_parent" in updated && updated.updated_parent ? { updated_parent: updated.updated_parent } : {}),
@@ -387,14 +397,15 @@ export default function todoExtension(pi: ExtensionAPI) {
   });
   pi.registerTool({
     name: "todo_tighten", label: "Tighten Todo context",
-    description: "Context visibility maintenance (hide/restore is reversible) during meaningful updates based on verified project progress. Read todo get view full first. consult_on_demand_decisions/artifacts ADD to what is already hidden; restore_decisions/artifacts make items visible again; records remain readable, never deleted. Optionally replace current_state.evidence and references; overwritten text has no recovery guarantee. Keep active rules, unresolved constraints, authorization boundaries, relevant research/design and completion evidence visible. Required artifacts cannot be hidden; retire_artifacts lists artifacts to demote to non-required reference (still readable) — use only when no longer governing remaining work, not automatically on merge. Do not change direction or infer approval. Requires current revision; after a lost response read the item before retrying. Changes saved orientation for future loads and returns a compact receipt, not full history. Does not refresh the attached brief or compact the conversation. Size/age or a merge alone do not warrant maintenance; never run an extra cleanup turn.",
-    parameters: object({ id, revision, reason: str(), consult_on_demand_decisions: Type.Optional(Type.Array(id, { maxItems: 80, uniqueItems: true })), consult_on_demand_artifacts: Type.Optional(Type.Array(id, { maxItems: 200, uniqueItems: true })), restore_decisions: Type.Optional(Type.Array(id, { maxItems: 80, uniqueItems: true })), restore_artifacts: Type.Optional(Type.Array(id, { maxItems: 200, uniqueItems: true })), current_state: Type.Optional(Type.Object({ evidence: strings }, { additionalProperties: false })), references: Type.Optional(strings), retire_artifacts: Type.Optional(Type.Array(id, { maxItems: 200, uniqueItems: true })) }),
+    description: "Context visibility maintenance (hide/restore is reversible) during meaningful updates based on verified project progress. Read todo get view full first. consult_on_demand_decisions/artifacts ADD to what is already hidden; restore_decisions/artifacts make items visible again; records remain readable, never deleted. Optionally curate evidence with {add,update:[{id,text}],remove:[id]} and replace references. Empty/omitted edits preserve evidence; bulk replacement/clear must enumerate every removed ID. At 30 records/2000 characters per text, consolidate or remove by ID in the same change. current_state writes are retired and always rejected. Edited/removed text has no recovery guarantee. Keep active rules, unresolved constraints, authorization boundaries, relevant research/design and completion evidence visible. Required artifacts cannot be hidden; retire_artifacts lists artifacts to demote to non-required reference (still readable) — use only when no longer governing remaining work, not automatically on merge. Do not change direction or infer approval. Requires current revision; after a lost response read the item before retrying. Changes saved orientation for future loads and returns a compact receipt, not full history. Does not refresh the attached brief or compact the conversation. Size/age or a merge alone do not warrant maintenance; never run an extra cleanup turn.",
+    parameters: object({ id, revision, reason: str(), consult_on_demand_decisions: Type.Optional(Type.Array(id, { maxItems: 80, uniqueItems: true })), consult_on_demand_artifacts: Type.Optional(Type.Array(id, { maxItems: 200, uniqueItems: true })), restore_decisions: Type.Optional(Type.Array(id, { maxItems: 80, uniqueItems: true })), restore_artifacts: Type.Optional(Type.Array(id, { maxItems: 200, uniqueItems: true })), evidence: Type.Optional(evidenceSchema), current_state: retiredCurrentState, references: Type.Optional(strings), retire_artifacts: Type.Optional(Type.Array(id, { maxItems: 200, uniqueItems: true })) }),
     outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
     async execute(_callId, params, signal, _onUpdate, ctx) {
       const { id: todoId, revision: expected, ...input } = params;
       const updated = await tighten(root, todoId, expected, input as TighteningInput, signal);
       observe(updated); acknowledge(ctx, todoId);
-      return result({ id: todoId, revision: updated.todo.revision, context_policy: updated.todo.context_policy, dependency: updated.dependency, context_refreshed: false });
+      const evidenceIds = (input.evidence?.add ?? []).map((_, ordinal) => evidenceId(todoId, expected, ordinal));
+      return result({ id: todoId, revision: updated.todo.revision, ...(evidenceIds.length ? { evidence_ids: evidenceIds } : {}), context_policy: updated.todo.context_policy, dependency: updated.dependency, context_refreshed: false });
     },
   });
   pi.registerTool({
@@ -467,7 +478,7 @@ export default function todoExtension(pi: ExtensionAPI) {
         }
         if (command === "tighten") {
           if (!selected) throw new Error("No todo attached");
-          pi.sendUserMessage("Review the active todo and parent with todo get, then use todo_tighten only if verified progress makes context redundant. Keep active rules, approvals, unresolved constraints, completion evidence and relevant research/design visible. Retire only artifacts no longer governing remaining work, not automatically on merge; hide/restore records without deleting them; visibility is reversible, overwritten text has no recovery guarantee; do not change direction or begin further work. If no meaningful tightening is justified, explain briefly without writing."); return;
+          pi.sendUserMessage("Review the active todo and parent with todo get, then use todo_tighten only if verified progress makes context redundant. Keep active rules, approvals, unresolved constraints, completion evidence and relevant research/design visible. Retire only artifacts no longer governing remaining work, not automatically on merge; hide/restore records without deleting them; curate evidence through add/update/remove by ID, enumerating every removal even for bulk clear/replacement and consolidating explicitly at capacity; never write current_state or reconstruct whole evidence lists; visibility is reversible, edited/removed text has no recovery guarantee; do not change direction or begin further work. If no meaningful tightening is justified, explain briefly without writing."); return;
         }
         if (command === "leave") {
           if (selected && !acknowledged && ctx.hasUI && !await ctx.ui.confirm("Detach without another checkpoint?", "Changes already checkpointed remain saved. If recent discoveries are not saved, cancel and run /todo checkpoint first.")) return;

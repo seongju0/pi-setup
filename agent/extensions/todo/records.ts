@@ -11,12 +11,12 @@ export type Provenance = {
   in_active_context: boolean; inactive_reasons: string[];
   hidden?: boolean; approval?: "draft" | "approved"; supersedes?: string; superseded_by?: string; resolved?: boolean;
 };
-type RecordText = Provenance & { source_kind: RecordKind; index?: number; record_id?: string; text: string };
+type RecordText = Provenance & { source_kind: RecordKind; index?: number; record_id?: string; evidence_id?: string; text: string };
 
 /** The exact literal text searched and read, without labels or policy text mixed into it. */
 export function recordTexts(todo: Todo): RecordText[] {
   return [
-    ...todo.current_state.evidence.map((text, index) => ({ source_kind: "evidence" as const, index, text, in_active_context: true, inactive_reasons: [] })),
+    ...todo.current_state.evidence.map((record, index) => ({ source_kind: "evidence" as const, index, evidence_id: record.id, text: record.text, in_active_context: true, inactive_reasons: [] })),
     ...todo.references.map((text, index) => ({ source_kind: "reference" as const, index, text, in_active_context: true, inactive_reasons: [] })),
     ...todo.decisions.map(decision => {
       const hidden = todo.context_policy?.consult_on_demand_decisions.includes(decision.id) ?? false;

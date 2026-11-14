@@ -1,12 +1,13 @@
 import { mutate, rootPath } from "./storage.ts";
-import { applyChanges, validate, type Changes, type ContextPolicy } from "./state.ts";
+import { applyChanges, rejectRetiredCurrentState, validate, type Changes, type ContextPolicy } from "./state.ts";
 
-export type TighteningInput = { reason: string; consult_on_demand_decisions?: string[]; consult_on_demand_artifacts?: string[]; restore_decisions?: string[]; restore_artifacts?: string[]; retire_artifacts?: string[] } & Pick<Changes, "current_state" | "references">;
+export type TighteningInput = { reason: string; consult_on_demand_decisions?: string[]; consult_on_demand_artifacts?: string[]; restore_decisions?: string[]; restore_artifacts?: string[]; retire_artifacts?: string[] } & Pick<Changes, "evidence" | "references">;
 export async function tighten(root: string, id: string, revision: number, input: TighteningInput, signal?: AbortSignal) {
+  rejectRetiredCurrentState(input);
   root = await rootPath(root);
   return mutate(root, id, revision, todo => {
-    const { current_state, references, retire_artifacts = [], restore_decisions = [], restore_artifacts = [], consult_on_demand_decisions = [], consult_on_demand_artifacts = [], reason } = input;
-    const changes = Object.fromEntries(Object.entries({ current_state, references }).filter(([, value]) => value !== undefined));
+    const { evidence, references, retire_artifacts = [], restore_decisions = [], restore_artifacts = [], consult_on_demand_decisions = [], consult_on_demand_artifacts = [], reason } = input;
+    const changes = Object.fromEntries(Object.entries({ evidence, references }).filter(([, value]) => value !== undefined));
     const next = applyChanges(todo, changes);
     for (const artifactId of retire_artifacts) {
       const artifact = next.artifacts.find(a => a.id === artifactId);

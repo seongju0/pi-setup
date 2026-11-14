@@ -6,18 +6,21 @@ export type Decision = { id: string; summary: string; rationale: string; approva
 export type Question = { id: string; text: string; resolution?: string };
 export type Artifact = { id: string; title: string; kind: string; path: string; description: string; lifecycle: "current" | "reference" | "superseded"; required: boolean; applies_to: string[] };
 export type ContextPolicy = { consult_on_demand_decisions: string[]; consult_on_demand_artifacts: string[]; reason: string };
+export type Evidence = { id: string; text: string };
+export type EvidenceChanges = { add?: string[]; update?: Evidence[]; remove?: string[] };
 export type Todo = {
-  version: 1; id: string; type: "simple" | "project"; title: string; outcome: string;
+  version: 2; id: string; type: "simple" | "project"; title: string; outcome: string;
   status: Status; revision: number; created_at: string; updated_at: string;
-  current_state: { evidence: string[]; summary?: string }; // Legacy summary is read-only.
+  current_state: { evidence: Evidence[]; summary?: string }; // Legacy summary is read-only.
   decisions: Decision[]; open_questions: Question[]; depends_on: string[]; next_actions?: string[]; // Legacy actions are read-only.
   references: string[]; artifacts: Artifact[];
   context_policy?: ContextPolicy;
   linear?: { url: string; coverage: "whole" | "partial"; status?: string; status_type?: string; refreshed_at?: string };
-  last_checkpoint?: { key: string; digest: string; session_id: string; at: string };
+  last_checkpoint?: { key: string; digest: string; session_id: string; at: string; base_revision?: number };
 };
+type LegacyTodo = Omit<Todo, "version" | "current_state"> & { version: 1; current_state: { evidence: string[]; summary?: string } };
 export type Changes = Partial<Pick<Todo, "title" | "outcome" | "status" | "depends_on" | "references">> & {
-  current_state?: { evidence: string[] };
+  evidence?: EvidenceChanges;
   decisions?: Array<Omit<Decision, "id"> & { id?: string }>;
   questions?: Array<{ id?: string; text: string; resolution?: string }>;
   linear?: { url: string; coverage: "whole" | "partial" };
@@ -42,7 +45,31 @@ export function linearUrl(url: string): string {
   if (parsed.protocol !== "https:" || parsed.hostname !== "linear.app" || parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash || !/^\/[^/]+\/issue\/[A-Z][A-Z0-9]*-\d+\/[^/]+\/?$/.test(parsed.pathname)) throw new Error("Use a full https://linear.app/<workspace>/issue/<ID>/<slug> URL");
   return parsed.href;
 }
-export function validate(todo: Todo): Todo {
+function derivedId(...parts: Array<string | number>): string {
+  const hex = createHash("sha256").update(parts.join(":")).digest("hex").slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+export function evidenceId(todoId: string, baseRevision: number, addOrdinal: number): string {
+  return derivedId(todoId, "evidence", baseRevision, addOrdinal);
+}
+export function rejectRetiredCurrentState(input: unknown) {
+  if (input && typeof input === "object" && Object.hasOwn(input, "current_state")) throw new Error("current_state whole-list writes are retired and never applied; use evidence {add, update:[{id,text}], remove:[id]} with IDs from todo get.");
+}
+function validateEvidence(rows: unknown): asserts rows is Evidence[] {
+  if (!Array.isArray(rows)) throw new Error("Expected evidence records");
+  if (rows.length > 30) throw new Error(`Evidence holds at most 30 records; this change leaves ${rows.length}. Remove or consolidate entries by ID in the same change.`);
+  for (const row of rows) { keys(row, ["id", "text"]); requireId(row.id); text(row.text); }
+  if (new Set(rows.map(row => row.id)).size !== rows.length) throw new Error("Duplicate evidence IDs");
+}
+export function validate(source: Todo | LegacyTodo): Todo {
+  if (source.version !== 1 && source.version !== 2) throw new Error("Unsupported todo schema version");
+  requireId(source.id);
+  let todo: Todo;
+  if (source.version === 1) {
+    keys(source.current_state, ["summary", "evidence"]); strings(source.current_state.evidence);
+    if (source.current_state.summary !== undefined) text(source.current_state.summary, 3000, true);
+    todo = { ...structuredClone(source), version: 2, current_state: { ...source.current_state, evidence: source.current_state.evidence.map((text, index) => ({ id: derivedId(source.id, "legacy-evidence", index, text), text })) } };
+  } else todo = source;
   // Read compatibility only: retain legacy constraints as unresolved questions, never as completed prerequisites.
   const legacy = todo as Todo & { blockers?: string[] };
   if (legacy.blockers !== undefined || (todo.status as string) === "blocked" || todo.depends_on === undefined) {
@@ -52,20 +79,17 @@ export function validate(todo: Todo): Todo {
     const notes = [...(old.blockers ?? [])];
     if ((todo.status as string) === "blocked") { todo.status = "todo"; notes.push("Legacy blocked status: review preserved constraints and model prerequisites before starting work."); }
     for (const [index, note] of notes.entries()) {
-      const hex = createHash("sha256").update(`${todo.id}:legacy-constraint:${index}:${note}`).digest("hex").slice(0, 32);
-      const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      const id = derivedId(todo.id, "legacy-constraint", index, note);
       if (!todo.open_questions.some(question => question.id === id)) todo.open_questions.push({ id, text: note });
     }
     delete old.blockers; todo.depends_on ??= [];
   }
   keys(todo, ["version", "id", "type", "title", "outcome", "status", "revision", "created_at", "updated_at", "current_state", "decisions", "open_questions", "depends_on", "next_actions", "references", "artifacts", "context_policy", "linear", "last_checkpoint"]);
-  if (todo.version !== 1) throw new Error("Unsupported todo schema version");
-  requireId(todo.id);
   if (!["simple", "project"].includes(todo.type) || !statuses.includes(todo.status)) throw new Error("Invalid todo type/status");
   text(todo.title, 300); text(todo.outcome, 3000);
   if (!Number.isSafeInteger(todo.revision) || todo.revision < 1) throw new Error("Invalid revision");
   for (const value of [todo.created_at, todo.updated_at]) if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new Error("Invalid timestamp");
-  keys(todo.current_state, ["summary", "evidence"]); if (todo.current_state.summary !== undefined) text(todo.current_state.summary, 3000, true); strings(todo.current_state.evidence);
+  keys(todo.current_state, ["summary", "evidence"]); if (todo.current_state.summary !== undefined) text(todo.current_state.summary, 3000, true); validateEvidence(todo.current_state.evidence);
   if (todo.next_actions !== undefined) strings(todo.next_actions);
   strings(todo.references);
   strings(todo.depends_on, 100); todo.depends_on.forEach(requireId);
@@ -109,22 +133,38 @@ export function validate(todo: Todo): Todo {
     if (todo.linear.refreshed_at !== undefined && !Number.isFinite(Date.parse(todo.linear.refreshed_at))) throw new Error("Invalid Linear refresh timestamp");
   }
   if (todo.last_checkpoint) {
-    keys(todo.last_checkpoint, ["key", "digest", "session_id", "at"]); text(todo.last_checkpoint.key, 200); text(todo.last_checkpoint.digest, 64); text(todo.last_checkpoint.session_id, 200);
+    keys(todo.last_checkpoint, ["key", "digest", "session_id", "at", "base_revision"]);
+    if (todo.last_checkpoint.base_revision !== undefined && (!Number.isSafeInteger(todo.last_checkpoint.base_revision) || todo.last_checkpoint.base_revision < 1)) throw new Error("Invalid checkpoint base revision");
+    text(todo.last_checkpoint.key, 200); text(todo.last_checkpoint.digest, 64); text(todo.last_checkpoint.session_id, 200);
     if (!Number.isFinite(Date.parse(todo.last_checkpoint.at))) throw new Error("Invalid checkpoint timestamp");
   }
   return todo;
 }
 export function createTodo(type: Todo["type"], title: string, outcome: string): Todo {
   const now = new Date().toISOString();
-  return validate({ version: 1, id: randomUUID(), type, title, outcome, status: "todo", revision: 1, created_at: now, updated_at: now, current_state: { evidence: [] }, decisions: [], open_questions: [], depends_on: [], references: [], artifacts: [] });
+  return validate({ version: 2, id: randomUUID(), type, title, outcome, status: "todo", revision: 1, created_at: now, updated_at: now, current_state: { evidence: [] }, decisions: [], open_questions: [], depends_on: [], references: [], artifacts: [] });
 }
 export function applyChanges(todo: Todo, changes: Changes): Todo {
-  keys(changes, ["title", "outcome", "status", "current_state", "depends_on", "references", "decisions", "questions", "linear", "approval_evidence"]);
+  rejectRetiredCurrentState(changes);
+  keys(changes, ["title", "outcome", "status", "evidence", "depends_on", "references", "decisions", "questions", "linear", "approval_evidence"]);
   if (changes.approval_evidence !== undefined) text(changes.approval_evidence, 1000);
   if (changes.status !== undefined && !statuses.includes(changes.status)) throw new Error("Invalid status; waiting is derived from depends_on");
-  if (changes.current_state !== undefined) { keys(changes.current_state, ["evidence"]); strings(changes.current_state.evidence); }
   const next = structuredClone(todo);
-  if (changes.current_state !== undefined) next.current_state = { ...next.current_state, evidence: [...changes.current_state.evidence] };
+  if (changes.evidence !== undefined) {
+    const edit = changes.evidence;
+    keys(edit, ["add", "update", "remove"]);
+    if (edit.add !== undefined) strings(edit.add);
+    if (edit.remove !== undefined) { strings(edit.remove); edit.remove.forEach(requireId); }
+    if (edit.update !== undefined) {
+      if (!Array.isArray(edit.update) || edit.update.length > 30) throw new Error("Expected at most 30 evidence updates");
+      for (const row of edit.update) { keys(row, ["id", "text"]); requireId(row.id); text(row.text); }
+    }
+    const targets = [...(edit.update ?? []).map(row => row.id), ...(edit.remove ?? [])];
+    if (new Set(targets).size !== targets.length) throw new Error("Each evidence ID may be updated or removed once per change.");
+    for (const id of targets) if (!todo.current_state.evidence.some(row => row.id === id)) throw new Error(`Evidence ID not found at this revision: ${id}; read the todo again.`);
+    next.current_state.evidence = next.current_state.evidence.filter(row => !edit.remove?.includes(row.id)).map(row => ({ ...row, text: edit.update?.find(patch => patch.id === row.id)?.text ?? row.text }));
+    next.current_state.evidence.push(...(edit.add ?? []).map((text, ordinal) => ({ id: evidenceId(todo.id, todo.revision, ordinal), text })));
+  }
   for (const key of ["title", "outcome", "status", "depends_on", "references"] as const) if (changes[key] !== undefined) (next as any)[key] = structuredClone(changes[key]);
   if (changes.linear) next.linear = changes.linear.url === todo.linear?.url ? { ...todo.linear, ...changes.linear } : { ...changes.linear };
   for (const patch of changes.decisions ?? []) {
@@ -143,7 +183,7 @@ export function applyChanges(todo: Todo, changes: Changes): Todo {
   }
   if (changes.approval_evidence) {
     const receipt = `User approval: ${changes.approval_evidence}`;
-    if (changes.outcome !== undefined && changes.outcome !== todo.outcome && !next.current_state.evidence.includes(receipt)) next.current_state.evidence.push(receipt);
+    if (changes.outcome !== undefined && changes.outcome !== todo.outcome && !next.current_state.evidence.some(row => row.text === receipt)) next.current_state.evidence.push({ id: derivedId(todo.id, "approval-receipt", todo.revision), text: receipt });
   }
   return validate(next);
 }

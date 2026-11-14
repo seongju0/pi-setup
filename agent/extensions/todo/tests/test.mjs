@@ -5,9 +5,10 @@ import { mkdtemp, readFile, rm, mkdir, symlink, writeFile, stat, readdir } from 
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { configuredRoot, create, list, locate, checkpoint, mutate, withStoreLock } from "../storage.ts";
-import { applyChanges, createTodo, needsApproval, validate } from "../state.ts";
+import { configuredRoot, create, digest, list, locate, checkpoint, mutate, withStoreLock } from "../storage.ts";
+import { applyChanges, createTodo, evidenceId, needsApproval, validate } from "../state.ts";
 import { readArtifact, saveArtifact } from "../artifacts.ts";
+import { tighten } from "../tightening.ts";
 import { restoreSelection, resumeBundle, selectionEntry, checkpointMessage } from "../session.ts";
 import { compactionEntry, acknowledgementEntry, pendingReconciliation, preservationType, preservationState } from "../compaction.ts";
 
@@ -96,7 +97,7 @@ try {
   const interrupted = join(project.directory, "todos", `${createTodo("simple", "Interrupted", "No").id}.creating`);
   await mkdir(interrupted);
   assert.equal((await list(root)).length, 3);
-  const changes = { current_state: { evidence: ["Converter tested", "https://example.com/pr/1"] }, decisions: [{ summary: "Preserve IDs", rationale: "Avoid duplicate work", approval: "draft", evidence: [] }] };
+  const changes = { evidence: { add: ["Converter tested", "https://example.com/pr/1"] }, decisions: [{ summary: "Preserve IDs", rationale: "Avoid duplicate work", approval: "draft", evidence: [] }] };
   const updated = await checkpoint(root, child.todo.id, 1, changes, "checkpoint-1", "test-session");
   assert.equal(updated.todo.revision, 2);
   assert.equal(updated.todo.status, "in_progress");
@@ -181,11 +182,10 @@ try {
   assert.deepEqual(await list(root), beforeSearchErrors);
   assert.deepEqual(blank.stored, []);
   await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "invalid", changes: { arbitrary: true } }), /validation|additional/i);
-  for (const retired of [{ current_state: { summary: "Retired narrative", evidence: [] } }, { next_actions: ["Retired instruction"] }]) {
-    await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "retired", changes: retired }), /validation|additional/i);
-    await assert.rejects(blank.call("todo_tighten", { id: child.todo.id, revision: 3, reason: "Maintenance", ...retired }), /validation|additional/i);
-    assert.throws(() => applyChanges(updated.todo, retired), /unknown/);
-  }
+  const retiredActions = { next_actions: ["Retired instruction"] };
+  await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "retired", changes: retiredActions }), /validation|additional/i);
+  await assert.rejects(blank.call("todo_tighten", { id: child.todo.id, revision: 3, reason: "Maintenance", ...retiredActions }), /validation|additional/i);
+  assert.throws(() => applyChanges(updated.todo, retiredActions), /unknown/);
   await assert.rejects(blank.call("todo_artifact", { action: "upsert", id: child.todo.id, revision: 3, ...metadata, kind: "runbook", applies_to: [] }), /validation/i);
   await assert.rejects(blank.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "unapproved", changes: { outcome: "New outcome" } }), /sign-off/);
   await assert.rejects(pi.call("todo_checkpoint", { id: child.todo.id, revision: 3, key: "declined", changes: { outcome: "New outcome" } }), /sign-off/);
@@ -210,7 +210,7 @@ try {
   assert.deepEqual(await author.call("todo", { action: "status" }), { selected: null }); // Discovery/inspection is not attachment.
   await author.call("todo", { action: "resume", selector: candidates[0].id });
   const finding = "Verified identifier ownership; deployment remains unverified.";
-  const preserved = await author.call("todo_checkpoint", { id: owner.todo.id, revision: 1, key: "identifier-owner", changes: { current_state: { evidence: [finding] } } });
+  const preserved = await author.call("todo_checkpoint", { id: owner.todo.id, revision: 1, key: "identifier-owner", changes: { evidence: { add: [finding] } } });
   const temporaryDesign = join(scratch, "temporary-design.md");
   const designBody = "# Durable design\n\nRetain the original record identifier during conversion.\n";
   await writeFile(temporaryDesign, designBody);
@@ -229,7 +229,7 @@ try {
   const durableBody = await fresh.call("todo_artifact", { action: "read", id: owner.todo.id, artifact_id: designed.todo.artifacts[0].id });
   assert.equal(durableBody.body, designBody);
   assert.equal(durableBody.complete, true);
-  const externalUpdate = await author.call("todo_checkpoint", { id: owner.todo.id, revision: designed.todo.revision, key: "external-nuance", changes: { current_state: { evidence: [finding, "External discovery: preserve imported aliases too."] } } });
+  const externalUpdate = await author.call("todo_checkpoint", { id: owner.todo.id, revision: designed.todo.revision, key: "external-nuance", changes: { evidence: { add: ["External discovery: preserve imported aliases too."] } } });
   const beforeStatus = await readFile(join(owner.directory, "todo.json"), "utf8");
   const beforeStatusEntries = fresh.stored.length;
   const attachment = await fresh.call("todo", { action: "status" });
@@ -275,7 +275,7 @@ try {
       { type: "message", id: "recap-tool", timestamp: "2026-01-01T00:04:00Z", message: { role: "toolResult", toolName: "bash", toolCallId: "failed-test", isError: true, content: [{ type: "text", text: "Test failed: " + "x".repeat(1500) }] } },
       { type: "custom_message", id: "recap-hidden", display: false, content: "PRIVATE_RECAP_NOTE" },
     );
-    recapSaved = await checkpoint(root, recapChild.todo.id, (await locate(root, recapChild.todo.id)).todo.revision, { current_state: { evidence: ["External finding: deployment remains unverified"] } }, "recap-external", "another-session");
+    recapSaved = await checkpoint(root, recapChild.todo.id, (await locate(root, recapChild.todo.id)).todo.revision, { evidence: { remove: recapSaved.todo.current_state.evidence.map(row => row.id), add: ["External finding: deployment remains unverified"] } }, "recap-external", "another-session");
     const recapFiles = await Promise.all([recapParent, recapSaved, recapPrereq].map(row => readFile(join(row.directory, "todo.json"), "utf8")));
     const requiredRecapPath = join(recapParent.directory, recapParent.todo.artifacts[0].path);
     const requiredRecapBody = await readFile(requiredRecapPath, "utf8");
@@ -285,7 +285,7 @@ try {
     assert.equal(recapData.selected, recapChild.todo.id);
     assert.deepEqual(recapData.scopes.map(scope => scope.context.id), [recapProject.todo.id, recapChild.todo.id]);
     assert.equal(recapData.scopes[1].context.revision, recapSaved.todo.revision);
-    assert.deepEqual(recapData.scopes[1].context.current_state.evidence, ["External finding: deployment remains unverified"]);
+    assert.deepEqual(recapData.scopes[1].context.current_state.evidence.map(row => row.text), ["External finding: deployment remains unverified"]);
     assert.equal(recapData.scopes[1].context.decisions[0].approval, "draft");
     assert.deepEqual(recapData.scopes.flatMap(scope => scope.context.artifacts.map(a => a.title)), ["Scoped recap design"]);
     assert.deepEqual(recapData.scopes[0].context.artifacts[0].read, { tool: "todo_artifact", arguments: { action: "read", id: recapProject.todo.id, artifact_id: recapParent.todo.artifacts[0].id } });
@@ -354,7 +354,7 @@ try {
   assert.equal(empty.todo.status, "todo");
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.revision, 1);
   const activityChanges = {
-    current_state: { evidence: ["Research saved. Delivery still depends on preparation.", "Native report: preparation remains unverified"] },
+    evidence: { add: ["Research saved. Delivery still depends on preparation.", "Native report: preparation remains unverified"] },
     decisions: [{ summary: "Preserve exact owner IDs", rationale: "Avoid routing to an unrelated owner", approval: "draft", evidence: ["Discovery: ID spelling is significant"] }],
     questions: [{ text: "Does preparation cover the revised scope?" }],
   };
@@ -364,7 +364,7 @@ try {
   assert.deepEqual(started.todo, (await locate(activityRoot, activityChild.todo.id)).todo);
   const startedReceipt = JSON.parse(startedRaw.content[0].text);
   assert.deepEqual(startedReceipt, {
-    saved: true, revision: 3, decision_ids: [started.todo.decisions[0].id], question_ids: [started.todo.open_questions[0].id], status: "in_progress",
+    saved: true, revision: 3, evidence_ids: started.todo.current_state.evidence.map(row => row.id), decision_ids: [started.todo.decisions[0].id], question_ids: [started.todo.open_questions[0].id], status: "in_progress",
     updated_parent: { id: activityProject.todo.id, revision: 2, status: "in_progress" }, dependency: started.dependency, affected_dependents: started.affected_dependents,
   });
   assert.ok(startedRaw.content[0].text.length < JSON.stringify(started).length / 2);
@@ -380,7 +380,7 @@ try {
   assert.deepEqual(replay.todo, started.todo);
   assert.deepEqual(replayRaw.details, replay);
   assert.deepEqual(JSON.parse(replayRaw.content[0].text), {
-    saved: true, revision: startedReceipt.revision, decision_ids: startedReceipt.decision_ids, question_ids: startedReceipt.question_ids,
+    saved: true, revision: startedReceipt.revision, evidence_ids: startedReceipt.evidence_ids, decision_ids: startedReceipt.decision_ids, question_ids: startedReceipt.question_ids,
   });
   assert.equal((await locate(activityRoot, activityProject.todo.id)).todo.revision, 2);
   await activity.emit("context", { messages: activity.stored.filter(entry => entry.type === "custom_message") });
@@ -428,7 +428,7 @@ try {
     const terminalParent = await activity.call("todo_checkpoint", { id: parent.todo.id, revision: parent.todo.revision, key: `parent-${status}`, changes: { status } });
     const child = await locate(activityRoot, artifactChild.todo.id);
     const terminalChild = await activity.call("todo_checkpoint", { id: child.todo.id, revision: child.todo.revision, key: `child-${status}`, changes: { status } });
-    const noted = await activity.call("todo_checkpoint", { id: child.todo.id, revision: terminalChild.todo.revision, key: `note-${status}`, changes: { current_state: { evidence: ["Keep historical notes"] } } });
+    const noted = await activity.call("todo_checkpoint", { id: child.todo.id, revision: terminalChild.todo.revision, key: `note-${status}`, changes: { evidence: { add: ["Keep historical notes"] } } });
     const archived = await activity.call("todo_artifact", { action: "upsert", id: child.todo.id, revision: noted.todo.revision, ...activityMetadata, artifact_id: artifactStarted.todo.artifacts[0].id, body: `# ${status} notes` });
     assert.equal(archived.todo.status, status);
     assert.deepEqual((await locate(activityRoot, parent.todo.id)).todo, terminalParent.todo);
@@ -439,7 +439,7 @@ try {
   const recallRoot = join(scratch, "recall-todos");
   const recallParent = await create(recallRoot, "project", "Operations", "Own care coordination");
   const recallChild = await create(recallRoot, "simple", "Referral routing", "Remember referral ownership", recallParent.todo.id);
-  await checkpoint(recallRoot, recallChild.todo.id, 1, { status: "done", current_state: { evidence: ["Routing delivery verified"] } }, "recall-done", "test");
+  await checkpoint(recallRoot, recallChild.todo.id, 1, { status: "done", evidence: { add: ["Routing delivery verified"] } }, "recall-done", "test");
   const phraseProject = await create(recallRoot, "project", "Improve referral routing", "Own deployment");
   await create(recallRoot, "simple", "Telemetry", "Count events", phraseProject.todo.id);
   const goalOnly = await create(recallRoot, "simple", "Handoff", "Own referral routing");
@@ -491,13 +491,13 @@ try {
   // Hierarchical picker: structured lifecycle + Goal and scope, hidden IDs, no attachment while browsing.
   const pickerRoot = join(scratch, "picker-todos");
   const pickerProject = await create(pickerRoot, "project", "Rollout", "Complete a safe production rollout");
-  const pickerSaved = await checkpoint(pickerRoot, pickerProject.todo.id, 1, { status: "in_progress", current_state: { evidence: ["UAT complete; telemetry sign-off pending."] } }, "picker-status", "test");
+  const pickerSaved = await checkpoint(pickerRoot, pickerProject.todo.id, 1, { status: "in_progress", evidence: { add: ["UAT complete; telemetry sign-off pending."] } }, "picker-status", "test");
   // An existing record may still carry retired fields; browsing must not render them as status or instructions.
   pickerSaved.todo.current_state.summary = "LEGACY_NARRATIVE";
   pickerSaved.todo.next_actions = ["LEGACY_INSTRUCTION"];
   await writeFile(join(pickerSaved.directory, "todo.json"), JSON.stringify(pickerSaved.todo));
   const pickerChild = await create(pickerRoot, "simple", "Migrate 你好", "Convert unresolved work without replaying side effects", pickerProject.todo.id);
-  await checkpoint(pickerRoot, pickerChild.todo.id, 1, { current_state: { evidence: ["Dry run verified 你好. " + "Awaiting operator review. ".repeat(30)] } }, "picker-child-status", "test");
+  await checkpoint(pickerRoot, pickerChild.todo.id, 1, { evidence: { add: ["Dry run verified 你好. " + "Awaiting operator review. ".repeat(30)] } }, "picker-child-status", "test");
   await create(pickerRoot, "simple", "Observe", "Verify runtime delivery", pickerProject.todo.id);
   for (const [title, status] of [["Waiting", "todo"], ["Old work", "done"], ["Dropped", "canceled"]]) {
     const item = await create(pickerRoot, "simple", title, "Historical or gated work", pickerProject.todo.id);
@@ -577,10 +577,10 @@ try {
   const activeRoot = await create(completedRoot, "simple", "Active work", "Keep active work separate");
   const doneProject = await create(completedRoot, "project", "Archived project", "Remember the delivery");
   const doneChild = await create(completedRoot, "simple", "Delivered child", "Remember implementation details", doneProject.todo.id);
-  await checkpoint(completedRoot, doneChild.todo.id, 1, { status: "done", current_state: { evidence: ["Child delivery verified. Retain the investigation notes."] } }, "done-child", "test");
-  await checkpoint(completedRoot, doneProject.todo.id, 2, { status: "done", current_state: { evidence: ["Project delivered. Preserved context is available for questions."] } }, "done-project", "test");
+  await checkpoint(completedRoot, doneChild.todo.id, 1, { status: "done", evidence: { add: ["Child delivery verified. Retain the investigation notes."] } }, "done-child", "test");
+  await checkpoint(completedRoot, doneProject.todo.id, 2, { status: "done", evidence: { add: ["Project delivered. Preserved context is available for questions."] } }, "done-project", "test");
   const doneStandalone = await create(completedRoot, "simple", "Saved answer", "Recall an earlier answer");
-  await checkpoint(completedRoot, doneStandalone.todo.id, 1, { status: "done", current_state: { evidence: ["Earlier answer verified and saved."] } }, "done-answer", "test");
+  await checkpoint(completedRoot, doneStandalone.todo.id, 1, { status: "done", evidence: { add: ["Earlier answer verified and saved."] } }, "done-answer", "test");
   const completedBefore = await list(completedRoot);
   process.env.PI_TODO_PATH = completedRoot;
   const completedPicker = await instance([], true);
@@ -783,7 +783,7 @@ try {
     await smallModel.emit("model_select", { model });
     assertStats(smallModel, statsBrief, model?.api === "pi-virtual" ? undefined : model?.contextWindow);
   }
-  await smallModel.call("todo_checkpoint", { id: statsTodo.todo.id, revision: 2, key: "stats-update", changes: { current_state: { evidence: ["New understanding ".repeat(100)] } } });
+  await smallModel.call("todo_checkpoint", { id: statsTodo.todo.id, revision: 2, key: "stats-update", changes: { evidence: { add: ["New understanding ".repeat(100)] } } });
   assertStats(smallModel, statsBrief);
   await smallModel.call("todo", { action: "refresh" });
   const [refreshedStats] = await smallModel.emit("context", { messages: repeatSmall.messages });
@@ -973,7 +973,7 @@ try {
       else {
         requests.push(structuredClone(context)); providerTurns++;
         if (phase === "preserve" && providerTurns === 1) { content = [{ type: "text", text: "A meaningful finding is ready to preserve." }]; input = 81000; }
-        else if (phase === "preserve" && providerTurns === 2) { content = [{ type: "toolCall", id: "sdk-checkpoint", name: "codemode", arguments: { code: `text(await tools.todo_checkpoint(${JSON.stringify({ id: sdkTodo.todo.id, revision: 1, key: "sdk-pass", changes: { current_state: { evidence: ["Synthetic provider exercised the real checkpoint; no live-model compliance claim."] } } })}));` } }]; input = 82000; }
+        else if (phase === "preserve" && providerTurns === 2) { content = [{ type: "toolCall", id: "sdk-checkpoint", name: "codemode", arguments: { code: `text(await tools.todo_checkpoint(${JSON.stringify({ id: sdkTodo.todo.id, revision: 1, key: "sdk-pass", changes: { evidence: { add: ["Synthetic provider exercised the real checkpoint; no live-model compliance claim."] } } })}));` } }]; input = 82000; }
         else if (phase === "jump" && providerTurns === 1) { content = [{ type: "toolCall", id: "sdk-large-read", name: "read", arguments: { path: largeRead } }]; input = 79000; }
         else { content = [{ type: "text", text: "Continue within the existing assignment." }]; input = phase === "preserve" ? 83000 : 1000; }
       }
@@ -996,7 +996,7 @@ try {
     assert.equal(providerTurns, 3, "boundary continuation plus natural tool follow-up, no competing run");
     assert(JSON.stringify(requests[1]).includes("Before further substantive work"));
     assert.equal((await locate(root, sdkTodo.todo.id)).todo.revision, 2);
-    assert.match((await locate(root, sdkTodo.todo.id)).todo.current_state.evidence[0], /real checkpoint/);
+    assert.match((await locate(root, sdkTodo.todo.id)).todo.current_state.evidence[0].text, /real checkpoint/);
     assert.equal(preservationState(sdkManager.getBranch(), sdkTodo.todo.id).outcome, "checkpoint");
     assert(sdkManager.getBranch().some(entry => entry.type === "message" && entry.message.role === "toolResult" && entry.message.nestedCalls?.calls.some(call => call.name === "todo_checkpoint")), "checkpoint ran through real nested codemode execution");
     assert.equal(sdkManager.getBranch().filter(entry => entry.customType === preservationType).length, 1);
@@ -1019,7 +1019,7 @@ try {
   const autoChanges = { outcome: "User-approved outcome", approval_evidence: "User: use the revised outcome", decisions: [{ summary: "Keep history readable", rationale: "Preserve evidence", approval: "approved", evidence: [] }], questions: [{ text: "Exact owner ID is not yet verified" }, { text: "Was the old scope approved?", resolution: "No; user approved only the revised outcome" }] };
   const autoSaved = await auto.call("todo_checkpoint", { id: autonomousTodo.todo.id, revision: 1, key: "existing-approval", changes: autoChanges });
   assert.ok(autoSaved.todo.decisions[0].evidence.includes("User approval: User: use the revised outcome"));
-  assert.ok(autoSaved.todo.current_state.evidence.includes("User approval: User: use the revised outcome"));
+  assert.ok(autoSaved.todo.current_state.evidence.some(row => row.text === "User approval: User: use the revised outcome"));
   const approvalReplay = await auto.callRaw("todo_checkpoint", { id: autonomousTodo.todo.id, revision: 1, key: "existing-approval", changes: autoChanges });
   assert.deepEqual(approvalReplay.structuredContent.todo, autoSaved.todo);
   assert.deepEqual(approvalReplay.details, approvalReplay.structuredContent);
@@ -1031,7 +1031,7 @@ try {
 
   // Tightening changes durable orientation without rewriting the current conversation.
   const optional = await auto.call("todo_artifact", { action: "upsert", id: autonomousTodo.todo.id, revision: 2, title: "Old implementation detail", kind: "research", description: "No longer needed to orient", lifecycle: "current", required: false, applies_to: [], body: "HISTORICAL_DETAIL" });
-  const hide = { id: autonomousTodo.todo.id, revision: 3, reason: "Verified progress makes earlier detail redundant; active outcome retained", consult_on_demand_decisions: [autoSaved.todo.decisions[0].id], consult_on_demand_artifacts: [optional.todo.artifacts[0].id], current_state: { evidence: ["Verified progress"] }, references: [] };
+  const hide = { id: autonomousTodo.todo.id, revision: 3, reason: "Verified progress makes earlier detail redundant; active outcome retained", consult_on_demand_decisions: [autoSaved.todo.decisions[0].id], consult_on_demand_artifacts: [optional.todo.artifacts[0].id], evidence: { remove: autoSaved.todo.current_state.evidence.map(row => row.id), add: ["Verified progress"] }, references: [] };
   const tightened = await auto.call("todo_tighten", hide);
   assert.equal(tightened.revision, 4);
   assert.equal(tightened.todo, undefined); assert.equal(tightened.context_refreshed, false);
@@ -1067,7 +1067,7 @@ try {
   const [resetTightenedContext] = await auto.emit("context", { messages: tightenedContext.messages });
   assert.doesNotMatch(resetTightenedContext.messages.find(m => m.customType === "todo-context-v1").content, /Keep history readable/);
   await assert.rejects(auto.call("todo_tighten", hide), /Stale/);
-  await assert.rejects(auto.call("todo_tighten", { ...hide, revision: 4, consult_on_demand_decisions: [project.todo.id] }), /existing record IDs/);
+  await assert.rejects(auto.call("todo_tighten", { ...hide, revision: 4, evidence: { add: ["Invalid visibility must roll back this finding"] }, consult_on_demand_decisions: [project.todo.id] }), /existing record IDs/);
   const restored = await auto.call("todo_tighten", { id: autonomousTodo.todo.id, revision: 4, reason: "Earlier decision is relevant again", restore_decisions: [autoSaved.todo.decisions[0].id], restore_artifacts: [optional.todo.artifacts[0].id] });
   assert.equal(restored.revision, 5);
   const restoredActive = await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "active" });
@@ -1129,14 +1129,14 @@ try {
   const [refreshedBoundary] = await boundarySession.emit("context", { messages: boundarySession.stored.filter(entry => entry.type === "custom_message") });
   assert.equal(noteMessages().length, 2);
   assert.equal(refreshedBoundary.messages.filter(message => message.customType === "todo-context-v1").length, 1);
-  const external = await checkpoint(root, boundaryTodo.todo.id, 2, { current_state: { evidence: ["External finding"] } }, "external-write", "other-session");
+  const external = await checkpoint(root, boundaryTodo.todo.id, 2, { evidence: { add: ["External finding"] } }, "external-write", "other-session");
   const [drift] = await boundarySession.emit("context", { messages: refreshedBoundary.messages });
   assert.match(drift.messages.at(-1).content, /changed outside this session/);
   assert.equal(noteMessages().length, 2);
   const driftCount = () => boundarySession.stored.filter(entry => entry.customType === "todo-context-drift-v1").length;
   await boundarySession.emit("context", { messages: drift.messages }); assert.equal(driftCount(), 1);
   await boundarySession.call("todo", { action: "get", selector: boundaryTodo.todo.id, view: "active" });
-  const own = await boundarySession.call("todo_checkpoint", { id: boundaryTodo.todo.id, revision: external.todo.revision, key: "own-write", changes: { current_state: { evidence: ["Verify the finding"] } } });
+  const own = await boundarySession.call("todo_checkpoint", { id: boundaryTodo.todo.id, revision: external.todo.revision, key: "own-write", changes: { evidence: { update: [{ id: external.todo.current_state.evidence[0].id, text: "Verify the finding" }] } } });
   assert.equal(own.todo.revision, 4);
   const [ownContext] = await boundarySession.emit("context", { messages: drift.messages });
   assert.ok(ownContext.messages.some(message => message.customType === "todo-context-drift-v1")); // Reading/acknowledging does not erase delivered input.
@@ -1190,12 +1190,12 @@ try {
   assert.deepEqual((await providerPayload(secondCache.messages)).content.slice(0, firstPayload.content.length), firstPayload.content);
   assert.deepEqual(thinking(secondCache.messages), ["signature-1"]);
   assert.equal(cached.stored.filter(entry => entry.customType === "todo-context-size-warning-v1").length, 0);
-  const externalCache = await checkpoint(root, cacheTodo.todo.id, 1, { current_state: { evidence: ["External finding"] } }, "cache-external", "other-session");
+  const externalCache = await checkpoint(root, cacheTodo.todo.id, 1, { evidence: { add: ["External finding"] } }, "cache-external", "other-session");
   const [withDrift] = await cached.emit("context", { messages: historyMessages(cached) });
   const driftPayload = await providerPayload(withDrift.messages);
   respond(cached, 2); cached.flush();
   await cached.call("todo", { action: "get", selector: cacheTodo.todo.id, view: "active" });
-  await cached.call("todo_checkpoint", { id: cacheTodo.todo.id, revision: externalCache.todo.revision, key: "cache-local", changes: { current_state: { evidence: ["Verify external finding"] } } });
+  await cached.call("todo_checkpoint", { id: cacheTodo.todo.id, revision: externalCache.todo.revision, key: "cache-local", changes: { evidence: { update: [{ id: externalCache.todo.current_state.evidence[0].id, text: "Verify external finding" }] } } });
   const [acknowledgedDrift] = await cached.emit("context", { messages: historyMessages(cached) });
   assert.deepEqual((await providerPayload(acknowledgedDrift.messages)).content.slice(0, driftPayload.content.length), driftPayload.content);
   assert.equal(cached.stored.filter(entry => entry.customType === "todo-context-v1").length, 1);
@@ -1216,7 +1216,7 @@ try {
   const [jointNext] = await joint.emit("context", { messages: historyMessages(joint) });
   assert.deepEqual((await providerPayload(jointNext.messages)).content.slice(0, jointFirstPayload.content.length), jointFirstPayload.content);
   assert.equal(joint.stored.filter(entry => entry.customType === "task-context-v1").length, 1);
-  await checkpoint(root, jointTodo.todo.id, 1, { current_state: { evidence: ["External finding"] } }, "joint-external", "other-session");
+  await checkpoint(root, jointTodo.todo.id, 1, { evidence: { add: ["External finding"] } }, "joint-external", "other-session");
   // Reproduce the old task hook's ephemeral user tail. It must not become the new drift notice's anchor.
   const ephemeralTail = { role: "user", content: "Current session tasks (transient)", timestamp: 424242 };
   await joint.emit("context", { messages: [...historyMessages(joint), ephemeralTail] });
@@ -1368,7 +1368,7 @@ try {
   await depsSession.emit("context", { messages: depsLoads() });
   assert.match(depsSession.stored.findLast(entry => entry.customType === "todo-context-drift-v1").content, /"review_required":true/);
   await assert.rejects(set(cDone, { status: "done" }, "reassert"), /waiting on/);
-  const note = await set(cDone, { current_state: { evidence: ["Review reopened prerequisite"] } }, "note");
+  const note = await set(cDone, { evidence: { add: ["Review reopened prerequisite"] } }, "note");
   const aCanceled = await set(aReopened, { status: "canceled" }, "cancel");
   assert.ok(aCanceled.affected_dependents.every(row => !row.dependencies_satisfied && row.review_required));
   const bCanceled = await set(bDone, { status: "canceled" }, "cancel-dependent");
@@ -1397,6 +1397,12 @@ try {
 
   // Legacy constraints survive read compatibility, with stable IDs, without changing canonical files on read.
   const legacy = createTodo("simple", "Legacy", "Preserve constraints");
+  legacy.version = 1; legacy.id = "11111111-1111-1111-1111-111111111111";
+  legacy.current_state.evidence = Array.from({ length: 30 }, (_, index) => index < 2 ? "Duplicate qualification: launch remains unverified" : `Finding ${index}: owner identifiers are verbatim; deployment remains unverified`);
+  legacy.references = ["pi-history:v1/synthetic-session/legacy-finding"];
+  legacy.decisions = [{ id: child.todo.id, summary: "Preserve qualification", rationale: "Do not infer launch permission", approval: "draft", evidence: ["Independent decision evidence"] }];
+  const oldEvidenceInput = { current_state: { evidence: [] } };
+  legacy.last_checkpoint = { key: "pre-upgrade", digest: digest(oldEvidenceInput), session_id: "test-session", at: legacy.updated_at };
   legacy.current_state.summary = "Preserved legacy narrative";
   legacy.next_actions = ["Preserved legacy instruction"];
   legacy.artifacts = [{ id: legacy.id, title: "Legacy runbook", kind: "runbook", path: `artifacts/${legacy.id}-1.md`, description: "Preserved document", lifecycle: "current", required: false, applies_to: [] }];
@@ -1404,15 +1410,82 @@ try {
   const migrated = validate(legacy);
   assert.deepEqual(migrated.depends_on, []); assert.equal(migrated.status, "todo");
   assert.equal("blockers" in migrated, false);
-  assert.ok(migrated.open_questions.some(question => question.text === legacy.blockers[0]));
+  assert.ok(migrated.open_questions.some(question => question.text === legacy.blockers[0] && question.id === "7c2fc7e6-cb20-2ea3-be17-80ed89d24b70")); // Published legacy-constraint identity remains byte-for-byte stable.
   assert.deepEqual(validate(legacy), migrated); assert.deepEqual(validate(migrated), migrated);
   assert.equal(legacy.status, "blocked"); assert.ok(legacy.blockers);
-  const legacyRoot = join(scratch, "legacy-todos"); const legacyDirectory = join(legacyRoot, legacy.id);
+  const legacyRoot = join(scratch, "legacy-todos");
+  const legacyParent = await create(legacyRoot, "project", "Legacy grounding", "Preserve original qualifications");
+  const legacyDirectory = join(legacyParent.directory, "todos", legacy.id);
   await mkdir(join(legacyDirectory, "artifacts"), { recursive: true }); const legacyFile = join(legacyDirectory, "todo.json");
   await writeFile(join(legacyDirectory, legacy.artifacts[0].path), "Preserved legacy document\n");
   const legacyBytes = JSON.stringify(legacy); await writeFile(legacyFile, legacyBytes);
   await list(legacyRoot); assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
-  const savedLegacy = await checkpoint(legacyRoot, legacy.id, 1, { current_state: { evidence: ["Model preserved prerequisites"] } }, "legacy-context", "test");
+  process.env.PI_TODO_PATH = legacyRoot;
+  const curator = await instance([], true);
+  const legacyRecords = migrated.current_state.evidence;
+  assert.equal(migrated.version, 2);
+  assert.notEqual(legacyRecords[0].id, legacyRecords[1].id);
+  assert.deepEqual(legacyRecords.map(row => row.text), legacy.current_state.evidence);
+  assert.deepEqual(migrated.last_checkpoint, legacy.last_checkpoint);
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const read = await curator.call("todo", { action: "get", selector: legacy.id, view: "full" });
+    assert.deepEqual(read.todo.current_state.evidence, legacyRecords);
+    assert.deepEqual(read.todo.artifacts, legacy.artifacts);
+    await curator.call("todo", { action: "resume", selector: legacy.id });
+    const bundle = await resumeBundle(legacyRoot, legacy.id);
+    assert.deepEqual(bundle.scopes.at(-1).context.current_state.evidence, legacyRecords);
+    const hits = await curator.call("todo_knowledge", { query: "Duplicate qualification", selector: legacy.id });
+    assert.deepEqual(hits.results.map(row => row.evidence_id), legacyRecords.slice(0, 2).map(row => row.id));
+    const page = await curator.call("todo_record", { id: legacy.id, expected_revision: 1, source_kind: "evidence", index: 0 });
+    assert.equal(page.evidence_id, legacyRecords[0].id); assert.equal(page.body, legacyRecords[0].text);
+  }
+  assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
+  const manifestBytes = async () => Promise.all((await list(legacyRoot)).map(row => readFile(join(row.directory, "todo.json"), "utf8")));
+  const beforeRejectedEvidence = await manifestBytes();
+  const unknownEvidenceId = project.todo.id;
+  for (const edit of [{ add: ["No room"] }, { update: [{ id: unknownEvidenceId, text: "Unknown" }] }, { remove: [unknownEvidenceId] }, { update: [{ id: legacyRecords[0].id, text: "One" }], remove: [legacyRecords[0].id] }, { update: [{ id: legacyRecords[0].id, text: "One" }, { id: legacyRecords[0].id, text: "Two" }] }]) {
+    await assert.rejects(curator.call("todo_checkpoint", { id: legacy.id, revision: 1, key: "invalid-evidence", changes: { evidence: edit } }), /30 records.*31|ID not found|once per change/);
+    assert.deepEqual(await manifestBytes(), beforeRejectedEvidence);
+  }
+  for (const edit of [{ add: [""] }, { update: [{ id: "invalid", text: "No" }] }, { update: [{ id: legacyRecords[0].id, text: "x".repeat(2001) }] }, { update: [{ id: legacyRecords[0].id, text: "No", extra: true }] }, { remove: [legacyRecords[0].id, legacyRecords[0].id] }]) {
+    await assert.rejects(curator.call("todo_checkpoint", { id: legacy.id, revision: 1, key: "malformed-evidence", changes: { evidence: edit } }), /validation/i);
+    assert.throws(() => applyChanges(migrated, { evidence: edit }), /text|ID|fields|once per change/);
+  }
+  for (const rows of [["schema2 must not normalize strings"], [legacyRecords[0], "mixed"], [{ id: legacyRecords[0].id, text: "", extra: true }], [legacyRecords[0], legacyRecords[0]]]) {
+    const malformedCanonical = { ...migrated, current_state: { evidence: rows } };
+    assert.throws(() => validate(malformedCanonical), /fields|text|Duplicate/);
+    await writeFile(legacyFile, JSON.stringify(malformedCanonical));
+    await assert.rejects(curator.call("todo", { action: "get", selector: legacy.id }), /Cannot read/);
+    await writeFile(legacyFile, legacyBytes);
+  }
+  assert.throws(() => validate({ ...migrated, last_checkpoint: { ...migrated.last_checkpoint, base_revision: 0 } }), /base revision/);
+  // Rejection-only schema slots reach the same guard, including a formerly successful key.
+  curator.confirmations.push(true);
+  for (const value of [{ evidence: ["Old one-note write"] }, { evidence: [] }, null]) {
+    const changes = { current_state: value, outcome: "Would otherwise ask approval" };
+    await assert.rejects(curator.call("todo_checkpoint", { id: legacy.id, revision: 1, key: "retired-field", changes }), /whole-list writes are retired/);
+    await assert.rejects(curator.call("todo_tighten", { id: legacy.id, revision: 1, reason: "Old shape", current_state: value }), /whole-list writes are retired/);
+    assert.throws(() => applyChanges(migrated, changes), /whole-list writes are retired/);
+    await assert.rejects(checkpoint(legacyRoot, legacy.id, 1, changes, "direct-retired", "test-session"), /whole-list writes are retired/);
+    await assert.rejects(tighten(legacyRoot, legacy.id, 1, { reason: "Old shape", current_state: value }), /whole-list writes are retired/);
+  }
+  assert.throws(() => applyChanges(migrated, { current_state: undefined }), /whole-list writes are retired/);
+  for (const write of [() => curator.call("todo_checkpoint", { id: legacy.id, revision: 1, key: "pre-upgrade", changes: oldEvidenceInput }), () => checkpoint(legacyRoot, legacy.id, 1, oldEvidenceInput, "pre-upgrade", "test-session")]) await assert.rejects(write(), /whole-list writes are retired/);
+  assert.deepEqual(curator.confirmations, [true]);
+  assert.deepEqual(await manifestBytes(), beforeRejectedEvidence);
+  // Final capacity includes automatically attributed approval, with no partial parent update.
+  const approvedAtCap = { outcome: "Approved revised goal", approval_evidence: "User: use this exact revised goal" };
+  await assert.rejects(curator.call("todo_checkpoint", { id: legacy.id, revision: 1, key: "approval-cap", changes: approvedAtCap }), /30 records.*31/);
+  assert.deepEqual(await manifestBytes(), beforeRejectedEvidence);
+  const targetedRaw = await curator.callRaw("todo_checkpoint", { id: legacy.id, revision: 1, key: "legacy-target", changes: { evidence: { update: [{ id: legacyRecords[2].id, text: "Targeted qualification: launch remains unverified" }] } } });
+  const targeted = targetedRaw.structuredContent;
+  assert.deepEqual(targeted.todo.current_state.evidence.filter(row => row.id !== legacyRecords[2].id), legacyRecords.filter(row => row.id !== legacyRecords[2].id));
+  assert.equal(JSON.parse(await readFile(legacyFile, "utf8")).version, 2);
+  const savedLegacyRaw = await curator.callRaw("todo_checkpoint", { id: legacy.id, revision: targeted.todo.revision, key: "legacy-context", changes: { evidence: { remove: [legacyRecords[3].id], add: ["Model preserved prerequisites"] } } });
+  const savedLegacy = savedLegacyRaw.structuredContent;
+  assert.deepEqual(savedLegacy.evidence_ids, [evidenceId(legacy.id, targeted.todo.revision, 0)]);
+  assert.deepEqual(JSON.parse(savedLegacyRaw.content[0].text).evidence_ids, savedLegacy.evidence_ids);
+  assert.deepEqual(savedLegacy.todo.current_state.evidence.slice(0, -1), targeted.todo.current_state.evidence.filter(row => row.id !== legacyRecords[3].id));
   assert.deepEqual(savedLegacy.todo.open_questions, migrated.open_questions);
   assert.equal("blockers" in JSON.parse(await readFile(legacyFile, "utf8")), false);
   assert.deepEqual(JSON.parse(await readFile(legacyFile, "utf8")).depends_on, []);
@@ -1425,11 +1498,11 @@ try {
   assert.equal((await legacySession.call("todo_artifact", { action: "read", id: legacy.id, artifact_id: legacy.id })).body, "Preserved legacy document\n");
   const legacyActive = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "active" });
   const legacyResumed = await resumeBundle(legacyRoot, legacy.id);
-  for (const context of [legacyActive.todo, legacyResumed.scopes[0].context]) {
+  for (const context of [legacyActive.todo, legacyResumed.scopes.at(-1).context]) {
     assert.equal("summary" in context.current_state, false);
     assert.equal("next_actions" in context, false);
   }
-  await legacySession.call("todo_tighten", { id: legacy.id, revision: savedLegacy.todo.revision, reason: "Consolidate knowledge", current_state: { evidence: ["Verified knowledge"] } });
+  await legacySession.call("todo_tighten", { id: legacy.id, revision: savedLegacy.todo.revision, reason: "Consolidate knowledge", evidence: { update: [{ id: savedLegacy.todo.current_state.evidence[0].id, text: "Verified knowledge" }] } });
   const legacyTightened = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "full" });
   assert.equal(legacyTightened.todo.current_state.summary, legacy.current_state.summary);
   assert.deepEqual(legacyTightened.todo.next_actions, legacy.next_actions);
@@ -1439,16 +1512,85 @@ try {
   assert.equal(reclassified.todo.artifacts[0].path, legacy.artifacts[0].path);
   assert.equal(reclassified.todo.current_state.summary, legacy.current_state.summary);
   assert.deepEqual(reclassified.todo.next_actions, legacy.next_actions);
+  const qualifiedHit = (await legacySession.call("todo_knowledge", { query: "Targeted qualification", selector: legacy.id })).results[0];
+  assert.equal(qualifiedHit.evidence_id, legacyRecords[2].id);
+  const { tool: qualifiedTool, ...qualifiedArgs } = qualifiedHit.read;
+  const qualifiedPage = await legacySession.call(qualifiedTool, qualifiedArgs);
+  assert.equal(qualifiedPage.evidence_id, legacyRecords[2].id);
+  assert.equal(qualifiedPage.body, "Targeted qualification: launch remains unverified");
+  const qualified = await legacySession.call("todo_checkpoint", { id: legacy.id, revision: reclassified.todo.revision, key: "qualify-from-search", changes: { evidence: { update: [{ id: qualifiedPage.evidence_id, text: "Targeted qualification: launch remains unverified; no permission inferred" }] } } });
+  const emptyEdits = await legacySession.call("todo_checkpoint", { id: legacy.id, revision: qualified.todo.revision, key: "empty-edits", changes: { evidence: { add: [], update: [], remove: [] } } });
+  assert.deepEqual(emptyEdits.todo.current_state.evidence, qualified.todo.current_state.evidence);
+  const approvalRaw = await legacySession.callRaw("todo_checkpoint", { id: legacy.id, revision: emptyEdits.todo.revision, key: "approval-with-space", changes: { ...approvedAtCap, evidence: { remove: [legacyRecords[4].id] } } });
+  const approvalAtCap = approvalRaw.structuredContent;
+  assert.equal(approvalAtCap.evidence_ids, undefined); // Automatic approval is not an explicit-add receipt.
+  const receiptRecord = approvalAtCap.todo.current_state.evidence.at(-1);
+  assert.equal(receiptRecord.text, `User approval: ${approvedAtCap.approval_evidence}`);
+  assert.deepEqual(approvalAtCap.todo.current_state.evidence.slice(0, -1), emptyEdits.todo.current_state.evidence.filter(row => row.id !== legacyRecords[4].id));
+  const curationBefore = await manifestBytes();
+  await assert.rejects(legacySession.call("todo_tighten", { id: legacy.id, revision: approvalAtCap.todo.revision, reason: "Invalid visibility rolls back curation", evidence: { remove: [receiptRecord.id] }, consult_on_demand_decisions: [unknownEvidenceId] }), /existing record IDs/);
+  assert.deepEqual(await manifestBytes(), curationBefore);
+  const hiddenCuration = await legacySession.call("todo_tighten", { id: legacy.id, revision: approvalAtCap.todo.revision, reason: "Explicit receipt removal and reversible visibility", evidence: { remove: [receiptRecord.id] }, consult_on_demand_decisions: [legacy.decisions[0].id] });
+  const restoredCuration = await legacySession.call("todo_tighten", { id: legacy.id, revision: hiddenCuration.revision, reason: "Restore governing qualification", evidence: { add: ["Replacement finding: deployment remains unverified"] }, restore_decisions: [legacy.decisions[0].id] });
+  assert.deepEqual(restoredCuration.evidence_ids, [evidenceId(legacy.id, hiddenCuration.revision, 0)]);
+  const freshCurator = await instance();
+  await freshCurator.call("todo", { action: "resume", selector: legacy.id });
+  const freshQualified = await resumeBundle(legacyRoot, legacy.id);
+  const freshRecords = freshQualified.scopes.at(-1).context.current_state.evidence;
+  assert.equal(freshRecords.length, 30);
+  assert.ok(freshRecords.some(row => row.id === qualifiedPage.evidence_id && row.text.includes("no permission inferred")));
+  const [freshQualificationContext] = await freshCurator.emit("context", { messages: [] });
+  assert.match(freshQualificationContext.messages.at(-1).content, /launch remains unverified; no permission inferred/);
+  const qualifiedRecap = await freshCurator.call("todo_recap", {});
+  assert.deepEqual(qualifiedRecap.scopes.at(-1).context.current_state.evidence, freshRecords);
+  for (const active of [freshQualified.scopes.at(-1).context, qualifiedRecap.scopes.at(-1).context]) {
+    assert.equal("summary" in active.current_state, false); assert.equal("next_actions" in active, false); assert.equal(active.last_checkpoint, undefined);
+  }
+  const beforeBulk = (await locate(legacyRoot, legacy.id)).todo;
+  const bulk = await freshCurator.call("todo_checkpoint", { id: legacy.id, revision: beforeBulk.revision, key: "enumerated-bulk", changes: { evidence: { remove: beforeBulk.current_state.evidence.map(row => row.id), add: ["Chosen consolidated qualification: deployment remains unverified"] } } });
+  for (const field of ["decisions", "open_questions", "references", "artifacts"]) assert.deepEqual(bulk.todo[field], beforeBulk[field]);
+  const cleared = await freshCurator.call("todo_checkpoint", { id: legacy.id, revision: bulk.todo.revision, key: "enumerated-clear", changes: { evidence: { remove: bulk.todo.current_state.evidence.map(row => row.id) } } });
+  assert.deepEqual(cleared.todo.current_state.evidence, []);
+  for (const field of ["decisions", "open_questions", "references", "artifacts"]) assert.deepEqual(cleared.todo[field], beforeBulk[field]);
+  // Replay IDs belong to the accepted base, even after curation removes one and advances the revision.
+  const replayInput = { evidence: { add: ["Original retry finding", "Original second finding"] } };
+  const replayBase = cleared.todo.revision;
+  const originalRaw = await freshCurator.callRaw("todo_checkpoint", { id: legacy.id, revision: replayBase, key: "stable-evidence-retry", changes: replayInput });
+  const original = originalRaw.structuredContent;
+  const originalIds = [evidenceId(legacy.id, replayBase, 0), evidenceId(legacy.id, replayBase, 1)];
+  assert.deepEqual(original.evidence_ids, originalIds);
+  assert.deepEqual(JSON.parse(originalRaw.content[0].text).evidence_ids, originalIds);
+  assert.equal(original.todo.last_checkpoint.base_revision, replayBase);
+  const immediateBytes = await manifestBytes();
+  assert.deepEqual((await freshCurator.call("todo_checkpoint", { id: legacy.id, revision: replayBase, key: "stable-evidence-retry", changes: replayInput })).evidence_ids, originalIds);
+  assert.deepEqual(await manifestBytes(), immediateBytes);
+  const curatedRaw = await freshCurator.callRaw("todo_tighten", { id: legacy.id, revision: original.todo.revision, reason: "Curation after checkpoint", evidence: { remove: [originalIds[0]], add: ["Later different finding"] } });
+  const curatedIds = [evidenceId(legacy.id, original.todo.revision, 0)];
+  assert.deepEqual(curatedRaw.structuredContent.evidence_ids, curatedIds);
+  assert.deepEqual(JSON.parse(curatedRaw.content[0].text).evidence_ids, curatedIds);
+  const curatedOwner = (await locate(legacyRoot, legacy.id)).todo;
+  assert.deepEqual(curatedOwner.last_checkpoint, original.todo.last_checkpoint);
+  const afterCuration = await manifestBytes();
+  const replayAfterCuration = await freshCurator.callRaw("todo_checkpoint", { id: legacy.id, revision: curatedOwner.revision, key: "stable-evidence-retry", changes: replayInput });
+  assert.deepEqual(replayAfterCuration.structuredContent.evidence_ids, originalIds);
+  assert.deepEqual(JSON.parse(replayAfterCuration.content[0].text).evidence_ids, originalIds);
+  assert.deepEqual(replayAfterCuration.structuredContent.todo, curatedOwner);
+  assert.ok(!curatedOwner.current_state.evidence.some(row => row.id === originalIds[0]));
+  assert.deepEqual(await manifestBytes(), afterCuration);
+  await assert.rejects(freshCurator.call("todo_checkpoint", { id: legacy.id, revision: curatedOwner.revision, key: "stable-evidence-retry", changes: { evidence: { add: ["Changed digest"] } } }), /different content/);
+  await assert.rejects(checkpoint(legacyRoot, legacy.id, curatedOwner.revision, replayInput, "stable-evidence-retry", "different-session"), /different content\/owner/);
+  await assert.rejects(freshCurator.call("todo_checkpoint", { id: legacy.id, revision: replayBase, key: "fresh-stale-evidence", changes: replayInput }), /Stale revision/);
+  assert.deepEqual(await manifestBytes(), afterCuration);
   process.env.PI_TODO_PATH = root;
 
   // Both former character ceilings accept full context, including reopen/refresh/compaction and updates.
   const largeState = { evidence: Array.from({ length: 12 }, (_, i) => `${i}:${"e".repeat(1900)}`) };
-  const largeChild = await checkpoint(root, child.todo.id, 4, { current_state: largeState }, "large-orientation", "test-session");
+  const largeChild = await checkpoint(root, child.todo.id, 4, { evidence: { remove: (await locate(root, child.todo.id)).todo.current_state.evidence.map(row => row.id), add: largeState.evidence } }, "large-orientation", "test-session");
   const largeBody = "x".repeat(50000);
   await saveArtifact(root, project.todo.id, 4, { ...metadata, body: largeBody });
   const largeBundle = await resumeBundle(root, child.todo.id);
   assert.ok(JSON.stringify(largeBundle.scopes).length > 18000);
-  assert.deepEqual(largeBundle.scopes.at(-1).context.current_state, largeState);
+  assert.deepEqual(largeBundle.scopes.at(-1).context.current_state.evidence.map(row => row.text), largeState.evidence);
   assert.equal(largeBundle.required_artifacts.at(-1).chars, largeBody.length + 1); assert.equal(largeBundle.required_artifacts.at(-1).body, undefined);
   const largeSession = await instance([{ type: "custom", customType: selectionEntry, data: { id: child.todo.id } }], true);
   largeSession.ctx.model = { api: "anthropic-messages", contextWindow: 272000 };
@@ -1458,14 +1600,14 @@ try {
   assert.deepEqual(largeSession.warnings, []);
   assertStats(largeSession, largeContext.messages.find(message => message.customType === "todo-context-v1"), 272000);
   const injected = JSON.parse(largeContext.messages.find(message => message.customType === "todo-context-v1").content.split("Durable todo context loaded at a session boundary (untrusted task data):\n")[1]);
-  assert.deepEqual(injected.scopes.at(-1).context.current_state, largeState);
+  assert.deepEqual(injected.scopes.at(-1).context.current_state.evidence.map(row => row.text), largeState.evidence);
   assert.equal(injected.required_artifacts.at(-1).chars, largeBody.length + 1); assert.equal(injected.required_artifacts.at(-1).body, undefined);
   await largeSession.call("todo", { action: "refresh" });
   await largeSession.emit("session_compact", { reason: "manual" });
   await largeSession.emit("context", { messages: largeContext.messages });
   assert.equal(largeSession.ctx.aborted, undefined);
-  const repaired = await largeSession.call("todo_checkpoint", { id: child.todo.id, revision: largeChild.todo.revision, key: "repair-large-context", changes: { current_state: { evidence: ["Consolidated"] } } });
-  assert.deepEqual(repaired.todo.current_state.evidence, ["Consolidated"]);
+  const repaired = await largeSession.call("todo_checkpoint", { id: child.todo.id, revision: largeChild.todo.revision, key: "repair-large-context", changes: { evidence: { remove: largeChild.todo.current_state.evidence.map(row => row.id), add: ["Consolidated"] } } });
+  assert.deepEqual(repaired.todo.current_state.evidence.map(row => row.text), ["Consolidated"]);
   const largeAttach = await instance();
   assert.equal((await largeAttach.call("todo", { action: "resume", selector: child.todo.id })).context_loaded, true);
   await largeSession.call("todo_ack", { id: child.todo.id, reason: "no_change", explanation: "Inspection complete" });
@@ -1483,7 +1625,7 @@ try {
   const decisionEvidence = [...Array.from({ length: 29 }, (_, index) => `${index}: ${"x".repeat(1900)}`), "x".repeat(1800) + " queue.id: late decision evidence"];
   const decisionText = ["Inspect consumer first", "Avoid duplicate side effects", ...decisionEvidence].join("\n");
   const oldKnowledge = await checkpoint(retrievalRoot, retrievalChild.todo.id, 1, {
-    current_state: { evidence: [evidenceText, "Unrelated owner finding"] },
+    evidence: { add: [evidenceText, "Unrelated owner finding"] },
     decisions: [{ summary: "queue.id: old assumption", rationale: "Earlier synthetic observation", approval: "draft", evidence: [] }],
     questions: [{ text: "queue.id: did the consumer run?", resolution: "Synthetic run only" }],
     references: ["pi-history:v1/synthetic-session/tool-result"],
@@ -1491,7 +1633,7 @@ try {
   const currentKnowledge = await checkpoint(retrievalRoot, retrievalChild.todo.id, 2, {
     status: "done", decisions: [{ summary: "Inspect consumer first", rationale: "Avoid duplicate side effects", approval: "draft", evidence: decisionEvidence, supersedes: oldKnowledge.todo.decisions[0].id }],
   }, "knowledge-current", "test");
-  await checkpoint(retrievalRoot, retrievalOther.todo.id, 1, { current_state: { evidence: ["queue.id: outside project"] } }, "knowledge-other", "test");
+  await checkpoint(retrievalRoot, retrievalOther.todo.id, 1, { evidence: { add: ["queue.id: outside project"] } }, "knowledge-other", "test");
   await saveArtifact(retrievalRoot, retrievalProject.todo.id, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.revision, { ...metadata, applies_to: [], required: false, body: "queue.id: parent-only research" });
   const pagedBody = (`Quoted \\\"line\\\" \\\\ newline\n🙂 `.repeat(3000) + "queue.id: exact document evidence").trim() + "\n";
   const documentOwner = await saveArtifact(retrievalRoot, retrievalChild.todo.id, currentKnowledge.todo.revision, { ...metadata, applies_to: [], required: false, body: pagedBody });
@@ -1623,7 +1765,7 @@ try {
   assert.equal(JSON.stringify(retrieval.stored), retrievalEntries);
   assert.equal((await locate(retrievalRoot, retrievalChild.todo.id)).todo.status, "done");
   const beforeReplacement = await locate(retrievalRoot, retrievalChild.todo.id);
-  await retrieval.call("todo_checkpoint", { id: retrievalChild.todo.id, revision: beforeReplacement.todo.revision, key: "replace-indexed-source", changes: { current_state: { evidence: ["Unrelated owner finding"] } } });
+  await retrieval.call("todo_checkpoint", { id: retrievalChild.todo.id, revision: beforeReplacement.todo.revision, key: "replace-indexed-source", changes: { evidence: { remove: [beforeReplacement.todo.current_state.evidence[0].id] } } });
   const replacementFiles = await Promise.all(retrievalFiles.map(path => readFile(path, "utf8")));
   const replacementEntries = JSON.stringify(retrieval.stored);
   await assert.rejects(retrieval.call("todo_record", evidenceArgs), /Owner revision changed/);

@@ -8,7 +8,7 @@ export type KnowledgeInput = { query: string; selector?: string; view?: "active"
 type Hit = Partial<Provenance> & {
   index?: number; match_field?: "body" | "metadata"; match_offset?: number;
   owner_id: string; owner_title: string; parent_id: string | null; owner_revision: number;
-  source_kind: string; record_id?: string; artifact_id?: string; artifact_version?: string;
+  source_kind: string; record_id?: string; evidence_id?: string; artifact_id?: string; artifact_version?: string;
   lifecycle?: string; excerpt: string; read: Record<string, unknown>;
 };
 type Match = { key: string; historical: boolean; hit: Hit };

@@ -257,11 +257,11 @@ All tools return structured data, usable through codemode. Writes require the cu
 `todo_checkpoint` and `todo_artifact upsert` return compact model-facing mutation receipts instead of echoing the manifest. They include success/revision plus necessary generated IDs, artifact paths and consequential automatic effects. Their full existing `details` and `structuredContent` remain available to codemode/programmatic callers. In codemode, await known successful writes without `text(result)` or otherwise printing the full returned value; use it programmatically for generated IDs, revision and effects, and print only newly needed information. Errors remain visible. `todo_linear` similarly displays only `{saved:true, id, revision, linear}` (the newly fetched snapshot), while preserving its full programmatic result. Manifest reads retain their existing structured access/filtering contract and explicitly report oversized display truncation. Artifact reads instead return an explicit page in both model text and structured output; there is no hidden full body behind a truncated page.
 
 - `todo`: `status`, `list`, `search`, `get`, `create`, `resume`, `refresh`, `leave`. `status` returns `{selected: null}` or `{selected: {id, title, type, status, revision, parent_id, linear?, depends_on}}`, using current saved metadata. It does not load/refresh a brief, observe revisions, acknowledge work, attach, or write state. A newer reported revision does not mean the attached brief was refreshed. An unavailable attached item fails visibly, rather than reporting no attachment. This read-only tool action is separate from the existing `/todo status` command, which changes local progress. `list` returns flat summaries with goal/scope, parent labels and dependencies/readiness; it excludes done/canceled items unless `include_done:true`. `search` requires `query`, searches all statuses by default and accepts optional exact `status`/`type` filters. Both return candidates without attaching them; `get` defaults to `view:"full"`, including historical decisions/questions/artifact metadata and current downstream effects. Use `view:"active"` for routine grounding with the same visibility filters as resume; it preserves rationale/evidence and unresolved questions without returning hidden or superseded history. It reads one item, not the whole parent/child resume bundle. `create` accepts optional `depends_on` IDs. `create` does not attach; `resume` attaches and records a scoped context message, returning a compact receipt rather than duplicating the bundle in its tool result. `refresh` reloads the attachment without starting work.
-- `todo_checkpoint`: `{id, revision, key, changes}`. Related changes commit together. Scalar/list context fields replace their field. Decisions/questions upsert by stable IDs; omit ID to create. Resolutions and supersession preserve old records. `changes: {}` is a valid no-change checkpoint.
-- `todo_tighten`: `{id, revision, reason, consult_on_demand_decisions?, consult_on_demand_artifacts?, restore_decisions?, restore_artifacts?, retire_artifacts?, current_state?, references?}`. Hide lists add to the saved visibility policy and restore lists remove from it, so partial calls never unhide earlier items. No decisions or documents are deleted. `current_state` accepts only `{evidence: [...]}`. Optional field replacements do not create history artifacts; previous text is not guaranteed recoverable. Required artifacts cannot be hidden; optional `retire_artifacts` demotes listed artifacts to `required:false, lifecycle:"reference"` (still readable). Retire only material no longer governing remaining work; a merge alone is not a retirement instruction. Missing/duplicate IDs and stale revisions fail. The agent checks semantic relevance and retains active rules/permissions/constraints. Editing a hidden decision makes it visible again; updating an artifact body or making it required also clears its explicit exclusion (lifecycle still controls reference visibility). Changes saved orientation for future loads and returns a compact receipt with `context_refreshed:false`. It does not reload the attached brief or compact the conversation. After an uncertain response, read the manifest before retrying.
+- `todo_checkpoint`: `{id, revision, key, changes}`. Related changes commit together. Scalars, references and dependencies replace their field; evidence uses explicit `add/update/remove` edits by ID. Decisions/questions upsert by stable IDs; omit ID to create. Resolutions and supersession preserve old records. `changes: {}` is a valid no-change checkpoint.
+- `todo_tighten`: `{id, revision, reason, consult_on_demand_decisions?, consult_on_demand_artifacts?, restore_decisions?, restore_artifacts?, retire_artifacts?, evidence?, references?}`. Hide lists add to the saved visibility policy and restore lists remove from it, so partial calls never unhide earlier items. No decisions or documents are deleted. `evidence` uses the same ID-addressed edits as checkpoint, atomic with visibility changes; references retain whole-list replacement. `current_state` is retired and always rejected. Edited/removed text has no history or recovery guarantee. Required artifacts cannot be hidden; optional `retire_artifacts` demotes listed artifacts to `required:false, lifecycle:"reference"` (still readable). Retire only material no longer governing remaining work; a merge alone is not a retirement instruction. Missing/duplicate IDs and stale revisions fail. The agent checks semantic relevance and retains active rules/permissions/constraints. Editing a hidden decision makes it visible again; updating an artifact body or making it required also clears its explicit exclusion (lifecycle still controls reference visibility). Changes saved orientation for future loads and returns a compact receipt with `context_refreshed:false`. It does not reload the attached brief or compact the conversation. After an uncertain response, read the manifest before retrying.
 - `todo_ack`: `{id, reason: "no_change" | "needs_approval", explanation}`. Acknowledges only the attached item. `needs_approval` also preserves the pending question in durable context; it does not change established decisions.
 - `todo_knowledge`: `{query, selector?, view?, limit?, cursor?}` searches saved evidence, decisions, questions, references and catalog-referenced artifact text. Case-insensitive literal substrings preserve punctuation; titles/goals remain the existing discovery tool's responsibility. Default active visibility reuses resume rules; full includes retained historical records but not retired summary/action fields or old body revisions. No selector searches the whole store, a project includes direct children, and a simple selector searches only its own records. Completed owners remain searchable. Results include bounded excerpts, owner revision, record/document identity, approval/lifecycle where applicable, explicit read targets and `next_cursor`. Continue with unchanged query/scope/view. Searches are live, not snapshots; changed cursor sources require restart. Missing eligible artifacts fail visibly. No attachment, status, visibility or context writes.
-- `todo_record`: `{id, expected_revision, source_kind, index?, record_id?, view?, offset?, limit?}` reads one evidence/reference/decision/question, not its whole owner. Evidence/reference require a nonnegative `index` and no `record_id`; decisions/questions require their stable `record_id` and no index. `expected_revision` is mandatory even on page 0: indexed lists can shift, and every page must use the same content version. A changed owner revision fails; search again or restart with the current revision. Default `view:"active"` refuses hidden/superseded/resolved records; explicit `full` reads retained content. The `body` is exactly the searched string: evidence/reference unchanged, decision summary/rationale/evidence joined with newlines, question text/resolution joined with a newline. Pages default to offset 0 and limit 12000 (maximum), with UTF-16 offsets, `next_offset`, `total_chars`, `complete` and a complete continuation `read` target when more exists. Text, details and structured output contain only the same page. Provenance includes `in_active_context`, `inactive_reasons`, and relevant hidden/approval/supersedes/superseded_by/resolved fields. Hidden does not mean obsolete; approved does not mean current. Reads never attach, refresh, acknowledge, observe or write.
+- `todo_record`: `{id, expected_revision, source_kind, index?, record_id?, view?, offset?, limit?}` reads one evidence/reference/decision/question, not its whole owner. Evidence/reference require a nonnegative `index` and no `record_id`; decisions/questions require their stable `record_id` and no index. `expected_revision` is mandatory even on page 0: indexed lists can shift, and every page must use the same content version. A changed owner revision fails; search again or restart with the current revision. Default `view:"active"` refuses hidden/superseded/resolved records; explicit `full` reads retained content. Evidence pages and knowledge hits include `evidence_id` metadata for precise edits; read addressing remains index plus revision, not an evidence-ID read variant. The `body` is exactly the searched string: evidence `record.text`/reference unchanged, decision summary/rationale/evidence joined with newlines, question text/resolution joined with a newline. Pages default to offset 0 and limit 12000 (maximum), with UTF-16 offsets, `next_offset`, `total_chars`, `complete` and a complete continuation `read` target when more exists. Text, details and structured output contain only the same page. Provenance includes `in_active_context`, `inactive_reasons`, and relevant hidden/approval/supersedes/superseded_by/resolved fields. Hidden does not mean obsolete; approved does not mean current. Reads never attach, refresh, acknowledge, observe or write.
 - `todo_artifact`: `read` by item/artifact ID, or `upsert` with current item revision and complete catalog metadata. Reads accept `offset` (default 0), `limit` (default/max 12000) and `expected_version`. They return `body`, `version`, `offset`, `next_offset`, `total_chars`, `complete`, item/artifact IDs; model-facing plain text and structured output contain the same page. Offsets count JavaScript UTF-16 string positions. Follow `next_offset` with the returned `expected_version` until complete. Nonzero offsets require that version; changed artifact paths require restart at offset 0. The token is the immutable current body path, so metadata-only edits do not invalidate it. Offset at EOF returns an empty complete page; beyond EOF fails. This API reads current documents, not arbitrary old revision paths. Small document callers retain `body`; large structured callers must now follow pages. Include body to create/update Markdown; omit body for metadata-only updates to an existing artifact. Upserts require `kind:"research"` or `kind:"design"`; other persisted kinds remain readable but cannot be authored through this interface. Save only substantive research/mental models or design specifications/plans under the memory contract. General runbooks, QA and stage reports belong with native owners. Several current documents can coexist for distinct responsibilities. Update the owning document rather than accumulating amendments. Mark a replaced document superseded explicitly; artifacts do not become approved just because they exist. Reference/superseded artifact metadata is consult-on-demand through get, not part of normal orientation.
 - `todo_linear`: `{id, revision, target_status?}`. Omit target for a read-only snapshot refresh.
 
@@ -273,7 +273,7 @@ Find knowledge:  todo_knowledge → excerpts + provenance → positioned record/
 Verify source:   session_history → original journal text, not current execution permission
 ```
 
-Save decisive journal pointers in existing evidence/reference strings using the reference returned by `session_history`, for example `pi-history:v1/<encoded-session-id>/<encoded-entry-id>`. Pair the pointer with the finding and its qualifications; do not archive every tool receipt. No persisted schema changes or automatic backfill are needed. The separate [session-history extension](../session-history/README.md) searches current ancestry and resolves exact references within the same project's session directory. Missing/deleted sources or other projects fail without broader discovery. Retrieved history enters the selected provider's context; it is neither a redaction boundary nor proof of current state. Thinking, system messages, hidden extension state and image bytes are excluded.
+Save decisive journal pointers in evidence record text or reference strings using the reference returned by `session_history`, for example `pi-history:v1/<encoded-session-id>/<encoded-entry-id>`. Pair the pointer with the finding and its qualifications; do not archive every tool receipt. Journal pointers need no additional persisted fields or automatic backfill. The separate [session-history extension](../session-history/README.md) searches current ancestry and resolves exact references within the same project's session directory. Missing/deleted sources or other projects fail without broader discovery. Retrieved history enters the selected provider's context; it is neither a redaction boundary nor proof of current state. Thinking, system messages, hidden extension state and image bytes are excluded.
 
 Knowledge targets pin nonartifact reads to owner revision and start 80 characters before the first match in the exact record text. Artifact hits prefer a body match: `match_field:"body"` and body-relative `match_offset` lead to a version-pinned read 80 characters before the match. Title/description-only or metadata-boundary matches use `match_field:"metadata"` and offset 0, without claiming a body offset. `in_active_context` and `inactive_reasons` distinguish hidden, superseded, resolved and reference material as applicable; artifact lifecycle stays explicit. Request offset 0 for earlier context or follow continuation for more. Full search does not mean all retained material is obsolete.
 
@@ -317,12 +317,101 @@ await tools.todo_checkpoint({
   revision: item.todo.revision,
   key: "dry-run-verified-1", // Reuse only for the identical retry payload.
   changes: {
-    current_state: {evidence: [
+    evidence: {add: [
       "An external write may complete before a local timeout; inspect actual state before retrying. Source: <report URL/path>"
     ]}
   }
 });
 ```
+
+### Evidence records and explicit edits
+
+Canonical stored/read data (schema 2), including get, active orientation and recap:
+
+```js
+{ version: 2, current_state: { evidence: [
+  { id: "<generated-record-id>", text: "Launch remains unverified; no permission inferred." }
+] } /* other owner fields */ }
+```
+
+This is **read data**, not a write request. Both checkpoint's `changes.evidence` and
+tightening's top-level `evidence` accept the same strict edit object:
+
+```js
+// Write request: unaffected records and positions stay exact.
+{ evidence: {
+  add: ["A newly verified qualification"],
+  update: [{ id: "<existing-id>", text: "Corrected qualification; uncertainty retained" }],
+  remove: ["<another-existing-id>"]
+} }
+```
+
+Omission, `{}` and empty edit arrays preserve evidence; they never clear it.
+Unknown IDs require a fresh read. Each existing ID may be targeted once across
+update/remove, never both. Adds have no caller-supplied IDs. Surviving records
+keep IDs/order; updates keep position; additions append in input order.
+Duplicate text is allowed as distinct records. Text is preserved verbatim.
+
+Bulk work still enumerates **every** deletion; no clear/replace flag exists:
+
+```js
+// Clear deliberately:
+{ evidence: { remove: ["<id-1>", "<id-2>", "<id-3>"] } }
+// Replace those same records deliberately:
+{ evidence: { remove: ["<id-1>", "<id-2>", "<id-3>"], add: ["Chosen replacement"] } }
+// Consolidate into a retained record:
+{ evidence: { update: [{ id: "<id-1>", text: "Consolidated qualified finding" }], remove: ["<id-2>", "<id-3>"] } }
+```
+
+At most 30 records with nonempty text of at most 2000 characters each; edit
+arrays also allow at most 30 entries. Capacity is checked **after** all edits,
+including automatic `User approval: <quote>` attribution for an actual outcome
+change. At capacity, remove/consolidate explicitly in the same request; a lone
+add fails without manifest effects. Exact receipt text is deduplicated; ordinary
+texts are not. Approval receipts can themselves be edited/removed by ID.
+References and nested decision evidence remain string arrays with their existing
+semantics. There is no automatic eviction, summarization, truncation or history.
+
+New explicit IDs are deterministic from owner ID, accepted base revision and
+zero-based add ordinal. Automatic approval uses a separate namespace.
+Checkpoint stores the accepted `last_checkpoint.base_revision`. Optional
+`evidence_ids` in compact native **and full structured** checkpoint results name
+only explicit additions in input order. A last-key identical replay derives them
+from that saved base, even if a later tightening removed a record or the retry
+supplies a newer revision; full state/effects remain the current projection.
+Old receipts without a saved base omit the field. Digest/key/session conflict
+rules and key-before-revision replay order are unchanged. Tightening reports
+explicit-add IDs from its checked revision and has no checkpoint-key replay:
+read actual state after an uncertain result.
+
+Both tool schemas retain a **rejection-only** `current_state: unknown` slot so
+old callers receive actionable recovery instructions rather than a generic
+unknown-property error. Every own-property presence, including null/empty old
+inputs and matching-old-key retries, is rejected before approval/write/replay;
+it is not a legacy write API.
+
+### Lazy schema conversion and coordinated cutover
+
+Schema 1 string evidence reads normalize deterministically from owner ID,
+original index and verbatim text; repeated reads preserve IDs, duplicate-text
+distinction, order, revision/timestamps, artifact pointers and historical
+checkpoint digests without rewriting files. Canonical saves (checkpoint, mutate,
+artifact/Linear/ack writes) persist schema 2 and those identities. New owners use
+schema 2. Schema 2 string/mixed/malformed evidence fails; it is not legacy data.
+
+This requires a coordinated writer upgrade, **not** a migration-free rollout:
+quiesce all old Pi sessions and Herdr/subagent writers, preserve the store/docs,
+deploy authorized source and update/reload all writers before allowing writes.
+Mixed old/new writers are unsupported. The first schema 2 file makes old
+full-store list/locate reject the version store-wide; this barrier only works
+after conversion and cannot prevent unsafe old writes beforehand. Old attached
+sessions can abort on converted state until reloaded/detached. Scripts must
+update both retired write inputs and string-array read assumptions (`record.text`).
+No automatic reload, eager migration, bootstrap write or live conversion runs here.
+
+Reverting code alone after new writes leaves schema 2 unreadable to old code.
+Prefer a forward fix; reverse conversion needs separate assessment/approval and
+preservation of new data. Never restore an old backup over newer facts.
 
 Example prerequisite update:
 

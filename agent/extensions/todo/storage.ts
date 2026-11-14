@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { applyChanges, createTodo, requireId, validate, type Changes, type Todo } from "./state.ts";
+import { applyChanges, createTodo, rejectRetiredCurrentState, requireId, validate, type Changes, type Todo } from "./state.ts";
 
 import { effects, validateGraph, validateTransition } from "./dependencies.ts";
 
@@ -126,6 +126,7 @@ export async function mutate(root: string, id: string, revision: number, transfo
 }
 export function digest(changes: Changes): string { return createHash("sha256").update(JSON.stringify(changes)).digest("hex"); }
 export async function checkpoint(root: string, id: string, revision: number, changes: Changes, key: string, session_id: string, signal?: AbortSignal) {
+  rejectRetiredCurrentState(changes);
   // Check the retry key while locked, before revision checking: a successful retry has an old revision.
   return withStoreLock(root, async root => {
     const item = await locate(root, id); const hash = digest(changes);
@@ -140,7 +141,7 @@ export async function checkpoint(root: string, id: string, revision: number, cha
     const updated = { ...item, todo: next };
     const rows = (await list(root)).map(row => row.todo.id === id ? updated : row);
     validateTransition(item, updated, rows, changes.status !== undefined);
-    next.revision++; next.updated_at = now; next.last_checkpoint = { key, digest: hash, session_id, at: now }; validate(next);
+    next.revision++; next.updated_at = now; next.last_checkpoint = { key, digest: hash, session_id, at: now, base_revision: item.todo.revision }; validate(next);
     signal?.throwIfAborted();
     return saveUpdate(rows, updated, activity);
   }, signal);
