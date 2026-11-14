@@ -4,6 +4,12 @@ Todo preserves the minimum sufficient grounding for a fresh or parallel session 
 
 The [README](../README.md) owns implementation architecture and API reference. This document defines information ownership, writing conventions and design trade-offs. It is repository documentation, not another saved project memory or always-injected prompt.
 
+## Persistence and worker access
+
+Canonical state and Markdown document bodies live together in `<root>/todo.sqlite` (built-in Node 26+ SQLite). Owner JSON preserves the domain shape and array order inside SQLite; artifacts are immutable body BLOBs, not separately maintained Markdown files. Transactions commit task, parent activity and document bytes together. There is no automatic legacy JSON fallback, import or dual write; the [README migration runbook](../README.md#legacy-migration-runbook) owns explicit cutover and rollback limits.
+
+Use TODO tools to read records and document pages. Returned `directory` strings are deprecated legacy locators, not a physical document-directory promise; artifact paths are opaque version keys. A worker without memory tools needs bounded material supplied by its parent through available tools, not a guessed filesystem path or direct SQL contract. This changes persistence, not context/compaction or approval policy.
+
 ## Task entry and workflow ownership
 
 Durable memory belongs to an enduring task/outcome, not to a session, worktree or stage. The global `agent/AGENTS.md` contract establishes the owner before substantial work: use the relevant attachment, or resolve a supplied TODO ID/linked issue URL or search recognizable goals, inspect candidates and resume a clear existing match. `get` alone does not attach. Ask on ambiguity or before switching owners; creation still requires explicit user intent. Trivial questions need no record. An explicit opt-out is respected; unavailable/declined tracking requires a disclosed fallback, not a silent parallel memory system.
@@ -12,7 +18,7 @@ Creation-permission requests follow the global standalone **Decision required** 
 
 Owner resolution and durable curation belong to standalone sessions, orchestrating parents and receiving independent sessions. Parent-owned workers use the supplied owner and relevant context; they do not independently discover/attach an owner, create records or checkpoint shared memory unless assigned. They may read relevant material using available tools. The parent supplies sufficient bounded context when a worker lacks TODO access, without maintaining a second authoritative copy.
 
-The tool's `status` action exposes the attachment as selected summary metadata or null without changing selection, durable files, loaded context or acknowledgement. Inspect at entry/recovery when needed, not on every turn. It reads the current saved revision, not a guarantee that the loaded brief is current. The extension does not choose an owner from cwd or classify user requests automatically.
+The tool's `status` action exposes the attachment as selected summary metadata or null without changing selection, durable memory, loaded context or acknowledgement. Inspect at entry/recovery when needed, not on every turn. It reads the current saved revision, not a guarantee that the loaded brief is current. The extension does not choose an owner from cwd or classify user requests automatically.
 
 | Owner | Responsibility |
 | --- | --- |

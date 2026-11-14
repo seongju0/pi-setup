@@ -1,10 +1,9 @@
-import { mutate, rootPath } from "./storage.ts";
+import { mutate } from "./storage.ts";
 import { applyChanges, rejectRetiredCurrentState, validate, type Changes, type ContextPolicy } from "./state.ts";
 
 export type TighteningInput = { reason: string; consult_on_demand_decisions?: string[]; consult_on_demand_artifacts?: string[]; restore_decisions?: string[]; restore_artifacts?: string[]; retire_artifacts?: string[] } & Pick<Changes, "evidence" | "references">;
 export async function tighten(root: string, id: string, revision: number, input: TighteningInput, signal?: AbortSignal) {
   rejectRetiredCurrentState(input);
-  root = await rootPath(root);
   return mutate(root, id, revision, todo => {
     const { evidence, references, retire_artifacts = [], restore_decisions = [], restore_artifacts = [], consult_on_demand_decisions = [], consult_on_demand_artifacts = [], reason } = input;
     const changes = Object.fromEntries(Object.entries({ evidence, references }).filter(([, value]) => value !== undefined));
@@ -22,7 +21,7 @@ export async function tighten(root: string, id: string, revision: number, input:
     };
     const policy: ContextPolicy = { reason, consult_on_demand_decisions: merge(prior?.consult_on_demand_decisions, consult_on_demand_decisions, restore_decisions, next.decisions), consult_on_demand_artifacts: merge(prior?.consult_on_demand_artifacts, consult_on_demand_artifacts, restore_artifacts, next.artifacts) };
     next.context_policy = policy;
-    validate(next); // Validate IDs and required material before writing any file.
+    validate(next); // Validate IDs and required material before committing saved memory.
     return next;
   }, signal);
 }

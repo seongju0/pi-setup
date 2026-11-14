@@ -31,12 +31,13 @@ You: /todo commands                  Agent / research / plan / design skills
             └────────────────┴────────────────┴──────────────┘
                              ▼
                          storage.ts
-                cross-process lock · revision checks
+                    revision checks · operations
                 dependencies.ts — graph + readiness
-                      atomic file replacement
                              ▼
-                        ~/.pi/agent/todos/
-                   JSON context + Markdown artifacts
+                  database.ts — SQLite transactions
+                             ▼
+                  ~/.pi/agent/todos/todo.sqlite
+                  canonical JSON + Markdown BLOBs
 ```
 
 **Pi owns the conversation; the extension owns durable work context.** Skills produce substantive work and documents. The extension supplies the shared persistence seam; it does not run or replace those skills.
@@ -48,11 +49,11 @@ You: /todo commands                  Agent / research / plan / design skills
 | Directory extension loading | Loads `index.ts`; feature modules remain colocated. |
 | `registerCommand` + completions | `/todo` interaction; `waitForIdle` prevents command mutations during agent streaming. |
 | `registerTool` + TypeBox schemas | Validated inputs; `structuredContent` and an output schema expose results to codemode. |
-| Sequential tool execution | Most state-changing tools serialize within a Pi batch; filesystem locking also protects against other Pi processes. |
+| Sequential tool execution | Most state-changing tools serialize within a Pi batch; SQLite write transactions also protect against other Pi processes. |
 | `select`, `input`, `editor`, `confirm`, `notify`, `custom` | Native dialogs and themed checklist picker; RPC falls back to selection dialogs. |
 | `setStatus` + `model_select` | Publishes `todo · in progress · brief ~3.2k (1.2%) · Title`: readable local state and compact loaded-brief token estimate/window share before the unchanged title; model changes update the denominator immediately. The footer owns colors. |
 | `appendEntry` + `getBranch` | Persists attachment, acknowledgement, and compaction receipts; reconstructs active-branch selection. |
-| `session_start`, `session_tree`, `session_shutdown` | Restores/clears session attachment without rewinding durable files. |
+| `session_start`, `session_tree`, `session_shutdown` | Restores/clears session attachment without rewinding durable memory. |
 | `before_agent_start` | Resets turn acknowledgement. Pending compaction reconciliation remains until acknowledged. |
 | `context` + `context.ts` | Replays one current brief and persisted notices at stable first-delivery anchors. Explicit resets discard obsolete todo injections and pre-reset Anthropic thinking. Watches selected/parent/prerequisite revisions; never replaces the system prompt. |
 | `turn_end` / settlement | One best-effort early preservation continuation per owner/native-compaction cycle. Settlement itself remains notification-only, without repeated bookkeeping turns or UI nags. |
@@ -64,11 +65,11 @@ You: /todo commands                  Agent / research / plan / design skills
 ### Two persistence layers
 
 ```text
-Pi's append-only session history           Durable todo directory
+Pi's append-only session history           Durable todo database
 ────────────────────────────────           ──────────────────────
-attached todo ID ─────────────────────────► todo.json
-acknowledgement receipt                     artifacts/*.md
-compaction/reconciliation receipt           project-scoped todos/
+attached todo ID ─────────────────────────► canonical owner JSON
+acknowledgement receipt                     document revision BLOBs
+compaction/reconciliation receipt           parent relationships
 
 fork / tree / reopen:                       remains current:
 restore pointers from active branch         NEVER rewound with session history
@@ -111,32 +112,30 @@ Resolved questions and superseded decisions/documents stay out of normal orienta
 ```text
 todo_checkpoint / todo_artifact
   → validate request; confirm consequential direction changes
-  → acquire short cross-process write lock
-  → read current manifest; reject stale revision
+  → BEGIN IMMEDIATE; read current state; reject stale revision (matching checkpoint replay is checked first)
   → apply structured changes; start not-started items on saved activity; validate graph/completion prerequisites
-  → atomically replace the item's todo.json, then start its not-started parent project
-  → return compact model-facing success/revision and necessary generated IDs/effects; release lock
+  → save owner, document bytes and any parent activity in one transaction; COMMIT
+  → return compact model-facing success/revision and necessary generated IDs/effects; close connection
   → retain the full result in details/structuredContent for programmatic callers
 
 artifact content update
-  → write a new Markdown revision FIRST
-  → publish its path in the manifest LAST
+  → insert immutable Markdown bytes and update the catalog pointer inside the same transaction
 ```
 
-A failed manifest commit may leave an unreferenced artifact revision, but never replaces content referenced by the old manifest. Checkpoint retries use the last receipt; artifact retries require inspecting the manifest. Item and parent writes share the store lock but are not a multi-file transaction: an interruption between writes can leave the item saved and its parent status unchanged. Local files and Linear are not one distributed transaction.
+Validation, cancellation before commit or SQL failure rolls back task, parent and document together. Callbacks are synchronous: no await, prompts, remote calls or filesystem document operations inside a transaction. Checkpoint retries use the last receipt; artifact retries require inspecting current state. SQLite and Linear are not one distributed transaction.
 
 ## Design invariants
 
 | Choice | Why / boundary |
 | --- | --- |
-| JSON context, Markdown artifacts | Compact grounding plus substantive reusable documents, not an execution archive. |
+| Canonical JSON and Markdown bodies inside SQLite | Compact grounding plus substantive reusable documents, with atomic local writes; not an execution archive. |
 | Projects own outcomes | May span repositories/issues. Children are simple todos, not nested projects. |
 | Two authored artifact kinds | Upserts accept `research` or `design`; legacy kinds remain readable. One current design per actual responsibility; relevance and supersession are explicit. |
 | Knowledge, not a parallel planner | Goal/scope, lifecycle, dependencies, consequential findings/choices and unresolved questions own grounding. No authored progress summaries or next-action lists. Native QA/report tools own detailed execution evidence. |
 | Draft is not approved | Saving a document does not authorize implementation. Changed outcomes/approved direction require sign-off. |
 | Selection is not execution | No automatic goal pursuit, budget accounting, branch checkout, or worker launch. |
 | Local memory is not live remote truth | Verify relevant Git/PR/Linear facts. Partial todo completion never closes its parent issue. |
-| Deterministic mechanics, semantic agent judgment | Code enforces schema, relevance, revisions, locking, and placement. The agent decides which knowledge matters and whether evidence supports a claim. |
+| Deterministic mechanics, semantic agent judgment | Code enforces schema, relevance, revisions, transactions, and relationships. The agent decides which knowledge matters and whether evidence supports a claim. |
 | No silent context loss | Active scoped context is retained regardless of size. Retained history and explicitly consult-on-demand records remain retrievable; required artifacts cannot be hidden. Missing mandatory context and invalid state fail visibly; brief size is diagnostic, never a gate on repairs. |
 
 ## Memory contract
@@ -202,23 +201,17 @@ The terminal picker uses a rounded border, two-column inner padding, consistent 
 
 Defaults to `~/.pi/agent/todos/`; `PI_TODO_PATH` overrides the root (relative overrides resolve at extension load). Private directories/files are created with modes 0700/0600. Existing directories are not chmodded. Nothing is automatically published, committed, or garbage-collected. Autonomous tightening changes orientation, not retention.
 
-```text
-<root>/<project-id>/
-  todo.json
-  artifacts/<artifact-id>-<revision>.md
-  todos/<simple-id>/
-    todo.json
-    artifacts/<artifact-id>-<revision>.md
-<root>/<standalone-simple-id>/
-  todo.json
-  artifacts/...
-```
+Requires **Node.js 26+** and its built-in `node:sqlite` (no additional package). The canonical store is `<root>/todo.sqlite`, with SQLite-owned WAL/SHM sidecars. Do not copy only a live main DB as a backup: use SQLite's backup API or `VACUUM INTO` for a consistent WAL-aware backup. A `VACUUM INTO` copy may use DELETE journal mode; runtime requires WAL. Before using a restored copy in an explicitly authorized restore, with all writers stopped, enable `PRAGMA journal_mode=WAL` on that restored copy.
 
-`todo.json` is the machine-owned source of truth: version, identity, goal/scope (`outcome`), local progress, consequential findings (`current_state.evidence`), decisions/rationale/approval, questions/resolutions, depends_on IDs, references, artifact catalog, optional Linear snapshot, revision, optional context visibility policy, and last checkpoint receipt. Legacy summaries/actions remain readable for explicit migration, but new tools do not author them and active orientation omits them. No context.md or duplicated editable Markdown task list.
+`owners` stores IDs, parent relationships and validated schema-2 JSON. `artifact_revisions` stores committed immutable bodies as BLOBs. `retained_legacy_files` separately retains imported non-current files of unknown commit status, not public artifact history. `store_metadata` records application/origin/source fingerprint; SQLite `user_version=1` is distinct from Todo schema 2. No task directories or Markdown files are created by normal operations.
+
+Returned `directory:string` is a **deprecated legacy locator**, derived from the former root/parent/ID layout, not a supported physical document location. `Artifact.path` retains `artifacts/<id>-<revision>.md` as an opaque version key. Read bodies via `todo_artifact`; workers lacking memory tools must receive bounded content from their parent, not guessed file paths or direct SQL. Existing selection IDs/journal entry types remain valid.
+
+Canonical owner JSON is the machine-owned source of truth: version, identity, goal/scope (`outcome`), local progress, consequential findings (`current_state.evidence`), decisions/rationale/approval, questions/resolutions, depends_on IDs, references, artifact catalog, optional Linear snapshot, revision, optional context visibility policy, and last checkpoint receipt. Legacy summaries/actions remain readable for explicit migration, but new tools do not author them and active orientation omits them. No context.md or duplicated editable Markdown task list.
 
 Projects contain simple todos only. Simple items can own any number of artifacts. Each artifact has a kind, description, lifecycle (`current`, `reference`, `superseded`), required flag, and `applies_to` direct-child IDs. Empty `applies_to` means owner-wide. An item-scoped artifact belongs on that item, not on its sibling. Dependencies connect simple peers in the same scope; no nested projects or execution scheduler.
 
-Implementation is colocated by responsibility: `context.ts` (anchored provider projection and reset thinking), `state.ts` (schema/operations), `storage.ts` (persistence), `artifacts.ts`, `session.ts` (resume/selection), `search.ts` (flat discovery projection and literal matching/ranking), `compaction.ts`, `linear.ts`, `dependencies.ts` (graph validation/readiness), `picker.ts` (hierarchical checklist), `tightening.ts` (visibility cleanup and explicit field replacement), `knowledge.ts` (scoped literal knowledge retrieval), and `index.ts` (Pi tools/commands).
+Implementation is colocated by responsibility: `context.ts` (anchored provider projection and reset thinking), `state.ts` (schema/operations), `storage.ts` (task operations), `database.ts` (SQLite lifecycle/transactions/codec), `legacy.ts` (read-only legacy scanner), `migration.ts` (explicit CLI cutover), `artifacts.ts`, `session.ts` (resume/selection), `search.ts` (flat discovery projection and literal matching/ranking), `compaction.ts`, `linear.ts`, `dependencies.ts` (graph validation/readiness), `picker.ts` (hierarchical checklist), `tightening.ts` (visibility cleanup and explicit field replacement), `knowledge.ts` (scoped literal knowledge retrieval), and `index.ts` (Pi tools/commands).
 
 ## Dependencies
 
@@ -248,7 +241,7 @@ Only simple peers in one project (or standalone simple peers) may depend on each
 
 There is no writable `blockers` field or `blocked` status. Waiting is computed from dependencies. Authorization/deployment requirements should be concrete prerequisite todos. Readiness only means recorded prerequisites are done, not permission to run production operations.
 
-**Compatibility:** old manifests without `depends_on` read as `[]`. Legacy blocker text is preserved verbatim in unresolved questions with deterministic IDs. A legacy `blocked` status becomes `todo` plus an unresolved migration note; no start/completion is inferred. Read normalization does not rewrite files or advance revisions. The next successful write persists the normalized format. Review those questions and explicitly model or resolve constraints; no prerequisite items/edges/completions are invented. Large context remains intact rather than discarding legacy text or blocking updates. Reload other running Pi sessions before writing the new format: older extension versions reject its new fields.
+**Compatibility:** old manifests without `depends_on` read as `[]`. Legacy blocker text is preserved verbatim in unresolved questions with deterministic IDs. A legacy `blocked` status becomes `todo` plus an unresolved migration note; no start/completion is inferred. Explicit import normalizes these constraints without rewriting source files or advancing revisions; normal SQLite operations read canonical schema 2. Review those questions and explicitly model or resolve constraints; no prerequisite items/edges/completions are invented. Large context remains intact rather than discarding legacy text or blocking updates. Reload other running Pi sessions before writing the new format: older extension versions reject its new fields.
 
 ## Agent/programmatic interfaces
 
@@ -262,7 +255,7 @@ All tools return structured data, usable through codemode. Writes require the cu
 - `todo_ack`: `{id, reason: "no_change" | "needs_approval", explanation}`. Acknowledges only the attached item. `needs_approval` also preserves the pending question in durable context; it does not change established decisions.
 - `todo_knowledge`: `{query, selector?, view?, limit?, cursor?}` searches saved evidence, decisions, questions, references and catalog-referenced artifact text. Case-insensitive literal substrings preserve punctuation; titles/goals remain the existing discovery tool's responsibility. Default active visibility reuses resume rules; full includes retained historical records but not retired summary/action fields or old body revisions. No selector searches the whole store, a project includes direct children, and a simple selector searches only its own records. Completed owners remain searchable. Results include bounded excerpts, owner revision, record/document identity, approval/lifecycle where applicable, explicit read targets and `next_cursor`. Continue with unchanged query/scope/view. Searches are live, not snapshots; changed cursor sources require restart. Missing eligible artifacts fail visibly. No attachment, status, visibility or context writes.
 - `todo_record`: `{id, expected_revision, source_kind, index?, record_id?, view?, offset?, limit?}` reads one evidence/reference/decision/question, not its whole owner. Evidence/reference require a nonnegative `index` and no `record_id`; decisions/questions require their stable `record_id` and no index. `expected_revision` is mandatory even on page 0: indexed lists can shift, and every page must use the same content version. A changed owner revision fails; search again or restart with the current revision. Default `view:"active"` refuses hidden/superseded/resolved records; explicit `full` reads retained content. Evidence pages and knowledge hits include `evidence_id` metadata for precise edits; read addressing remains index plus revision, not an evidence-ID read variant. The `body` is exactly the searched string: evidence `record.text`/reference unchanged, decision summary/rationale/evidence joined with newlines, question text/resolution joined with a newline. Pages default to offset 0 and limit 12000 (maximum), with UTF-16 offsets, `next_offset`, `total_chars`, `complete` and a complete continuation `read` target when more exists. Text, details and structured output contain only the same page. Provenance includes `in_active_context`, `inactive_reasons`, and relevant hidden/approval/supersedes/superseded_by/resolved fields. Hidden does not mean obsolete; approved does not mean current. Reads never attach, refresh, acknowledge, observe or write.
-- `todo_artifact`: `read` by item/artifact ID, or `upsert` with current item revision and complete catalog metadata. Reads accept `offset` (default 0), `limit` (default/max 12000) and `expected_version`. They return `body`, `version`, `offset`, `next_offset`, `total_chars`, `complete`, item/artifact IDs; model-facing plain text and structured output contain the same page. Offsets count JavaScript UTF-16 string positions. Follow `next_offset` with the returned `expected_version` until complete. Nonzero offsets require that version; changed artifact paths require restart at offset 0. The token is the immutable current body path, so metadata-only edits do not invalidate it. Offset at EOF returns an empty complete page; beyond EOF fails. This API reads current documents, not arbitrary old revision paths. Small document callers retain `body`; large structured callers must now follow pages. Include body to create/update Markdown; omit body for metadata-only updates to an existing artifact. Upserts require `kind:"research"` or `kind:"design"`; other persisted kinds remain readable but cannot be authored through this interface. Save only substantive research/mental models or design specifications/plans under the memory contract. General runbooks, QA and stage reports belong with native owners. Several current documents can coexist for distinct responsibilities. Update the owning document rather than accumulating amendments. Mark a replaced document superseded explicitly; artifacts do not become approved just because they exist. Reference/superseded artifact metadata is consult-on-demand through get, not part of normal orientation.
+- `todo_artifact`: `read` by item/artifact ID, or `upsert` with current item revision and complete catalog metadata. Reads accept `offset` (default 0), `limit` (default/max 12000) and `expected_version`. They return `body`, `version`, `offset`, `next_offset`, `total_chars`, `complete`, item/artifact IDs; model-facing plain text and structured output contain the same page. Offsets count JavaScript UTF-16 string positions. Follow `next_offset` with the returned `expected_version` until complete. Nonzero offsets require that version; changed artifact paths require restart at offset 0. The token is the opaque immutable current body key, so metadata-only edits do not invalidate it. Offset at EOF returns an empty complete page; beyond EOF fails. This API reads current documents, not arbitrary old revision paths. Small document callers retain `body`; large structured callers must now follow pages. Include body to create/update Markdown; omit body for metadata-only updates to an existing artifact. Upserts require `kind:"research"` or `kind:"design"`; other persisted kinds remain readable but cannot be authored through this interface. Save only substantive research/mental models or design specifications/plans under the memory contract. General runbooks, QA and stage reports belong with native owners. Several current documents can coexist for distinct responsibilities. Update the owning document rather than accumulating amendments. Mark a replaced document superseded explicitly; artifacts do not become approved just because they exist. Reference/superseded artifact metadata is consult-on-demand through get, not part of normal orientation.
 - `todo_linear`: `{id, revision, target_status?}`. Omit target for a read-only snapshot refresh.
 
 ### Curated knowledge and original evidence
@@ -277,7 +270,7 @@ Save decisive journal pointers in evidence record text or reference strings usin
 
 Knowledge targets pin nonartifact reads to owner revision and start 80 characters before the first match in the exact record text. Artifact hits prefer a body match: `match_field:"body"` and body-relative `match_offset` lead to a version-pinned read 80 characters before the match. Title/description-only or metadata-boundary matches use `match_field:"metadata"` and offset 0, without claiming a body offset. `in_active_context` and `inactive_reasons` distinguish hidden, superseded, resolved and reference material as applicable; artifact lifecycle stays explicit. Request offset 0 for earlier context or follow continuation for more. Full search does not mean all retained material is obsolete.
 
-Artifact/knowledge retrieval does not refresh the starting brief or change compaction policy. Existing legacy artifact kinds remain readable and searchable under the same visibility rules; authoring still accepts only research/design. Full knowledge search reads only each catalog entry's referenced body, not every immutable revision on disk.
+Artifact/knowledge retrieval does not refresh the starting brief or change compaction policy. Existing legacy artifact kinds remain readable and searchable under the same visibility rules; authoring still accepts only research/design. Full knowledge search reads only each catalog entry's referenced body, not every committed revision or retained legacy file.
 
 ### Find and recall work without the picker
 
@@ -390,28 +383,26 @@ unknown-property error. Every own-property presence, including null/empty old
 inputs and matching-old-key retries, is rejected before approval/write/replay;
 it is not a legacy write API.
 
-### Lazy schema conversion and coordinated cutover
+### Legacy migration runbook
 
-Schema 1 string evidence reads normalize deterministically from owner ID,
-original index and verbatim text; repeated reads preserve IDs, duplicate-text
-distinction, order, revision/timestamps, artifact pointers and historical
-checkpoint digests without rewriting files. Canonical saves (checkpoint, mutate,
-artifact/Linear/ack writes) persist schema 2 and those identities. New owners use
-schema 2. Schema 2 string/mixed/malformed evidence fails; it is not legacy data.
+Migration is **explicit**, not a setup hook or automatic runtime fallback. Legacy-only roots refuse ordinary opening with a migration-required diagnostic. Import normalizes schema-1 evidence/constraints through the existing validator, preserving deterministic IDs, duplicate text, ordering, absent receipt base revisions, revisions/timestamps, optional old fields, approvals and document pointers. Schema-2 malformed data is not treated as legacy. Mixed old/new writers are unsupported.
 
-This requires a coordinated writer upgrade, **not** a migration-free rollout:
-quiesce all old Pi sessions and Herdr/subagent writers, preserve the store/docs,
-deploy authorized source and update/reload all writers before allowing writes.
-Mixed old/new writers are unsupported. The first schema 2 file makes old
-full-store list/locate reject the version store-wide; this barrier only works
-after conversion and cannot prevent unsafe old writes beforehand. Old attached
-sessions can abort on converted state until reloaded/detached. Scripts must
-update both retired write inputs and string-array read assumptions (`record.text`).
-No automatic reload, eager migration, bootstrap write or live conversion runs here.
+```sh
+node agent/extensions/todo/migration.ts inspect --source ROOT --report REPORT
+node agent/extensions/todo/migration.ts rehearse --source ROOT --workspace PRIVATE_DIR
+node agent/extensions/todo/migration.ts cutover --source ROOT --workspace PRIVATE_DIR --apply
+node agent/extensions/todo/migration.ts verify --root ROOT
+```
 
-Reverting code alone after new writes leaves schema 2 unreadable to old code.
-Prefer a forward fix; reverse conversion needs separate assessment/approval and
-preservation of new data. Never restore an old backup over newer facts.
+Use fresh private workspaces **outside** the source root; existing workspaces/candidates/backups are never overwritten. Inspect only reads source and writes a private report. Rehearse preserves a raw snapshot, builds an isolated candidate and compares normalized state and exact document bytes/hashes through normal readers. Unknown files and unpublished `.creating`/`*.tmp` debris are reported/backed up; current catalog bodies are required. Non-current artifact files have unknown commit status and are retained separately, so an interrupted next-version filename cannot block a legitimate save. Symlinks, escapes, malformed/duplicate owners, invalid graphs and missing current bodies block activation; no source repair is inferred.
+
+Before cutover, the operator must authorize the exact source and **stop all Pi/Herdr/script writers**. The CLI does not stop processes, install code, change settings or reload agents. `--apply` acknowledges this operator prerequisite; it cannot prove quiescence. Cutover refuses an existing destination, unknown `.write-lock` or unresolved `.todo-import-*` stage. It installs `.write-lock/owner.json` labelled `purpose:migrated-to-sqlite` to block the actual old writer acquisition boundary. Never remove this successful migration fence as a stale process lock. It is a cooperative interlock, not protection against deliberate removal; old readers are not a supported live fallback.
+
+Cutover takes a **fresh final stopped-source snapshot**, not a reused rehearsal candidate. It compares inventories before/after copying and before publication. Schema, all owners/bodies, origin and version 1 commit together in `ROOT/.todo-import-<operation-id>/todo.sqlite`; there is no empty-ready intermediate DB. Canonical JSON/parent placement, current versions, current and retained body bytes, graph, integrity/FKs and normal resume/knowledge/record/artifact reads are checked. Only root-derived legacy directory prefixes differ during staging. The candidate WAL is checkpointed with no busy/uncheckpointed data and all handles closed before atomic same-filesystem rename to `ROOT/todo.sqlite`. This rename is the single authoritative cutover. Final normal-opener verification follows; source JSON/docs remain unchanged, archival and unsynchronized. The report identifies database, fingerprint, backup and validation results. Reload all compatible agents separately before resuming writes.
+
+On failure, inspect `failure.json`, canonical DB, fence, source and candidate **before retrying**. A published DB must not be reimported even if later verification failed; use forward inspection/repair. Before publication, preserve evidence, inspect/remove only owned staging and explicitly remove only this migration fence when aborting. No automatic lock recovery or destructive reuse. A leftover empty staging directory after publication is cleanup evidence, not a reason to reimport.
+
+Rollback requires separate authorization and stopped writers. Only **before any successful post-import task write**, after verifying DB/source equality, may an operator preserve/quarantine the new DB and remove the migration fence to return to untouched source with compatible old code. After a SQLite write the source backup is stale: forward repair is default; lossless reverse export/reconciliation needs separate design. Never restore a stale backup over newer facts or revert code alone.
 
 Example prerequisite update:
 
@@ -425,15 +416,15 @@ text(result.dependency);
 text(result.affected_dependents);
 ```
 
-Native callers use `create`, `checkpoint`, and `mutate` in `storage.ts`; graph/completion checks run under the same write lock regardless of caller. These operations return the located item plus `dependency` and `affected_dependents`. Activity writes also return a compact `updated_parent` receipt when they start the parent, so the session observes that revision without reloading its brief. Derived dependency fields are never persisted; an automatic parent status change advances the parent's revision too. Generic `mutate` calls do not start work unless the activity flag is supplied; artifact upserts supply it, while Linear refresh and tightening do not.
+Native callers use `create`, `checkpoint`, and `mutate` in `storage.ts`; graph/completion checks run inside the same write transaction regardless of caller. These operations return the located item plus `dependency` and `affected_dependents`. Activity writes also return a compact `updated_parent` receipt when they start the parent, so the session observes that revision without reloading its brief. Derived dependency fields are never persisted; an automatic parent status change advances the parent's revision too. Generic `mutate` calls do not start work unless the activity flag is supplied; artifact upserts supply it, while Linear refresh and tightening do not.
 
 Checkpoint idempotency covers the most recent successful checkpoint: an identical retry returns its receipt, even with the old revision. A changed payload/owner using that key fails. Its computed dependency/effect fields are current read projections, not replayable transition events. Earlier replay attempts fail revision checking rather than overwriting newer state. Artifact updates are revision-guarded, not independently retry-keyed: read the manifest after an uncertain response before retrying.
 
 ## Resume and checkpoint behavior
 
-The session history stores attachment/bookkeeping receipts, context-load messages, and `todo-context-anchor-v1` metadata. Those historical briefs are not canonical copies of the todo. Reopening/fork/tree navigation reconstructs selection, reconciliation and the existing anchored provider projection without replacing the brief. Sessions saved before persisted-only anchors (`anchor_version:2`) establish a fresh boundary once, including older anchors that may refer to a temporary message from another extension. Canonical files never rewind with session history. New blank sessions attach nothing.
+The session history stores attachment/bookkeeping receipts, context-load messages, and `todo-context-anchor-v1` metadata. Those historical briefs are not canonical copies of the todo. Reopening/fork/tree navigation reconstructs selection, reconciliation and the existing anchored provider projection without replacing the brief. Sessions saved before persisted-only anchors (`anchor_version:2`) establish a fresh boundary once, including older anchors that may refer to a temporary message from another extension. Canonical memory never rewinds with session history. New blank sessions attach nothing.
 
-**Full context loads only at reset boundaries:** attach/create/switch, successful compaction, explicit `/todo refresh` or tool refresh, legacy session restoration without persisted-only anchors, and repair of a missing anchor. Checkpoints, tightening and status changes do not reload it; command status changes send a short persisted notice. A load contains selected/parent briefs, compact child summaries, relevant artifact pointers, and an index of required current artifacts (title, kind, description, character count). Like skills, the agent reads only the bodies relevant to the session focus via `todo_artifact` read; missing required files still fail visibly. Resolved questions, superseded decisions, reference/superseded artifacts, and explicitly consult-on-demand decisions/artifacts stay out; they remain available via get/read. This is reversible filtering, not deletion. An agent may use tightening on parent context too, but must keep project-wide authorization and safety boundaries visible. Obsolete load messages are filtered from provider context, although the append-only session history preserves them.
+**Full context loads only at reset boundaries:** attach/create/switch, successful compaction, explicit `/todo refresh` or tool refresh, legacy session restoration without persisted-only anchors, and repair of a missing anchor. Checkpoints, tightening and status changes do not reload it; command status changes send a short persisted notice. A load contains selected/parent briefs, compact child summaries, relevant artifact pointers, and an index of required current artifacts (title, kind, description, character count). Like skills, the agent reads only the bodies relevant to the session focus via `todo_artifact` read; missing required bodies still fail visibly. Resolved questions, superseded decisions, reference/superseded artifacts, and explicitly consult-on-demand decisions/artifacts stay out; they remain available via get/read. This is reversible filtering, not deletion. An agent may use tightening on parent context too, but must keep project-wide authorization and safety boundaries visible. Obsolete load messages are filtered from provider context, although the append-only session history preserves them.
 
 **Automatic progress:** a nonempty context checkpoint or artifact upsert moves its owner from `todo` to `in_progress` and starts its parent project if the parent is also `todo`. This applies to the item being written, regardless of whether the session attached that child or its project overview. Writing project context never starts its children. Explicit status choices take precedence; `done`/`canceled` items and parents are not automatically reopened. A status-only `in_progress`/`done` checkpoint also starts a not-started parent; a status-only reset/cancellation does not. Empty checkpoints, approval-evidence-only receipts, reads, resume, no-change acknowledgments, tightening and Linear refresh do not start work. An acknowledgment that saves a new approval question is a context write, not permission to execute. Existing stale statuses are not backfilled until a qualifying write occurs.
 
@@ -483,7 +474,7 @@ The agent reads needed material, updates essential research/design bodies or sta
 
 **Not a gate:** native compaction is never cancelled, delayed or replaced. A large tool-result jump, manual compaction or overflow can win before preservation finishes. No tool restrictions, background writer/model, task deadline, automatic hiding or guarantee of semantic completeness. Do not finish prematurely, skip checks, save empty receipts or pursue new implementation to satisfy bookkeeping. Authorization remains scoped in the conversation, never durable execution permission.
 
-Compaction shortens model history, not durable todo files or Pi's full branch ancestry. Saved context loads again on the next request, independently of the summary.
+Compaction shortens model history, not durable todo memory or Pi's full branch ancestry. Saved context loads again on the next request, independently of the summary.
 
 ```text
 Conversation ──────► Pi's default compactor ───► Shortened conversation
@@ -541,14 +532,14 @@ Whole-issue status writes require an exact team status, interactive confirmation
 
 ## Safety and recovery
 
-- A cross-process global write lock rejects concurrent mutations; read again/retry on busy or stale revisions. No long-lived session claims.
-- Atomic JSON replacement prevents partial manifests. Artifact content revisions are written first: interruption may leave unreferenced files, but not overwrite referenced content.
-- Interrupted creates remain as `<id>.creating` directories, ignored until manually inspected/removed.
-- Symlinks inside the store and traversal paths are rejected. The root itself may be symlinked and is canonicalized. This is not a sandbox against another malicious local process racing filesystem operations.
+- Operation-scoped SQLite connections use WAL, foreign keys and FULL synchronous durability. Writes/bootstrap use timeout 0 and `BEGIN IMMEDIATE`; ordinary reads explicitly wait at most 1000ms. Busy/locked errors say to retry; no automatic retry loop or stale fallback. No long-lived session claims or connections.
+- Owner, parent activity and document bytes commit together or roll back. Cancellation before commit rolls back; cancellation after a successful commit does not undo it. After an uncertain result inspect actual state/use a matching last-checkpoint replay.
+- Empty/zero-schema DBs with no objects can resume fresh initialization only without legacy entries, fence or pending stage. Initialization commits schema, origin and version atomically; unknown schema/corruption is never reset.
+- Database symlinks and migration-owned symlinks/traversal are rejected. The root itself may be symlinked and is canonicalized. This is not a sandbox against another malicious local process racing filesystem operations.
 - Malformed state is reported and never silently reset. Missing required context aborts the model request; detach with `/todo leave` or repair the item from a blank session. Large briefs remain visible through the status estimate without blocking the request or omitting saved data.
-- After a crash, inspect `<root>/.write-lock/owner.json` and verify the owner is no longer writing before manually removing the lock. Locks are never stolen on a timer.
+- Normal SQLite operations never use `.write-lock`. The successful migration-labelled fence is permanent; do not apply old stale-lock removal advice to it. Failed migration requires explicit inspection/abort as above.
 - No automatic permanent data/artifact deletion or background cleanup. Tightening visibility changes can be restored; replaced mutable fields are not archived and may not be recoverable. It no longer creates `context-history` artifacts. Explicitly authorized migrations may remove retired data after preserving consequential knowledge; keep a private rollback copy outside the working store for such a migration.
-- Reload running Pi sessions when ready to use the changed schemas; do not let old writers reintroduce retired fields. New code reads legacy manifests without rewriting them. Migrated records without summary/action fields need the new reader; no live reload is performed by repository development or the test suite.
+- Quiesce old writers for explicit migration and reload compatible agents separately before resuming. Ordinary runtime never scans JSON or falls back to archival files; repository development/tests never run live cutover or reload.
 
 ## Checks
 
@@ -557,4 +548,4 @@ Whole-issue status writes require an exact team status, interactive confirmation
 npm test
 ```
 
-Uses temporary storage and Pi's actual extension loader/argument validator. Covers schema and stale writes, retry receipts, activity-driven item/parent progress (including unfinished dependencies, artifact-first updates, terminal/explicit status preservation, no-op reads/checkpoints, and no incidental context reload or drift), completed-picker project/child/standalone context loads and back navigation without status/revision writes (including completed-only stores), project containment, artifact scoping and revisions, cross-process locks, traversal/symlinks, session restoration and nonforcing checkpoint guidance, approval/UI, corruption/overflow, and mocked Linear read/write/drift. Boundary-load checks cover reuse without artifact rereads, explicit refresh, external drift notice deduplication, local updates without reload, detachment, and renewed bookkeeping after writes. Compaction checks cover manual/threshold/overflow events, split-turn inputs, success/failure/abort, restored reconciliation, no continuations from compaction events, and loaded-brief status diagnostics, model-window updates, legacy-notice retention and detach cleanup. Pi's actual SessionManager verifies selection survives compaction even when model projection omits the attachment entry. Tightening checks cover no automatic history artifacts, visibility restoration, stale/invalid IDs, required-artifact guards, no incidental reloads and compact receipts. Retained caller-level checks cover retired-field read/projection compatibility and research/design upsert enforcement. Approval checks cover cited existing approval and unchanged fail-closed behavior without it; usage checks cover below/at 80% and the early preservation threshold, live native settings/model overrides, direct jumps, unknown/disabled/virtual/ineligible boundaries, reopen/reset/detach and one-shot cycle deduplication. An in-memory real AgentSession uses synthetic provider transport for continuation, nested codemode checkpoint/readback, manual compaction and a real read-tool threshold jump into native compaction; scheduling, summarization and persistence are not stubbed. Provider-facing lifecycle checks simulate queued message persistence and use the installed Anthropic serializer, stopping before HTTP. They verify stable content prefixes through warnings/drift acknowledgment, explicit refresh, detached state, reopen and successful/failed compaction; old thinking stays excluded while new thinking survives. Cross-extension checks load the actual task and todo extensions together, cover task snapshots and tool-time changes, reject transient anchor candidates, and verify one-time legacy/missing-anchor recovery without repeated reloads. Discovery checks cover ranked title/goal matches, flat hierarchy labels, all-status/default-list behavior, exact filters, invalid/empty queries and completed-child search-to-resume with real temporary storage; reads do not mutate saved records or implicitly attach. No real Linear updates, paid model calls, or claims of testing live cache-hit rates or a provider's summarization quality.
+Uses temporary storage and Pi's actual extension loader/argument validator. Covers schema and stale writes, retry receipts, activity-driven item/parent progress (including unfinished dependencies, artifact-first updates, terminal/explicit status preservation, no-op reads/checkpoints, and no incidental context reload or drift), completed-picker project/child/standalone context loads and back navigation without status/revision writes (including completed-only stores), project containment, artifact scoping and revisions, cross-process SQLite busy behavior, restartable/concurrent bootstrap, SQL rollback, explicit byte-faithful legacy rehearsal/cutover and fencing, importer traversal/symlinks, session restoration and nonforcing checkpoint guidance, approval/UI, corruption/overflow, and mocked Linear read/write/drift. Boundary-load checks cover reuse without artifact rereads, explicit refresh, external drift notice deduplication, local updates without reload, detachment, and renewed bookkeeping after writes. Compaction checks cover manual/threshold/overflow events, split-turn inputs, success/failure/abort, restored reconciliation, no continuations from compaction events, and loaded-brief status diagnostics, model-window updates, legacy-notice retention and detach cleanup. Pi's actual SessionManager verifies selection survives compaction even when model projection omits the attachment entry. Tightening checks cover no automatic history artifacts, visibility restoration, stale/invalid IDs, required-artifact guards, no incidental reloads and compact receipts. Retained caller-level checks cover retired-field read/projection compatibility and research/design upsert enforcement. Approval checks cover cited existing approval and unchanged fail-closed behavior without it; usage checks cover below/at 80% and the early preservation threshold, live native settings/model overrides, direct jumps, unknown/disabled/virtual/ineligible boundaries, reopen/reset/detach and one-shot cycle deduplication. An in-memory real AgentSession uses synthetic provider transport for continuation, nested codemode checkpoint/readback, manual compaction and a real read-tool threshold jump into native compaction; scheduling, summarization and persistence are not stubbed. Provider-facing lifecycle checks simulate queued message persistence and use the installed Anthropic serializer, stopping before HTTP. They verify stable content prefixes through warnings/drift acknowledgment, explicit refresh, detached state, reopen and successful/failed compaction; old thinking stays excluded while new thinking survives. Cross-extension checks load the actual task and todo extensions together, cover task snapshots and tool-time changes, reject transient anchor candidates, and verify one-time legacy/missing-anchor recovery without repeated reloads. Discovery checks cover ranked title/goal matches, flat hierarchy labels, all-status/default-list behavior, exact filters, invalid/empty queries and completed-child search-to-resume with real temporary storage; reads do not mutate saved records or implicitly attach. No real Linear updates, paid model calls, or claims of testing live cache-hit rates or a provider's summarization quality.

@@ -5,7 +5,10 @@ import { mkdtemp, readFile, rm, mkdir, symlink, writeFile, stat, readdir } from 
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { configuredRoot, create, digest, list, locate, checkpoint, mutate, withStoreLock } from "../storage.ts";
+import { configuredRoot, create, digest, list, locate, readKnown, checkpoint, mutate } from "../storage.ts";
+import { DatabaseSync } from "node:sqlite";
+import { artifactBytes, withRead, withWrite } from "../database.ts";
+import { inspect, rehearse, cutover, verify } from "../migration.ts";
 import { applyChanges, createTodo, evidenceId, needsApproval, validate } from "../state.ts";
 import { readArtifact, saveArtifact } from "../artifacts.ts";
 import { tighten } from "../tightening.ts";
@@ -27,6 +30,13 @@ const oldRoot = process.env.PI_TODO_PATH;
 const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_TODO_PATH = root;
 process.env.PI_CODING_AGENT_DIR = scratch;
+
+function itemRoot(item) { return item.parent_id ? dirname(dirname(dirname(item.directory))) : dirname(item.directory); }
+function savedJSON(item) { return withRead(itemRoot(item), db => db.prepare("SELECT document FROM owners WHERE id=?").get(item.todo.id).document); }
+function replaceJSON(item, value) { return withWrite(itemRoot(item), db => db.prepare("UPDATE owners SET document=? WHERE id=?").run(value, item.todo.id)); }
+function bodyBytes(item, version) { return withRead(itemRoot(item), db => artifactBytes(db, item.todo.id, version)); }
+function removeBody(item, version) { return withWrite(itemRoot(item), db => db.prepare("DELETE FROM artifact_revisions WHERE owner_id=? AND version=?").run(item.todo.id, version)); }
+function restoreBody(item, version, bytes) { return withWrite(itemRoot(item), db => db.prepare("INSERT INTO artifact_revisions(owner_id,version,body) VALUES(?,?,?)").run(item.todo.id, version, Buffer.from(bytes))); }
 
 async function instance(branch = [], interactive = false, deferMessages = false, withTasks = false) {
   const runtime = createExtensionRuntime();
@@ -93,10 +103,8 @@ try {
   const sibling = await create(root, "simple", "Observe", "Validate operations", project.todo.id);
   await assert.rejects(create(root, "project", "Nested", "No", project.todo.id), /Only root/);
   await assert.rejects(create(root, "simple", "Grandchild", "No", child.todo.id), /Only root/);
-  assert.equal((await list(root)).length, 3);
-  const interrupted = join(project.directory, "todos", `${createTodo("simple", "Interrupted", "No").id}.creating`);
-  await mkdir(interrupted);
-  assert.equal((await list(root)).length, 3);
+  assert.deepEqual((await list(root)).map(row => row.todo.id), [project.todo.id, ...[child.todo.id, sibling.todo.id].sort()]);
+  await assert.rejects(stat(project.directory), /ENOENT/); // No owner folders or canonical Markdown files.
   const changes = { evidence: { add: ["Converter tested", "https://example.com/pr/1"] }, decisions: [{ summary: "Preserve IDs", rationale: "Avoid duplicate work", approval: "draft", evidence: [] }] };
   const updated = await checkpoint(root, child.todo.id, 1, changes, "checkpoint-1", "test-session");
   assert.equal(updated.todo.revision, 2);
@@ -106,7 +114,7 @@ try {
   assert.deepEqual((await checkpoint(root, child.todo.id, 1, changes, "checkpoint-1", "test-session")).todo, updated.todo);
   await assert.rejects(checkpoint(root, child.todo.id, 2, {}, "checkpoint-1", "test-session"), /different content/);
   await assert.rejects(checkpoint(root, child.todo.id, 1, {}, "checkpoint-2", "test-session"), /Stale revision/);
-  assert.equal((await stat(join(updated.directory, "todo.json"))).mode & 0o777, 0o600);
+  assert.equal((await stat(join(root, "todo.sqlite"))).mode & 0o777, 0o600);
   const approved = applyChanges(updated.todo, { decisions: [{ ...updated.todo.decisions[0], approval: "approved" }] });
   assert.ok(needsApproval(updated.todo, { outcome: "Different outcome" }));
   assert.ok(needsApproval(approved, { decisions: [{ summary: "New direction", rationale: "Changed evidence", approval: "draft", evidence: [], supersedes: approved.decisions[0].id }] }));
@@ -120,28 +128,68 @@ try {
   assert.equal((await resumeBundle(root, project.todo.id)).required_artifacts.length, 0);
   const revised = await saveArtifact(root, project.todo.id, 3, { ...metadata, id: artifact.id, body: "# Revised design" });
   assert.notEqual(revised.todo.artifacts[0].path, artifact.path);
-  assert.match(await readFile(join(project.directory, artifact.path), "utf8"), /Preserve IDs/);
+  assert.match(bodyBytes(project, artifact.path).toString("utf8"), /Preserve IDs/);
   await assert.rejects(saveArtifact(root, child.todo.id, 2, { ...metadata }), /direct children/);
   const childArtifact = await saveArtifact(root, child.todo.id, 2, { ...metadata, applies_to: [], required: false });
   assert.match(await readArtifact(root, childArtifact, childArtifact.todo.artifacts[0].id), /Preserve IDs/);
-  const beforeInvalid = await readFile(join(child.directory, "todo.json"), "utf8");
+  const beforeInvalid = await savedJSON(child);
+  const beforeInvalidBodies = withRead(root, db => db.prepare("SELECT count(*) AS n FROM artifact_revisions").get().n);
   await assert.rejects(saveArtifact(root, child.todo.id, 3, { ...metadata, kind: "runbook", applies_to: [] }), /research or design/);
   await assert.rejects(saveArtifact(root, child.todo.id, 3, { ...metadata, applies_to: [], lifecycle: "superseded", required: true }), /Only current/);
-  assert.equal(await readFile(join(child.directory, "todo.json"), "utf8"), beforeInvalid);
+  assert.equal(await savedJSON(child), beforeInvalid);
+  await assert.rejects(saveArtifact(root, child.todo.id, 1, { ...metadata, applies_to: [] }), /Stale revision/);
+  assert.equal(withRead(root, db => db.prepare("SELECT count(*) AS n FROM artifact_revisions").get().n), beforeInvalidBodies);
 
   // Cross-process locking, abort safety, and path confinement.
-  await withStoreLock(root, async () => {
+  const held = new DatabaseSync(join(root, "todo.sqlite")); held.exec("BEGIN IMMEDIATE");
+  try {
     const script = `import { checkpoint } from ${JSON.stringify(pathToFileURL(join(directory, "storage.ts")).href)}; try { await checkpoint(${JSON.stringify(root)}, ${JSON.stringify(child.todo.id)}, 3, {}, 'parallel', 'other'); process.exit(1); } catch(e) { if (!e.message.includes('busy')) throw e; }`;
     const worker = spawn(process.execPath, ["--input-type=module", "-e", script]);
     let stderr = ""; worker.stderr.on("data", chunk => stderr += chunk);
     const code = await new Promise(resolve => worker.on("exit", resolve)); assert.equal(code, 0, stderr);
-  });
+  } finally { held.exec("ROLLBACK"); held.close(); }
   await assert.rejects(checkpoint(root, child.todo.id, 3, {}, "abort", "test-session", AbortSignal.abort()), /abort/i);
-  await symlink(scratch, join(child.directory, "artifacts", "escape"));
   const hostile = structuredClone(childArtifact.todo); hostile.artifacts[0].path = "../../escape.md";
   await assert.rejects(mutate(root, child.todo.id, 3, () => hostile), /Invalid artifact/);
-  const symlinkId = createTodo("simple", "Symlink", "No").id;
-  await symlink(scratch, join(root, symlinkId)); await assert.rejects(list(root), /Symlinks/); await rm(join(root, symlinkId));
+  await assert.rejects(mutate(root, child.todo.id, 3, async todo => todo), /synchronous/);
+
+  // Bootstrap is restartable, incompatible stores fail closed, and transaction failures are atomic.
+  {
+    const empty = join(scratch, "empty-database"); await mkdir(empty); await writeFile(join(empty, "todo.sqlite"), "", { mode: 0o600 });
+    assert.deepEqual(await list(empty), []);
+    const rolled = join(scratch, "rolled-initialization"); await mkdir(rolled);
+    const db = new DatabaseSync(join(rolled, "todo.sqlite"));
+    db.exec("BEGIN IMMEDIATE; CREATE TABLE abandoned(id TEXT); PRAGMA user_version=1; ROLLBACK"); db.close();
+    assert.deepEqual(await list(rolled), []);
+    const foreign = join(scratch, "foreign-database"); await mkdir(foreign);
+    const unknown = new DatabaseSync(join(foreign, "todo.sqlite")); unknown.exec("CREATE TABLE sqlitexforeign(id TEXT)"); unknown.close();
+    await assert.rejects(list(foreign), /Unsupported/);
+    const raceRoot = join(scratch, "concurrent-bootstrap");
+    const script = `import { create } from ${JSON.stringify(pathToFileURL(join(directory, "storage.ts")).href)}; try { await create(${JSON.stringify(raceRoot)}, 'simple', process.argv[1], 'Preserve both commits'); } catch(e) { if (!e.message.includes('busy')) throw e; process.exitCode=2; }`;
+    const run = title => new Promise(resolve => { const p = spawn(process.execPath, ["--input-type=module", "-e", script, title]); let error = ""; p.stderr.on("data", data => error += data); p.on("exit", code => resolve({ code, error })); });
+    const races = await Promise.all([run("First"), run("Second")]);
+    assert.ok(races.every(result => [0, 2].includes(result.code)), JSON.stringify(races));
+    const before = await list(raceRoot); assert.equal(before.length, races.filter(result => result.code === 0).length);
+    await create(raceRoot, "simple", "Retry", "Caller retry succeeds");
+    assert.equal((await list(raceRoot)).length, before.length + 1);
+    const atomicRoot = join(scratch, "atomic");
+    const parent = await create(atomicRoot, "project", "Atomic parent", "No partial effects");
+    const child = await create(atomicRoot, "simple", "Atomic child", "No orphan bytes", parent.todo.id);
+    const beforeRows = await list(atomicRoot);
+    // The real mutation owner also rolls back a body and child when parent validation fails at save.
+    await assert.rejects(mutate(atomicRoot, child.todo.id, 1, (todo, item, context) => {
+      context.writeArtifact("artifacts/staged.md", Buffer.from("staged"));
+      context.rows.find(row => row.todo.id === parent.todo.id).todo.title = "";
+      return todo;
+    }, undefined, true), /nonempty text/i);
+    assert.deepEqual(await list(atomicRoot), beforeRows);
+    assert.equal(withRead(atomicRoot, db => db.prepare("SELECT count(*) AS n FROM artifact_revisions").get().n), 0);
+    const controller = new AbortController();
+    await assert.rejects(mutate(atomicRoot, child.todo.id, 1, todo => { controller.abort(); return todo; }, controller.signal), /abort/i);
+    assert.deepEqual(await list(atomicRoot), beforeRows);
+    const hostileDB = join(scratch, "symlink-db"); await mkdir(hostileDB); await symlink(join(empty, "todo.sqlite"), join(hostileDB, "todo.sqlite"));
+    await assert.rejects(list(hostileDB), /Unsafe todo database/);
+  }
 
   // Real extension loader, schema validation, selection restoration and nonforcing bookkeeping guidance.
   const pi = await instance([], true);
@@ -150,6 +198,16 @@ try {
   const [context] = await pi.emit("context", { messages: [] });
   assert.match(context.messages.at(-1).content, /Converter tested/);
   assert.doesNotMatch(context.messages.at(-1).content, /Observe.*current_state/);
+  // A malformed unrelated owner must not prevent an attached session from watching its own scope.
+  const siblingJSON = savedJSON(sibling);
+  replaceJSON(sibling, JSON.stringify({ ...JSON.parse(siblingJSON), title: "" }));
+  try {
+    assert.equal((await readKnown(root, child)).todo.id, child.todo.id);
+    const [isolatedContext] = await pi.emit("context", { messages: context.messages });
+    assert.equal(pi.ctx.aborted, undefined);
+    assert.match(isolatedContext.messages.at(-1).content, /Converter tested/);
+    await assert.rejects(readKnown(root, sibling), /nonempty text/i);
+  } finally { replaceJSON(sibling, siblingJSON); }
   const loadCount = () => pi.stored.filter(entry => entry.customType === "todo-context-v1").length;
   const initialLoads = loadCount();
   const [continued] = await pi.emit("context", { messages: context.messages });
@@ -230,7 +288,7 @@ try {
   assert.equal(durableBody.body, designBody);
   assert.equal(durableBody.complete, true);
   const externalUpdate = await author.call("todo_checkpoint", { id: owner.todo.id, revision: designed.todo.revision, key: "external-nuance", changes: { evidence: { add: ["External discovery: preserve imported aliases too."] } } });
-  const beforeStatus = await readFile(join(owner.directory, "todo.json"), "utf8");
+  const beforeStatus = await savedJSON(owner);
   const beforeStatusEntries = fresh.stored.length;
   const attachment = await fresh.call("todo", { action: "status" });
   assert.equal(attachment.selected.id, owner.todo.id);
@@ -238,7 +296,7 @@ try {
   assert.equal(attachment.selected.status, "in_progress");
   assert.equal("current_state" in attachment.selected, false);
   assert.equal(fresh.stored.length, beforeStatusEntries);
-  assert.equal(await readFile(join(owner.directory, "todo.json"), "utf8"), beforeStatus);
+  assert.equal(await savedJSON(owner), beforeStatus);
   const [afterStatusContext] = await fresh.emit("context", { messages: freshContext.messages });
   assert.match(afterStatusContext.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
   assert.equal(afterStatusContext.messages.find(message => message.customType === "todo-context-v1").content, brief); // Status neither observes the external write nor refreshes the brief.
@@ -246,7 +304,7 @@ try {
   await fresh.call("todo_ack", { id: owner.todo.id, reason: "no_change", explanation: "Only recovered saved understanding" });
   await fresh.call("todo", { action: "leave" });
   assert.deepEqual(await fresh.call("todo", { action: "status" }), { selected: null });
-  assert.equal(await readFile(join(owner.directory, "todo.json"), "utf8"), beforeStatus);
+  assert.equal(await savedJSON(owner), beforeStatus);
 
   // Recap joins live scoped memory to bounded native journal evidence without observing or saving it.
   {
@@ -276,10 +334,10 @@ try {
       { type: "custom_message", id: "recap-hidden", display: false, content: "PRIVATE_RECAP_NOTE" },
     );
     recapSaved = await checkpoint(root, recapChild.todo.id, (await locate(root, recapChild.todo.id)).todo.revision, { evidence: { remove: recapSaved.todo.current_state.evidence.map(row => row.id), add: ["External finding: deployment remains unverified"] } }, "recap-external", "another-session");
-    const recapFiles = await Promise.all([recapParent, recapSaved, recapPrereq].map(row => readFile(join(row.directory, "todo.json"), "utf8")));
-    const requiredRecapPath = join(recapParent.directory, recapParent.todo.artifacts[0].path);
-    const requiredRecapBody = await readFile(requiredRecapPath, "utf8");
-    await rm(requiredRecapPath); // Even a required artifact body is not opened by recap.
+    const recapFiles = await Promise.all([recapParent, recapSaved, recapPrereq].map(row => savedJSON(row)));
+    const requiredRecapPath = recapParent.todo.artifacts[0].path;
+    const requiredRecapBody = bodyBytes(recapParent, requiredRecapPath);
+    removeBody(recapParent, requiredRecapPath); // Even a required artifact body is not opened by recap.
     const beforeRecapEntries = structuredClone(recapPi.stored);
     const recapData = await recapPi.call("todo_recap", {});
     assert.equal(recapData.selected, recapChild.todo.id);
@@ -305,9 +363,9 @@ try {
     assert.doesNotMatch(JSON.stringify(recapData), /PRIVATE_RECAP|RECAP_BODY_NOT_EAGERLY_READ|Earlier request 0/);
     assert.deepEqual(await recapPi.call("todo_recap", {}), recapData);
     assert.deepEqual(recapPi.stored, beforeRecapEntries);
-    assert.deepEqual(await Promise.all([recapParent, recapSaved, recapPrereq].map(row => readFile(join(row.directory, "todo.json"), "utf8"))), recapFiles);
-    await assert.rejects(resumeBundle(root, recapChild.todo.id), /ENOENT/); // Resume still validates mandatory bodies.
-    await writeFile(requiredRecapPath, requiredRecapBody);
+    assert.deepEqual(await Promise.all([recapParent, recapSaved, recapPrereq].map(row => savedJSON(row))), recapFiles);
+    await assert.rejects(resumeBundle(root, recapChild.todo.id), /Missing current artifact/); // Resume still validates mandatory bodies.
+    restoreBody(recapParent, requiredRecapPath, requiredRecapBody);
     const [recapDrift] = await recapPi.emit("context", { messages: recapContext.messages });
     assert.match(recapDrift.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
     await recapPi.call("todo_recap", {});
@@ -450,7 +508,7 @@ try {
   const mixed = await create(recallRoot, "simple", "Referral intake", "Preserve routing exclusions");
   await checkpoint(recallRoot, mixed.todo.id, 1, { status: "canceled" }, "recall-canceled", "test");
   const recallRows = await list(recallRoot);
-  const recallBytes = await Promise.all(recallRows.map(row => readFile(join(row.directory, "todo.json"), "utf8")));
+  const recallBytes = await Promise.all(recallRows.map(row => savedJSON(row)));
   process.env.PI_TODO_PATH = recallRoot;
   const recall = await instance();
   const recallQuery = { action: "search", query: "REFERRAL--Routing!" };
@@ -478,7 +536,7 @@ try {
   assert.deepEqual(listedTerms.dependency, { dependencies_satisfied: false, waiting_on: [{ id: goalOnly.todo.id, title: "Handoff", status: "todo" }], review_required: false, dependents: [] });
   assert.deepEqual(recallList.find(row => row.id === goalOnly.todo.id).dependency.dependents, [titleTerms.todo.id]);
   assert.deepEqual(recall.stored, []); // Discovery never attaches or injects a brief.
-  assert.deepEqual(await Promise.all(recallRows.map(row => readFile(join(row.directory, "todo.json"), "utf8"))), recallBytes);
+  assert.deepEqual(await Promise.all(recallRows.map(row => savedJSON(row))), recallBytes);
   const recalled = await recall.call("todo", { action: "resume", selector: found[0].id });
   assert.equal(recalled.context_loaded, true);
   assert.equal(restoreSelection(recall.stored), recallChild.todo.id);
@@ -495,7 +553,7 @@ try {
   // An existing record may still carry retired fields; browsing must not render them as status or instructions.
   pickerSaved.todo.current_state.summary = "LEGACY_NARRATIVE";
   pickerSaved.todo.next_actions = ["LEGACY_INSTRUCTION"];
-  await writeFile(join(pickerSaved.directory, "todo.json"), JSON.stringify(pickerSaved.todo));
+  replaceJSON(pickerSaved, JSON.stringify(pickerSaved.todo));
   const pickerChild = await create(pickerRoot, "simple", "Migrate 你好", "Convert unresolved work without replaying side effects", pickerProject.todo.id);
   await checkpoint(pickerRoot, pickerChild.todo.id, 1, { evidence: { add: ["Dry run verified 你好. " + "Awaiting operator review. ".repeat(30)] } }, "picker-child-status", "test");
   await create(pickerRoot, "simple", "Observe", "Verify runtime delivery", pickerProject.todo.id);
@@ -792,8 +850,8 @@ try {
   assertStats(smallModel, refreshedBrief);
   // Reopen reads current footer metadata but retains the delivered brief/drift baseline.
   await checkpoint(root, statsTodo.todo.id, 3, { title: "Updated diagnostics", status: "done" }, "stats-external", "another-session");
-  const statsFile = join(statsArtifact.directory, statsArtifact.todo.artifacts[0].path);
-  await rm(statsFile); // Restoring the metric must not eagerly reload required artifact bodies.
+  const statsFile = statsArtifact.todo.artifacts[0].path;
+  removeBody(statsArtifact, statsFile); // Restoring the metric must not eagerly reload required artifact bodies.
   const statsReopened = await instance(smallModel.stored, true);
   assertStats(statsReopened, refreshedBrief);
   assert.match(statsReopened.statuses.at(-1), /^todo · done · .* · Updated diagnostics$/);
@@ -803,8 +861,8 @@ try {
   assert.match(statsReopened.statuses.at(-1), /^todo · done · .* · Updated diagnostics$/);
   const [statsDrift] = await statsReopened.emit("context", { messages: refreshedStats.messages });
   assert.match(statsDrift.messages.find(message => message.customType === "todo-context-drift-v1").content, /changed outside this session/);
-  await assert.rejects(statsReopened.call("todo", { action: "refresh" }), /ENOENT/);
-  await writeFile(statsFile, "Required evidence\n");
+  await assert.rejects(statsReopened.call("todo", { action: "refresh" }), /Missing current artifact/);
+  restoreBody(statsArtifact, statsFile, "Required evidence\n");
   const prepareStatsCompaction = session => session.emit("session_before_compact", { preparation: preparation(), reason: "manual", signal: new AbortController().signal });
   await prepareStatsCompaction(statsReopened);
   await statsReopened.emit("session_compact", { reason: "manual" });
@@ -1042,9 +1100,9 @@ try {
   assert.equal(history.todo.context_policy.consult_on_demand_decisions.length, 1); // Input remains immutable.
   assert.equal(history.todo.outcome, "User-approved outcome");
   assert.deepEqual(history.todo.artifacts, optional.todo.artifacts);
-  assert.deepEqual(await readdir(join(history.directory, "artifacts")), [optional.todo.artifacts[0].path.split("/").at(-1)]);
+  assert.equal(withRead(itemRoot(history), db => db.prepare("SELECT count(*) AS n FROM artifact_revisions WHERE owner_id=?").get(history.todo.id).n), 1);
   assert.match((await auto.call("todo_artifact", { action: "read", id: autonomousTodo.todo.id, artifact_id: optional.todo.artifacts[0].id })).body, /HISTORICAL_DETAIL/);
-  const bytesBeforeActive = await readFile(join(history.directory, "todo.json"), "utf8");
+  const bytesBeforeActive = await savedJSON(history);
   const activeView = await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "active" });
   assert.equal(activeView.todo.decisions.length, 0);
   assert.equal(activeView.todo.artifacts.length, 0);
@@ -1055,7 +1113,7 @@ try {
   assert.equal(activeView.todo.context_policy, undefined);
   assert.equal(activeView.todo.last_checkpoint, undefined);
   assert.deepEqual(await auto.call("todo", { action: "get", selector: autonomousTodo.todo.id, view: "full" }), history);
-  assert.equal(await readFile(join(history.directory, "todo.json"), "utf8"), bytesBeforeActive);
+  assert.equal(await savedJSON(history), bytesBeforeActive);
   const hiddenBundle = await resumeBundle(root, autonomousTodo.todo.id);
   assert.deepEqual(activeView.todo, hiddenBundle.scopes[0].context);
   assert.equal(hiddenBundle.scopes[0].context.decisions.length, 0); assert.equal(hiddenBundle.scopes[0].context.artifacts.length, 0);
@@ -1079,14 +1137,14 @@ try {
   await assert.rejects(auto.call("todo_tighten", { id: autonomousTodo.todo.id, revision: 6, reason: "Cannot hide required context", consult_on_demand_decisions: [], consult_on_demand_artifacts: [required.todo.artifacts.at(-1).id] }), /Required artifacts/);
   assert.equal((await locate(root, autonomousTodo.todo.id)).todo.revision, 6);
   const requiredRow = required.todo.artifacts.at(-1);
-  const requiredPath = join(required.directory, requiredRow.path);
-  await rm(requiredPath);
+  const requiredPath = requiredRow.path;
+  removeBody(required, requiredPath);
   const savedWithoutRefresh = await auto.call("todo_tighten", { id: autonomousTodo.todo.id, revision: 6, reason: "Restore visibility", consult_on_demand_decisions: [], consult_on_demand_artifacts: [] });
   assert.equal(savedWithoutRefresh.revision, 7);
   assert.equal(savedWithoutRefresh.context_refreshed, false); // Tightening does not reread artifact bodies.
-  await assert.rejects(auto.call("todo", { action: "refresh" }), /ENOENT/);
+  await assert.rejects(auto.call("todo", { action: "refresh" }), /Missing current artifact/);
   assert.equal((await locate(root, autonomousTodo.todo.id)).todo.revision, 7);
-  await writeFile(requiredPath, "Required constraints\n");
+  restoreBody(required, requiredPath, "Required constraints\n");
   const hiddenArtifact = await auto.call("todo_tighten", { id: autonomousTodo.todo.id, revision: 7, reason: "Old artifact is historical", consult_on_demand_decisions: [], consult_on_demand_artifacts: [optional.todo.artifacts[0].id] });
   // Required artifacts load as an index (title, description, size), not bodies; retiring demotes them to readable reference.
   const requiredIndex = (await resumeBundle(root, autonomousTodo.todo.id)).required_artifacts;
@@ -1118,13 +1176,13 @@ try {
   const noteMessages = () => boundarySession.stored.filter(entry => entry.customType === "todo-context-v1");
   const [firstBoundaryContext] = await boundarySession.emit("context", { messages: noteMessages() });
   assert.equal(noteMessages().length, 1);
-  const requiredFile = join(boundaryArtifact.directory, boundaryArtifact.todo.artifacts[0].path);
-  await rm(requiredFile);
+  const requiredFile = boundaryArtifact.todo.artifacts[0].path;
+  removeBody(boundaryArtifact, requiredFile);
   const [readOnce] = await boundarySession.emit("context", { messages: firstBoundaryContext.messages });
   assert.equal(boundarySession.ctx.aborted, undefined); assert.equal(noteMessages().length, 1);
   assert.match(readOnce.messages[0].content, /"title":"Required brief","kind":"design","description":"Read-once reference","chars":24/); assert.doesNotMatch(readOnce.messages[0].content, /READ_ONCE_REQUIRED_BODY/);
-  await assert.rejects(boundarySession.call("todo", { action: "refresh" }), /ENOENT/);
-  await writeFile(requiredFile, "READ_ONCE_REQUIRED_BODY\n");
+  await assert.rejects(boundarySession.call("todo", { action: "refresh" }), /Missing current artifact/);
+  restoreBody(boundaryArtifact, requiredFile, "READ_ONCE_REQUIRED_BODY\n");
   await boundarySession.extension.commands.get("todo").handler("refresh", boundarySession.ctx);
   const [refreshedBoundary] = await boundarySession.emit("context", { messages: boundarySession.stored.filter(entry => entry.type === "custom_message") });
   assert.equal(noteMessages().length, 2);
@@ -1359,12 +1417,12 @@ try {
   assert.deepEqual(JSON.parse(cDoneRaw.content[0].text).dependency, cDone.dependency);
   assert.equal(JSON.parse(cDoneRaw.content[0].text).status, "done");
   assert.equal(cDone.dependency.dependencies_satisfied, true);
-  const bFile = await readFile(join(b.directory, "todo.json"), "utf8");
-  const cFile = await readFile(join(c.directory, "todo.json"), "utf8");
+  const bFile = await savedJSON(b);
+  const cFile = await savedJSON(c);
   const aReopened = await set(aDone, { status: "todo" }, "reopen");
   assert.ok(aReopened.affected_dependents.every(row => row.status === "done" && row.review_required));
-  assert.equal(await readFile(join(b.directory, "todo.json"), "utf8"), bFile);
-  assert.equal(await readFile(join(c.directory, "todo.json"), "utf8"), cFile);
+  assert.equal(await savedJSON(b), bFile);
+  assert.equal(await savedJSON(c), cFile);
   await depsSession.emit("context", { messages: depsLoads() });
   assert.match(depsSession.stored.findLast(entry => entry.customType === "todo-context-drift-v1").content, /"review_required":true/);
   await assert.rejects(set(cDone, { status: "done" }, "reassert"), /waiting on/);
@@ -1414,12 +1472,98 @@ try {
   assert.deepEqual(validate(legacy), migrated); assert.deepEqual(validate(migrated), migrated);
   assert.equal(legacy.status, "blocked"); assert.ok(legacy.blockers);
   const legacyRoot = join(scratch, "legacy-todos");
-  const legacyParent = await create(legacyRoot, "project", "Legacy grounding", "Preserve original qualifications");
+  const legacyParentTodo = createTodo("project", "Legacy grounding", "Preserve original qualifications");
+  legacyParentTodo.id = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+  const legacyParent = { todo: legacyParentTodo, directory: join(legacyRoot, legacyParentTodo.id) };
+  const inheritedId = createTodo("simple", "Document ID", "Fixture identity").id;
+  const oldDecision = createTodo("simple", "Decision ID", "Fixture identity").id;
+  legacyParent.todo.decisions = [{ id: oldDecision, summary: "Original approved boundary", rationale: "Preserve authority", approval: "approved", evidence: ["User: approved only investigation"] }, { id: inheritedId, summary: "Scoped replacement", rationale: "Supersession is not new permission", approval: "draft", evidence: [], supersedes: oldDecision }];
+  legacyParent.todo.open_questions = [{ id: inheritedId, text: "Was qualification retained?", resolution: "Verified source bytes" }];
+  legacyParent.todo.linear = { url: "https://linear.app/example-team/issue/EX-123/legacy", coverage: "partial", status: "In Progress", status_type: "started", refreshed_at: legacyParent.todo.updated_at };
+  legacyParent.todo.artifacts = [{ id: inheritedId, title: "Inherited design", kind: "design", description: "Required byte-exact import", lifecycle: "current", required: true, applies_to: [legacy.id], path: `artifacts/${inheritedId}-1.md` }];
+  legacyParent.todo.context_policy = { reason: "Retained hidden draft", consult_on_demand_decisions: [inheritedId], consult_on_demand_artifacts: [] };
+  legacyParent.todo.last_checkpoint = { key: "accepted-parent", digest: digest({}), session_id: "original-parent", at: legacyParent.todo.updated_at, base_revision: 1 };
+  await mkdir(join(legacyParent.directory, "artifacts"), { recursive: true });
+  const inheritedBytes = Buffer.from("  # Byte-exact inherited design\n\n");
+  await writeFile(join(legacyParent.directory, legacyParent.todo.artifacts[0].path), inheritedBytes);
+  await writeFile(join(legacyParent.directory, "todo.json"), JSON.stringify(legacyParent.todo));
   const legacyDirectory = join(legacyParent.directory, "todos", legacy.id);
   await mkdir(join(legacyDirectory, "artifacts"), { recursive: true }); const legacyFile = join(legacyDirectory, "todo.json");
   await writeFile(join(legacyDirectory, legacy.artifacts[0].path), "Preserved legacy document\n");
   const legacyBytes = JSON.stringify(legacy); await writeFile(legacyFile, legacyBytes);
-  await list(legacyRoot); assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
+  const legacyPeer = createTodo("simple", "Legacy dependent", "Keep peer edges"); legacyPeer.depends_on = [legacy.id];
+  await mkdir(join(legacyParent.directory, "todos", legacyPeer.id));
+  await writeFile(join(legacyParent.directory, "todos", legacyPeer.id, "todo.json"), JSON.stringify(legacyPeer));
+  await mkdir(join(legacyParent.directory, "todos", `${createTodo("simple", "Unpublished child", "No").id}.creating`));
+  await writeFile(join(legacyParent.directory, "todos", "unpublished.tmp"), "Unpublished child metadata");
+  const olderBytes = Buffer.from([0xff, 0x00, 0xc3, 0xa9, 0x0a]);
+  await writeFile(join(legacyDirectory, "artifacts", "unknown-older.md"), olderBytes);
+  await assert.rejects(list(legacyRoot), /migration required/);
+  const orphanPath = `artifacts/${legacy.id}-2.md`;
+  await writeFile(join(legacyDirectory, orphanPath), "Unknown interrupted next-version bytes\n");
+  await mkdir(join(legacyRoot, `${createTodo("simple", "Unpublished", "No").id}.creating`));
+  await writeFile(join(legacyDirectory, "todo.json.unpublished.tmp"), "unpublished");
+  const inspection = await inspect(legacyRoot, join(scratch, "legacy-inspect.json"));
+  const rehearsal = await rehearse(legacyRoot, join(scratch, "legacy-rehearsal"));
+  assert.equal(rehearsal.source_fingerprint, inspection.fingerprint);
+  assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
+  const nextDocument = await saveArtifact(join(scratch, "legacy-rehearsal", "root"), legacy.id, 1, { ...metadata, id: legacy.id, applies_to: [], required: false, body: "Legitimate committed next version" });
+  assert.equal(nextDocument.todo.artifacts[0].path, orphanPath); // Unknown-commit bytes have a separate key namespace.
+  assert.equal(await readArtifact(join(scratch, "legacy-rehearsal", "root"), nextDocument, legacy.id), "Legitimate committed next version\n");
+  assert.equal(withRead(join(scratch, "legacy-rehearsal", "root"), db => Buffer.from(db.prepare("SELECT body FROM retained_legacy_files WHERE owner_id=? AND relative_path=?").get(legacy.id, orphanPath).body).toString()), "Unknown interrupted next-version bytes\n");
+  await writeFile(join(legacyDirectory, "late-unpublished.tmp"), "Rehearsal is not authoritative");
+  const imported = await cutover(legacyRoot, join(scratch, "legacy-cutover"), true);
+  assert.notEqual(imported.source_fingerprint, rehearsal.source_fingerprint);
+  assert.equal(await readFile(join(imported.backup, legacyParent.todo.id, "todos", legacy.id, "late-unpublished.tmp"), "utf8"), "Rehearsal is not authoritative");
+  assert.equal(imported.published, true);
+  assert.equal((await stat(join(legacyRoot, "todo.sqlite"))).mode & 0o777, 0o600);
+  assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
+  await assert.rejects(mkdir(join(legacyRoot, ".write-lock")), /EEXIST/);
+  assert.equal(JSON.parse(await readFile(join(legacyRoot, ".write-lock", "owner.json"))).purpose, "migrated-to-sqlite");
+  const legacyItem = await locate(legacyRoot, legacy.id);
+  assert.deepEqual(legacyItem.todo, migrated);
+  assert.deepEqual((await locate(legacyRoot, legacyParent.todo.id)).todo, legacyParent.todo);
+  assert.deepEqual(bodyBytes(legacyParent, legacyParent.todo.artifacts[0].path), inheritedBytes);
+  assert.deepEqual((await locate(legacyRoot, legacyPeer.id)).todo, legacyPeer);
+  assert.deepEqual((await list(legacyRoot)).map(row => row.todo.id), [legacyParent.todo.id, ...[legacy.id, legacyPeer.id].sort()]);
+  assert.deepEqual(withRead(legacyRoot, db => Buffer.from(db.prepare("SELECT body FROM retained_legacy_files WHERE owner_id=? AND relative_path=?").get(legacy.id, "artifacts/unknown-older.md").body)), olderBytes);
+  assert.deepEqual(await readKnown(legacyRoot, { ...legacyItem, directory: "/not/a/storage/path" }), legacyItem);
+  assert.equal(JSON.parse(execFileSync(process.execPath, [join(directory, "migration.ts"), "verify", "--root", legacyRoot], { encoding: "utf8" })).integrity, "ok");
+  assert.equal(withRead(legacyRoot, db => Buffer.from(db.prepare("SELECT body FROM retained_legacy_files WHERE owner_id=? AND relative_path=?").get(legacy.id, orphanPath).body).toString()), "Unknown interrupted next-version bytes\n");
+  // Migration stop conditions leave source untouched and never publish an empty-ready DB.
+  {
+    const stopped = join(scratch, "migration-stops"); await mkdir(stopped);
+    const bad = createTodo("simple", "Missing body", "Refuse activation");
+    bad.artifacts = [{ ...metadata, id: bad.id, path: `artifacts/${bad.id}-1.md`, applies_to: [] }]; delete bad.artifacts[0].body;
+    await mkdir(join(stopped, bad.id)); const badFile = join(stopped, bad.id, "todo.json"); await writeFile(badFile, JSON.stringify(bad));
+    const original = await readFile(badFile);
+    await assert.rejects(inspect(stopped, join(scratch, "bad-inspect.json")), /Missing current artifact/);
+    await assert.rejects(rehearse(stopped, join(stopped, "nested-workspace")), /outside source/);
+    await assert.rejects(stat(join(stopped, "nested-workspace")), /ENOENT/);
+    await assert.rejects(cutover(stopped, join(scratch, "no-apply")), /--apply/);
+    await mkdir(join(stopped, ".write-lock"));
+    await assert.rejects(cutover(stopped, join(scratch, "locked-cutover"), true), /existing destination/);
+    await rm(join(stopped, ".write-lock"), { recursive: true });
+    await mkdir(join(stopped, ".todo-import-unresolved"));
+    await assert.rejects(cutover(stopped, join(scratch, "staged-cutover"), true), /Unresolved cutover/);
+    await rm(join(stopped, ".todo-import-unresolved"), { recursive: true });
+    await assert.rejects(cutover(stopped, join(scratch, "failed-cutover"), true), /published=false.*Missing current artifact/);
+    await assert.rejects(stat(join(stopped, "todo.sqlite")), /ENOENT/);
+    assert.deepEqual(await readFile(badFile), original);
+    assert.equal(JSON.parse(await readFile(join(scratch, "failed-cutover", "failure.json"))).published, false);
+    await assert.rejects(mkdir(join(stopped, ".write-lock")), /EEXIST/);
+    // Explicit malformed, duplicate-placement, escape and symlink source fixtures.
+    const cases = [
+      ["malformed", async root => { await mkdir(join(root, bad.id)); await writeFile(join(root, bad.id, "todo.json"), "{bad"); }, /Cannot read/],
+      ["symlink", async root => { await symlink(scratch, join(root, bad.id)); }, /Symlinks/],
+      ["escape", async root => { const todo = { ...bad, artifacts: [{ ...bad.artifacts[0], path: "../../escape.md" }] }; await mkdir(join(root, bad.id)); await writeFile(join(root, bad.id, "todo.json"), JSON.stringify(todo)); }, /Invalid artifact/],
+      ["duplicate", async root => { const parent = createTodo("project", "Parent", "Duplicate placement"); const simple = createTodo("simple", "Duplicate", "Refuse duplicate"); await mkdir(join(root, parent.id, "todos", simple.id), { recursive: true }); await mkdir(join(root, simple.id)); await writeFile(join(root, parent.id, "todo.json"), JSON.stringify(parent)); for (const path of [join(root, simple.id), join(root, parent.id, "todos", simple.id)]) await writeFile(join(path, "todo.json"), JSON.stringify(simple)); }, /Duplicate todo IDs/],
+    ];
+    for (const [name, prepare, error] of cases) { const root = join(scratch, `migration-${name}`); await mkdir(root); await prepare(root); await assert.rejects(rehearse(root, join(scratch, `workspace-${name}`)), error); await assert.rejects(stat(join(root, "todo.sqlite")), /ENOENT/); }
+    await assert.rejects(cutover(legacyRoot, join(scratch, "existing-cutover"), true), /existing destination/);
+    assert.equal((await verify(legacyRoot)).owners, 3);
+    assert.equal((await stat(join(legacyRoot, "todo.sqlite-wal")).catch(error => error.code === "ENOENT" ? { size: 0 } : Promise.reject(error))).size, 0);
+  }
   process.env.PI_TODO_PATH = legacyRoot;
   const curator = await instance([], true);
   const legacyRecords = migrated.current_state.evidence;
@@ -1439,8 +1583,11 @@ try {
     const page = await curator.call("todo_record", { id: legacy.id, expected_revision: 1, source_kind: "evidence", index: 0 });
     assert.equal(page.evidence_id, legacyRecords[0].id); assert.equal(page.body, legacyRecords[0].text);
   }
+  const recoveredLegacy = await instance(curator.stored);
+  assert.equal(restoreSelection(recoveredLegacy.stored), legacy.id);
+  assert.equal((await recoveredLegacy.call("todo", { action: "status" })).selected.id, legacy.id);
   assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
-  const manifestBytes = async () => Promise.all((await list(legacyRoot)).map(row => readFile(join(row.directory, "todo.json"), "utf8")));
+  const manifestBytes = async () => Promise.all((await list(legacyRoot)).map(row => savedJSON(row)));
   const beforeRejectedEvidence = await manifestBytes();
   const unknownEvidenceId = project.todo.id;
   for (const edit of [{ add: ["No room"] }, { update: [{ id: unknownEvidenceId, text: "Unknown" }] }, { remove: [unknownEvidenceId] }, { update: [{ id: legacyRecords[0].id, text: "One" }], remove: [legacyRecords[0].id] }, { update: [{ id: legacyRecords[0].id, text: "One" }, { id: legacyRecords[0].id, text: "Two" }] }]) {
@@ -1454,9 +1601,9 @@ try {
   for (const rows of [["schema2 must not normalize strings"], [legacyRecords[0], "mixed"], [{ id: legacyRecords[0].id, text: "", extra: true }], [legacyRecords[0], legacyRecords[0]]]) {
     const malformedCanonical = { ...migrated, current_state: { evidence: rows } };
     assert.throws(() => validate(malformedCanonical), /fields|text|Duplicate/);
-    await writeFile(legacyFile, JSON.stringify(malformedCanonical));
-    await assert.rejects(curator.call("todo", { action: "get", selector: legacy.id }), /Cannot read/);
-    await writeFile(legacyFile, legacyBytes);
+    replaceJSON(legacyItem, JSON.stringify(malformedCanonical));
+    await assert.rejects(curator.call("todo", { action: "get", selector: legacy.id }), /fields|text|Duplicate/);
+    replaceJSON(legacyItem, JSON.stringify(migrated));
   }
   assert.throws(() => validate({ ...migrated, last_checkpoint: { ...migrated.last_checkpoint, base_revision: 0 } }), /base revision/);
   // Rejection-only schema slots reach the same guard, including a formerly successful key.
@@ -1480,15 +1627,15 @@ try {
   const targetedRaw = await curator.callRaw("todo_checkpoint", { id: legacy.id, revision: 1, key: "legacy-target", changes: { evidence: { update: [{ id: legacyRecords[2].id, text: "Targeted qualification: launch remains unverified" }] } } });
   const targeted = targetedRaw.structuredContent;
   assert.deepEqual(targeted.todo.current_state.evidence.filter(row => row.id !== legacyRecords[2].id), legacyRecords.filter(row => row.id !== legacyRecords[2].id));
-  assert.equal(JSON.parse(await readFile(legacyFile, "utf8")).version, 2);
+  assert.equal(JSON.parse(savedJSON(legacyItem)).version, 2);
   const savedLegacyRaw = await curator.callRaw("todo_checkpoint", { id: legacy.id, revision: targeted.todo.revision, key: "legacy-context", changes: { evidence: { remove: [legacyRecords[3].id], add: ["Model preserved prerequisites"] } } });
   const savedLegacy = savedLegacyRaw.structuredContent;
   assert.deepEqual(savedLegacy.evidence_ids, [evidenceId(legacy.id, targeted.todo.revision, 0)]);
   assert.deepEqual(JSON.parse(savedLegacyRaw.content[0].text).evidence_ids, savedLegacy.evidence_ids);
   assert.deepEqual(savedLegacy.todo.current_state.evidence.slice(0, -1), targeted.todo.current_state.evidence.filter(row => row.id !== legacyRecords[3].id));
   assert.deepEqual(savedLegacy.todo.open_questions, migrated.open_questions);
-  assert.equal("blockers" in JSON.parse(await readFile(legacyFile, "utf8")), false);
-  assert.deepEqual(JSON.parse(await readFile(legacyFile, "utf8")).depends_on, []);
+  assert.equal("blockers" in JSON.parse(savedJSON(legacyItem)), false);
+  assert.deepEqual(JSON.parse(savedJSON(legacyItem)).depends_on, []);
   process.env.PI_TODO_PATH = legacyRoot;
   const legacySession = await instance();
   const legacyFull = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "full" });
@@ -1496,6 +1643,8 @@ try {
   assert.deepEqual(legacyFull.todo.next_actions, legacy.next_actions);
   assert.equal(legacyFull.todo.artifacts[0].kind, "runbook");
   assert.equal((await legacySession.call("todo_artifact", { action: "read", id: legacy.id, artifact_id: legacy.id })).body, "Preserved legacy document\n");
+  assert.equal(await readFile(legacyFile, "utf8"), legacyBytes); // SQLite writes never update archival JSON.
+  assert.equal(await readFile(join(imported.backup, legacyParent.todo.id, "todos", legacy.id, "todo.json"), "utf8"), legacyBytes);
   const legacyActive = await legacySession.call("todo", { action: "get", selector: legacy.id, view: "active" });
   const legacyResumed = await resumeBundle(legacyRoot, legacy.id);
   for (const context of [legacyActive.todo, legacyResumed.scopes.at(-1).context]) {
@@ -1645,8 +1794,8 @@ try {
   const initialOwner = await locate(retrievalRoot, retrievalChild.todo.id);
   await retrieval.call("todo_tighten", { id: retrievalChild.todo.id, revision: initialOwner.todo.revision, reason: "Retain old assumption on demand", consult_on_demand_decisions: [oldKnowledge.todo.decisions[0].id] });
   await retrieval.call("todo", { action: "resume", selector: retrievalChild.todo.id });
-  const retrievalFiles = [...await list(retrievalRoot)].map(row => join(row.directory, "todo.json"));
-  const retrievalBefore = await Promise.all(retrievalFiles.map(path => readFile(path, "utf8")));
+  const retrievalFiles = [...await list(retrievalRoot)];
+  const retrievalBefore = await Promise.all(retrievalFiles.map(item => savedJSON(item)));
   const retrievalEntries = JSON.stringify(retrieval.stored);
   let nextOffset = 0; let expectedVersion; let reconstructed = "";
   do {
@@ -1761,35 +1910,35 @@ try {
   await assert.rejects(retrieval.call("todo_knowledge", { ...knowledgeQuery, query: "different", cursor: cursorPage.next_cursor }), /Cursor/);
   assert.deepEqual(await retrieval.call("todo_knowledge", { query: "absent knowledge" }), { results: [], next_cursor: null });
   await assert.rejects(retrieval.call("todo_knowledge", { query: "   " }), /non-whitespace/);
-  assert.deepEqual(await Promise.all(retrievalFiles.map(path => readFile(path, "utf8"))), retrievalBefore);
+  assert.deepEqual(await Promise.all(retrievalFiles.map(item => savedJSON(item))), retrievalBefore);
   assert.equal(JSON.stringify(retrieval.stored), retrievalEntries);
   assert.equal((await locate(retrievalRoot, retrievalChild.todo.id)).todo.status, "done");
   const beforeReplacement = await locate(retrievalRoot, retrievalChild.todo.id);
   await retrieval.call("todo_checkpoint", { id: retrievalChild.todo.id, revision: beforeReplacement.todo.revision, key: "replace-indexed-source", changes: { evidence: { remove: [beforeReplacement.todo.current_state.evidence[0].id] } } });
-  const replacementFiles = await Promise.all(retrievalFiles.map(path => readFile(path, "utf8")));
+  const replacementFiles = await Promise.all(retrievalFiles.map(item => savedJSON(item)));
   const replacementEntries = JSON.stringify(retrieval.stored);
   await assert.rejects(retrieval.call("todo_record", evidenceArgs), /Owner revision changed/);
   await assert.rejects(retrieval.call("todo_record", decisionArgs), /Owner revision changed/);
   const replacementOwner = await locate(retrievalRoot, retrievalChild.todo.id);
   assert.equal((await retrieval.call("todo_record", { ...evidenceArgs, expected_revision: replacementOwner.todo.revision })).body, "Unrelated owner finding");
-  assert.deepEqual(await Promise.all(retrievalFiles.map(path => readFile(path, "utf8"))), replacementFiles);
+  assert.deepEqual(await Promise.all(retrievalFiles.map(item => savedJSON(item))), replacementFiles);
   assert.equal(JSON.stringify(retrieval.stored), replacementEntries);
   const latestDocumentOwner = await locate(retrievalRoot, retrievalChild.todo.id);
   await retrieval.call("todo_artifact", { action: "upsert", id: retrievalChild.todo.id, revision: latestDocumentOwner.todo.revision, artifact_id: document.id, ...metadata, applies_to: [], required: false, body: "New current document" });
   await assert.rejects(retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id, offset: 12000, expected_version: expectedVersion }), /Artifact changed/);
   assert.equal((await retrieval.call("todo_artifact", { action: "read", id: retrievalChild.todo.id, artifact_id: document.id })).body, "New current document\n");
-  await rm(join(retrievalProject.directory, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.artifacts[0].path));
-  await assert.rejects(retrieval.call("todo_knowledge", { query: "anything", selector: retrievalProject.todo.id }), /ENOENT/);
+  removeBody(retrievalProject, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.artifacts[0].path);
+  await assert.rejects(retrieval.call("todo_knowledge", { query: "anything", selector: retrievalProject.todo.id }), /Missing current artifact/);
   process.env.PI_TODO_PATH = root;
 
   // Corruption is still visible and never silently reset.
-  await writeFile(join(child.directory, "todo.json"), "{broken");
+  withWrite(root, db => { db.exec("PRAGMA ignore_check_constraints=ON"); db.prepare("UPDATE owners SET document=? WHERE id=?").run("{broken", child.todo.id); });
   await largeAttach.emit("session_compact", { reason: "manual" });
   const [failed] = await largeAttach.emit("context", { messages: [] });
   assert.equal(largeAttach.ctx.aborted, true);
   assert.ok(!failed.messages.some(message => message.customType === "todo-context-v1"));
-  await assert.rejects(checkpoint(root, child.todo.id, 4, {}, "corrupt", "test-session"), /Cannot read/);
-  assert.equal(await readFile(join(child.directory, "todo.json"), "utf8"), "{broken");
+  await assert.rejects(checkpoint(root, child.todo.id, 4, {}, "corrupt", "test-session"), /JSON|Unexpected|position/);
+  assert.equal(await savedJSON(child), "{broken");
   console.log("todo checks passed: structured state, projects, artifacts, retries, locking, paths, lifecycle, compaction/reconciliation, budgets, approval, UI and mocked Linear");
 } finally {
   if (oldRoot === undefined) delete process.env.PI_TODO_PATH; else process.env.PI_TODO_PATH = oldRoot;
