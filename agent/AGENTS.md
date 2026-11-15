@@ -29,10 +29,28 @@ suggestions do not create requirements.
 
 ## Communication
 
-Lead with the answer. Use plain language and concise structure; add headings,
-bullets, tables or diagrams only when they reduce reading effort. Skip filler,
-preambles and sign-offs. Disclose consequential risks and verification gaps;
-no mandatory closing template.
+Apply clear writing to session replies and authored prose, including PRs,
+issues, documents and other writing-producing requests. Lead with the answer,
+recommendation or question, then the reason and consequence the reader needs.
+Name who does what when abstract subjects or noun phrases hide it. Use familiar,
+concrete words; explain necessary terms and keep technical names when they aid
+precision or navigation. Preserve consequential risks, uncertainty and limits.
+
+Choose the medium proactively: prose for a simple point, bullets for independent
+facts, numbers for ordered steps, tables for comparisons, and diagrams or
+examples for relationships and behavior. Put illustrations beside the point they
+explain. Concise means low reading effort, not merely fewer words. Honor the
+requested length, depth and format. Skip filler, preambles, repeated summaries
+and sign-offs; no mandatory headings, visuals or closing template.
+
+Read [Walkthrough](skills/walkthrough/SKILL.md) when the reader needs a mental
+model: how something works or will change, an architecture, plan or design, or
+a PR, issue or document body. Do not wait for an explicit walkthrough request.
+Routine questions, confirmations, progress updates and short completion reports
+can use the baseline above without loading the full skill. Apply the shared
+method alongside specialist skills: they retain audience, required format,
+output destination and publication rules. Keep repository conventions and
+tool/agent input contracts intact; writing guidance grants no new permissions.
 
 ## Permissions and ownership
 
