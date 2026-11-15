@@ -4,6 +4,7 @@ From the repository root, run the deterministic suite:
 
 ```bash
 node agent/extensions/herdr-session/tests/test.mjs
+node agent/extensions/herdr-session/tests/restore.test.mjs
 ```
 
 The suite uses Pi's real extension loader, generic Herdr tools, skill expansion, and agent context reconstruction. A fake `hc` executable replaces the external CLI; synthetic in-process model responses replace provider calls. All runtime configuration/auth, workflow fixtures, and mailbox state use temporary directories; `PI_CODING_AGENT_DIR` is set to scratch and restored. Skills come from checkout `agent/skills`, not the user's installed skills. No analysis skill is required.
@@ -11,6 +12,14 @@ The suite uses Pi's real extension loader, generic Herdr tools, skill expansion,
 Coverage includes public-SDK seeded sessions and exact child-session acknowledgement, interactive caller validation, launch lifecycle and placement, preflight errors, cancellation, recovery identifiers, partial/failed research launches, physical-model validation without fallback, virtual-router rejection, mailbox ownership/reload/deduplication/follow-up, and persistent guidance through compaction. A scratch-only local adapter exercises independent handoff by default and explicit report-back by calling the actual generic tools through `ctx.executeTool`; it supplies synthetic guidance and model selection, not workplace policy. File-only reporting rejects inline findings, private paths, and symlink escapes, and delivers only `Shareable report: <path>` rather than arbitrary summaries or report contents.
 
 `PI_TEST_PACKAGE_ROOT` can point to an installed `@earendil-works/pi-coding-agent` package directory. Otherwise both scripts resolve it using `npm root -g`.
+
+The macOS-only restore suite exercises actual Pi session runtimes, prompt loading,
+`/move`-equivalent forks/switches, reload and disposal, plus the Node helper and
+interactive zsh hook under a temporary PTY. Only hc and the launched Pi executable
+are external fakes; no provider turn or network call is made. It covers boot/root
+eligibility, exact session/header association, private snapshots, unsupported flags,
+normal quit, both signal orderings, read-only status and consume-before-launch.
+It does not prove real Herdr reboot recovery or Powerlevel10k rendering.
 
 ## Optional live smoke test
 

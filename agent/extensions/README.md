@@ -15,7 +15,7 @@ Commands and configuration by extension:
 | [`usage/`](usage/README.md) | `/usage [week\|month]`: local token usage and catalog cost comparison |
 | [`view/`](view/README.md) | Open a path in a configurable GUI editor; defaults to Zed |
 | `web-search/` | Native Anthropic/OpenAI public search |
-| [`herdr-session/`](herdr-session/README.md) | hc-backed independent Pi tabs, parent-owned research terminals, and session-bound report transport |
+| [`herdr-session/`](herdr-session/README.md) | hc-backed independent Pi tabs, parent-owned research terminals, session-bound report transport, and opt-in reboot restore |
 | `subagent/` | Parent-owned background workers and selected MCP capabilities |
 
 See [Herdr sessions](herdr-session/README.md) and [subagents](subagent/README.md)

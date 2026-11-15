@@ -10,6 +10,7 @@ const environment = { ...process.env };
 const originalArgv = [...process.argv];
 process.env.PI_CODING_AGENT_DIR = scratch;
 const packageRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@earendil-works/pi-coding-agent');
+process.env.HOME = scratch;
 const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(join(packageRoot, 'dist/core/extensions/loader.js')));
 const extensionsDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const extensionPath = join(extensionsDir, 'herdr-session/index.ts');

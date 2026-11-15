@@ -55,6 +55,67 @@ visible. It does not launch a session or call `hc`.
   Independent sessions include `workspaceId`, `tabId`, and `paneId`; research
   results need not have app-placement IDs.
 
+## Reboot restore (opt-in)
+
+On macOS, the extension privately records the last Pi session in each local,
+kept Herdr pane. To reopen it after a **host reboot**, add this as the **last
+line of `~/.zshrc`** yourself (adjust the path if `PI_CODING_AGENT_DIR` differs):
+
+```zsh
+[[ -r ~/.pi/agent/extensions/herdr-session/restore.zsh ]] && source ~/.pi/agent/extensions/herdr-session/restore.zsh
+```
+
+Setup does not edit your shell files or enable the hook. Node must be on the
+login shell's PATH. The root recovery shell runs Pi as its own foreground child,
+with terminal redirects that bypass Powerlevel10k instant-prompt redirection.
+Nothing is typed into the pane; no Herdr UI is driven.
+
+The exact absolute session file and its cwd are recorded at each session start,
+including repeated `/move`s. Normal quit disarms restore. Same-boot restarts,
+nested shells, hidden research workers, non-kept terminals, and a second shell
+startup in the same boot do not restore. The helper consumes the record before
+launching, and checks the session header's ID/cwd, executable and prompt files.
+A bad or unsupported target leaves a working shell with a one-line notice and,
+when possible, a manual `pi --session` hint. No newest-file or ID search is used.
+
+CLI policy:
+- Replay `--offline`, `--models`, `--tui-mode`, and explicit `--system-prompt` /
+  `--append-system-prompt`. Explicit prompt sources are resolved just as Pi
+  resolves them at **each runtime start**: read an existing file (strip BOM),
+  otherwise use literal source text. Relative paths follow the process launch
+  directory, not the moved session cwd. The resolved text is copied privately;
+  deleting the source afterwards does not affect that capture until a reload or
+  session replacement. Deleting it before `/move` or `/reload` changes live Pi
+  and the snapshot to literal path text. Absent flags leave discovery dynamic.
+- Do not replay the original task, model/provider/thinking, name, verbose,
+  `--use-theme`, session-selection flags, or one-shot/non-TUI flags. Pi restores
+  session model/thinking natively.
+- Reject API-key, session-directory/no-session, tool-selection, extension, MCP,
+  skill, template, theme-resource, context-file and project-trust overrides, and
+  unknown flags. Only unsupported **flag names**, never their values, are saved.
+
+State lives under `~/.local/state/pi-setup/herdr-sessions/<coreId>/`: private
+0700 directories, 0600 atomic record/prompt files, validated as user-owned regular
+files (no symlinks). Records contain session association, boot/core identity,
+Pi invocation and the supported replay flags—not transcripts, credentials,
+task text, environment dumps or timestamps. Explicit prompt text is sensitive
+and remains only in private prompt copies. An absent prompt flag removes its
+old copy. Records are retained as history; they are not pruned.
+
+Read-only inspection (never launches or consumes; never prints prompt text):
+
+```sh
+node ~/.pi/agent/extensions/herdr-session/restore.mjs status
+```
+
+Limitations: a manual SIGTERM/SIGHUP to Pi while its shell survives can cause a
+restore at the next reboot. A new session with no messages has no saved file yet
+and produces a notice rather than a fresh session. There is no same-boot,
+core-wipe, Linux or remote recovery. Real reboot timing and Powerlevel10k rendering
+still require a separately authorized manual reboot check; local tests do not
+prove those integration boundaries. Existing sessions need an explicitly
+authorized reload to start recording; this change does not reload them.
+
 ## Guidance, models and launch acknowledgement
 
 - `handoff` and `appendSystemPrompt` accept non-empty files, resolved against

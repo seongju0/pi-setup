@@ -7,6 +7,7 @@ import { copyToClipboard, defineTool, withFileMutationQueue, type ExtensionAPI, 
 
 import { requireLaunchModel } from "../lib/models.ts";
 import { createSession, getCoreTerminal, publishSessionIdentity, resolvePromptFile, WORKER_ENTRY, type WorkerIdentity, type SessionResult } from "./runtime.ts";
+import { createRestoreRecorder } from "./restore.ts";
 
 function parseArgs(input: string) {
   const tokens = input.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((s) => s.replace(/^["']|["']$/g, "")) ?? [];
@@ -231,6 +232,9 @@ export default function (pi: ExtensionAPI) {
     }
   });
   pi.on("session_tree", (_event, ctx) => restore(ctx));
+  const rebootRestore = createRestoreRecorder();
+  pi.on("session_start", (_event, ctx) => rebootRestore.start(ctx));
+  pi.on("session_shutdown", (event) => rebootRestore.shutdown(event));
 
   async function startResearch(params: { tasks: { label: string; brief: string }[]; model?: string; appendSystemPrompt?: string; workspace?: string; cwd?: string; reportDirectory?: string }, signal: AbortSignal | undefined, ctx: ExtensionContext) {
     if (!process.env.HC_TERMINAL_ID || ctx.mode !== "tui") throw new Error("Research requires an interactive Pi session inside herdr-core");
