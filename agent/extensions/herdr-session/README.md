@@ -55,6 +55,23 @@ visible. It does not launch a session or call `hc`.
   Independent sessions include `workspaceId`, `tabId`, and `paneId`; research
   results need not have app-placement IDs.
 
+## Tab titles
+
+In fresh or resumed interactive Pi sessions, the next normal prompt can name
+this terminal's own local Herdr tab once. A tab is considered unnamed only when
+its displayed name equals its 1-based position number; existing descriptive
+names (including `Pi` and `Pi Mine`) stay untouched. Managed launches,
+non-interactive input, non-TUI sessions, remote spaces and tabs without this
+exact terminal are skipped. No focused-tab or parent-tab fallback is used.
+
+Naming runs asynchronously using the current Pi model, with one extra request
+per attempt. Only the current raw prompt's first 4000 characters are sent—no
+history, images or tools. The model is instructed to omit sensitive identifiers;
+this instruction does **not** guarantee confidentiality. Failures are silent and
+a later prompt can retry. A manual rename during generation wins, except for a
+brief read/write race immediately before the native rename (no compare-and-set
+is available). Shutdown aborts pending naming. Titles and prompts are not logged.
+
 ## Reboot restore (opt-in)
 
 On macOS, the extension privately records the last Pi session in each local,

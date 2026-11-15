@@ -8,6 +8,7 @@ import { copyToClipboard, defineTool, withFileMutationQueue, type ExtensionAPI, 
 import { requireLaunchModel } from "../lib/models.ts";
 import { createSession, getCoreTerminal, publishSessionIdentity, resolvePromptFile, WORKER_ENTRY, type WorkerIdentity, type SessionResult } from "./runtime.ts";
 import { createRestoreRecorder } from "./restore.ts";
+import { registerTabTitle } from "./tab-title.ts";
 
 function parseArgs(input: string) {
   const tokens = input.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((s) => s.replace(/^["']|["']$/g, "")) ?? [];
@@ -381,4 +382,5 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+  registerTabTitle(pi);
 }

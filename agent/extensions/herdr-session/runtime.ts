@@ -118,7 +118,7 @@ export async function publishSessionIdentity(ctx: ExtensionContext) {
   await core("terminal.label", { terminal: process.env.HC_TERMINAL_ID, labels: { "pi.session-id": ctx.sessionManager.getSessionId(), "pi.session-cwd": ctx.cwd } });
 }
 
-async function app<T>(args: string[], signal?: AbortSignal): Promise<T> {
+export async function app<T>(args: string[], signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted();
   const { stdout } = await execFileAsync("herdr-app", args, { encoding: "utf8", timeout: 10000, signal });
   const result = JSON.parse(stdout);

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const scratch = await mkdtemp(join(tmpdir(), 'hc-research-test-'));
@@ -76,6 +77,10 @@ async function instance(id, branch = [], worker, catchStartupError = false, opti
   return item;
 }
 async function tick() { for (const timer of [...timers]) await timer.callback(); }
+async function waitUntil(predicate) {
+  for (let attempt = 0; attempt < 300; attempt++) { if (await predicate()) return; await delay(10); }
+  assert.fail('asynchronous tab naming did not settle');
+}
 async function calls() { return (await readFile(join(scratch, 'calls.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse); }
 async function launches() { return (await calls()).filter(call => call.method === 'terminal.run').map(call => call.params); }
 async function coreState() { return JSON.parse(await readFile(join(scratch, 'state.json'), 'utf8')); }
@@ -554,7 +559,96 @@ if (program === 'hc') {
     session.dispose();
   }
 
-  console.log('PASS: hc handoff/native workers, receipt recovery, session-bound mailbox privacy/reload, and real Pi skill/compaction flows.');
+  // Numbered tab naming uses the real input handlers and native app transport.
+  // Only the model and hc/herdr-app processes are external fixtures.
+  async function numberedTabs() {
+    const state = await coreState();
+    state.spaces = [{ id: 'test-space', name: 'Test', tabs: [
+      { id: 'focused-tab', name: '1', active: true, terminals: [{ terminal: 'focused', pane: 'fp' }] },
+      { id: 'own-tab', name: '2', active: false, terminals: [{ terminal: 't1', pane: 'op' }] },
+    ] }];
+    state.focus = { space: 'test-space', tab: 'focused-tab', focused_pane: 'fp' };
+    await saveState(state);
+  }
+  const renames = async () => (await calls()).filter(call => call.program === 'herdr-app' && call.args[1] === 'tab.rename');
+  const input = (text, source = 'interactive') => ({ type: 'input', text, source, images: [{ type: 'image', data: 'not-for-title', mimeType: 'image/png' }] });
+  await numberedTabs();
+  const naming = await instance('tab-title-existing', [{ type: 'message', message: { role: 'user', content: 'Old history must not be sent' } }], undefined, false, { startReason: 'resume' });
+  const requests = [];
+  let resolveFirst;
+  naming.ctx.modelRegistry.complete = (model, context, options) => {
+    requests.push({ model, context, options });
+    if (requests.length === 1) return new Promise(resolve => { resolveFirst = resolve; });
+    return Promise.resolve({ stopReason: 'stop', content: [{ type: 'text', text: '# **"Fix\u0000 login   redirect."**\nextra' }] });
+  };
+  const beforeNaming = (await renames()).length;
+  const rawPrompt = '/skill:synthetic Fix login redirect ' + 'x'.repeat(4050);
+  await naming.emit(input(rawPrompt));
+  await waitUntil(() => requests.length === 1);
+  await naming.emit(input('Second prompt while pending'));
+  assert.equal(requests.length, 1, 'pending generation is deduplicated without blocking input');
+  assert.equal(requests[0].model, naming.ctx.model);
+  assert.equal(requests[0].context.messages.length, 1);
+  assert.equal(requests[0].context.messages[0].role, 'user');
+  assert.deepEqual(requests[0].context.messages[0].content, [{ type: 'text', text: rawPrompt.slice(0, 4000) }], 'only bounded raw text, not images, history or expanded skills');
+  assert.equal(requests[0].context.tools, undefined);
+  resolveFirst({ stopReason: 'error', content: [] });
+  await delay(10);
+  await naming.emit(input('Retry the genuine prompt'));
+  await waitUntil(async () => (await coreState()).spaces[0].tabs[1].name === 'Fix login redirect');
+  assert.equal(requests.length, 2, 'a failed generation permits a later prompt to retry');
+  assert.equal(requests[1].context.messages[0].content[0].text, 'Retry the genuine prompt');
+  assert.deepEqual((await renames()).slice(beforeNaming).map(call => JSON.parse(call.args[2])), [{ id: 'own-tab', name: 'Fix login redirect' }]);
+  assert.equal((await coreState()).spaces[0].tabs[0].name, '1', 'focus is not ownership');
+  await naming.emit(input('A different task later'));
+  assert.equal(requests.length, 2);
+  assert.equal((await renames()).length, beforeNaming + 1);
+
+  await numberedTabs();
+  const manual = await instance('tab-title-manual');
+  let manualCalls = 0;
+  let manualPrompt;
+  manual.ctx.modelRegistry.complete = async (_model, context) => {
+    manualCalls++;
+    manualPrompt = context.messages[0].content[0].text;
+    const state = await coreState();
+    state.spaces[0].tabs[1].name = 'User title';
+    await saveState(state);
+    return { stopReason: 'stop', content: [{ type: 'text', text: 'Other task' }] };
+  };
+  const beforeManual = (await renames()).length;
+  const beforeInjected = (await calls()).length;
+  await manual.emit(input('Injected annotation', 'extension'));
+  await manual.emit(input('RPC prompt', 'rpc'));
+  assert.equal((await calls()).length, beforeInjected, 'noninteractive inputs do not even inspect app state');
+  await manual.emit(input('Typed prompt'));
+  await waitUntil(async () => (await calls()).slice(beforeInjected).filter(call => call.program === 'herdr-app' && call.args[0] === 'ls').length === 2);
+  await delay(10);
+  await manual.emit(input('Another typed prompt'));
+  assert.equal(manualCalls, 1, 'descriptive tab stops future naming');
+  assert.equal(manualPrompt, 'Typed prompt', 'only interactive text reaches the model');
+  assert.equal((await renames()).length, beforeManual);
+  assert.equal((await coreState()).spaces[0].tabs[1].name, 'User title');
+
+  await numberedTabs();
+  const stopping = await instance('tab-title-shutdown');
+  let resolveStale;
+  let staleSignal;
+  stopping.ctx.modelRegistry.complete = (_model, _context, { signal }) => {
+    staleSignal = signal;
+    return new Promise(resolve => { resolveStale = resolve; });
+  };
+  const beforeShutdown = (await renames()).length;
+  await stopping.emit(input('Task before session switch'));
+  await waitUntil(() => !!resolveStale);
+  await stopping.emit({ type: 'session_shutdown', reason: 'resume' });
+  assert.equal(staleSignal.aborted, true);
+  resolveStale({ stopReason: 'stop', content: [{ type: 'text', text: 'Stale title' }] });
+  await delay(500);
+  assert.equal((await renames()).length, beforeShutdown);
+  assert.equal((await coreState()).spaces[0].tabs[1].name, '2');
+
+  console.log('PASS: numbered tab titles, hc handoff/native workers, receipt recovery, session-bound mailbox privacy/reload, and real Pi skill/compaction flows.');
 } finally {
   for (const item of instances) await item.emit({ type: 'session_shutdown', reason: 'quit' });
   global.setInterval = realSetInterval;
