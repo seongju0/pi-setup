@@ -57,20 +57,15 @@ visible. It does not launch a session or call `hc`.
 
 ## Tab titles
 
-In fresh or resumed interactive Pi sessions, the next normal prompt can name
-this terminal's own local Herdr tab once. A tab is considered unnamed only when
-its displayed name equals its 1-based position number; existing descriptive
-names (including `Pi` and `Pi Mine`) stay untouched. Managed launches,
-non-interactive input, non-TUI sessions, remote spaces and tabs without this
-exact terminal are skipped. No focused-tab or parent-tab fallback is used.
+Tabs are not named automatically. Ask the current agent to rename its tab based
+on the session’s focus, for example: “Rename this tab based on what we’re working
+on.” The agent uses the existing `herdr-core` skill and `herdr-app` commands:
+resolve the tab containing its exact `$HC_TERMINAL_ID` with `herdr-app ls`, then
+call `tab.rename` with that tab’s ID and a short, non-sensitive title. Do not use
+the window’s focused tab as a fallback; it may belong to another session.
 
-Naming runs asynchronously using the current Pi model, with one extra request
-per attempt. Only the current raw prompt's first 4000 characters are sent—no
-history, images or tools. The model is instructed to omit sensitive identifiers;
-this instruction does **not** guarantee confidentiality. Failures are silent and
-a later prompt can retry. A manual rename during generation wins, except for a
-brief read/write race immediately before the native rename (no compare-and-set
-is available). Shutdown aborts pending naming. Titles and prompts are not logged.
+There is no background naming hook, separate title-generation request or naming
+script. Explicit labels supplied when creating Herdr sessions still apply.
 
 ## Reboot restore (opt-in)
 
