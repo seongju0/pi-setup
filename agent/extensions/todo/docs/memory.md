@@ -63,6 +63,10 @@ A parent owns the shared goal/scope, common constraints, consequential cross-chi
 
 Parent records are inherited broadly; artifact `applies_to` scopes documents, not parent decisions/evidence/references. Promote knowledge only when it genuinely governs other children. Parallel sessions must use current revisions and read changed active state before relying on an old brief. Selection, satisfied dependencies and historical approval never authorize new execution.
 
+Project membership can be corrected with the agent-only `todo_move` tool: move a standalone simple item into a root project only with explicit approval for that source and destination. Quote current-conversation approval or obtain native confirmation; non-UI callers require the quote. Completed work stays completed. Organization does not attach, refresh a brief, start work or change Linear. Inspect newly inherited shared grounding before relying on it. Dependencies in either direction block the move, even with completed peers; never silently remove edges or recreate the item.
+
+SQLite commits placement and the source revision/timestamp together; failure before commit rolls both back. IDs, saved knowledge, all artifact versions and retained imported bytes survive. The parent remains unchanged. Existing sessions use ordinary observation/drift and explicit refresh, not forced reload. Cross-project, detach and group moves are outside this operation. See the [storage/session contract](../README.md#move-storage-and-session-behavior).
+
 ## What earns durable memory
 
 Save information when omitting it would make a fresh session decide materially wrong, repeat significant investigation or cross an authorization boundary. A substantial completion can establish a lasting fact or limitation; record that implication, not a delivery diary.

@@ -42,6 +42,11 @@ examples for relationships and behavior. Put illustrations beside the point they
 explain. Concise means low reading effort, not merely fewer words. Honor the
 requested length, depth and format. Skip filler, preambles, repeated summaries
 and sign-offs; no mandatory headings, visuals or closing template.
+Use task lists for actionable work, status labels for state, callouts for risks or
+asks, and progress counts drawn from known items. Combine these with tables and
+diagrams when useful; do not invent progress or treat a label as approval.
+Renderer-specific status-chip markers belong only in supported terminal chat,
+not authored files, commits, PRs, issues, code, commands or exact-format output.
 
 Read [Walkthrough](skills/walkthrough/SKILL.md) when the reader needs a mental
 model: how something works or will change, an architecture, plan or design, or

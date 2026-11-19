@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { copyToClipboard, defineTool, withFileMutationQueue, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { createAnnotationReceiver } from "./annotations.ts";
 import { requireLaunchModel } from "../lib/models.ts";
 import { createSession, getCoreTerminal, publishSessionIdentity, resolvePromptFile, WORKER_ENTRY, type WorkerIdentity, type SessionResult } from "./runtime.ts";
 import { createRestoreRecorder } from "./restore.ts";
@@ -77,6 +78,11 @@ function textResult(data: unknown) {
 }
 
 export default function (pi: ExtensionAPI) {
+  // Bind before research restoration: a failed restore cannot skip receiver lifecycle.
+  const annotations = createAnnotationReceiver(pi);
+  pi.on("session_start", (_event, ctx) => annotations.bind(ctx));
+  pi.on("session_tree", (_event, ctx) => annotations.bind(ctx));
+  pi.on("session_shutdown", () => annotations.stop());
   pi.registerTool(createSessionTool);
   const inheritedWorkerDir = process.env.HERDR_RESEARCH_DIR;
   const inheritedWorkerId = process.env.HERDR_RESEARCH_WORKER;

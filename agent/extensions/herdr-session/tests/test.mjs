@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { validateRequest } from '../annotations-protocol.mjs';
+import { atomicRecord, status as annotationStatus } from '../annotations-cli.mjs';
+const execute = promisify(execFile);
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const scratch = await mkdtemp(join(tmpdir(), 'hc-research-test-'));
 const environment = { ...process.env };
 const originalArgv = [...process.argv];
 process.env.PI_CODING_AGENT_DIR = scratch;
+// Every receiver allocation, including unpublished startup failures, belongs to
+// this test's temporary root rather than the user's OS temp directory.
+process.env.TMPDIR = scratch;
 const packageRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@earendil-works/pi-coding-agent');
 process.env.HOME = scratch;
 const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(join(packageRoot, 'dist/core/extensions/loader.js')));
@@ -37,7 +45,11 @@ async function instance(id, branch = [], worker, catchStartupError = false, opti
   }
   activate();
   const runtime = createExtensionRuntime();
-  const state = { branch: structuredClone(branch), messages: [], queued: [], warnings: [], busy: false };
+  const state = { branch: structuredClone(branch), messages: [], users: [], queued: [], warnings: [], busy: false };
+  runtime.sendUserMessage = (text, options) => {
+    if (state.refuseUser) throw new Error('Synthetic runtime refused');
+    state.users.push({ text, options });
+  };
   runtime.appendEntry = (customType, data) => state.branch.push({ type: 'custom', customType, data: structuredClone(data) });
   runtime.sendMessage = (message, options) => {
     state.messages.push({ message, options, busy: state.busy });
@@ -74,22 +86,43 @@ async function instance(id, branch = [], worker, catchStartupError = false, opti
     // Pi's ExtensionRunner catches lifecycle errors and leaves tools callable.
     state.warnings.push(error.message);
   }
+  if (ctx.mode === 'tui' && coreId && process.env.TEST_LABEL_FAILURE !== '1' && !options.skipAnnotationWait) {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const descriptor = JSON.parse((await coreState()).terminals[coreId]?.labels?.['pi.files-review'] ?? 'null');
+      if (descriptor?.sessionId === id) { item.endpoint = descriptor; runDirs.push(descriptor.inbox); await delay(10); break; }
+      await delay(10);
+    }
+    assert(item.endpoint, `asynchronous receiver advertised: ${JSON.stringify(state.warnings)}`);
+  }
   return item;
 }
 async function tick() { for (const timer of [...timers]) await timer.callback(); }
 async function waitUntil(predicate) {
   for (let attempt = 0; attempt < 300; attempt++) { if (await predicate()) return; await delay(10); }
-  assert.fail('asynchronous tab naming did not settle');
+  assert.fail('asynchronous receiver condition did not settle');
 }
+const inboxNames = async () => (await readdir(scratch)).filter(name => name.startsWith('pi-files-review-')).sort();
 async function calls() { return (await readFile(join(scratch, 'calls.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse); }
 async function launches() { return (await calls()).filter(call => call.method === 'terminal.run').map(call => call.params); }
 async function coreState() { return JSON.parse(await readFile(join(scratch, 'state.json'), 'utf8')); }
 async function saveState(state) { await writeFile(join(scratch, 'state.json'), JSON.stringify(state)); }
 
 try {
-  await writeFile(adapterPath, `import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+  await writeFile(adapterPath, `import { discoverAnnotationNode } from ${JSON.stringify(join(extensionsDir, "herdr-session/annotations.ts"))};
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 export default function (pi) {
+  pi.registerTool({
+    name: "annotation_probe", label: "Synthetic Node discovery", description: "Test runtime boundary", parameters: { type: "object", properties: {} },
+    async execute(_id, params) {
+      let invocation;
+      const node = await discoverAnnotationNode(params.runtime, (command, args, options, callback) => {
+        invocation = { command, args, options };
+        callback(params.missing ? new Error("Missing") : null, JSON.stringify(params.response));
+      });
+      return { node, invocation };
+    }
+  });
   pi.registerTool({
     name: "local_workflow_start", label: "Synthetic local workflow",
     description: "Test-only composition of public Herdr tools",
@@ -118,8 +151,20 @@ const root = process.env.TEST_HC_ROOT;
 const stateFile = path.join(root, 'state.json');
 const args = process.argv.slice(2);
 const program = path.basename(process.argv[1]);
-function load() { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); }
-function save(state) { fs.writeFileSync(stateFile, JSON.stringify(state)); }
+// Real hc serializes label mutations. Serialize this subprocess fixture too:
+// annotation publication now intentionally overlaps identity publication.
+let lockOwned = false;
+function acquire() {
+  for (let i = 0; i < 1000; i++) {
+    try { fs.mkdirSync(stateFile + '.lock'); lockOwned = true; return; }
+    catch (error) { if (error.code !== 'EEXIST') throw error; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5); }
+  }
+  throw new Error('Fixture core lock timed out');
+}
+function release() { if (lockOwned) { fs.rmdirSync(stateFile + '.lock'); lockOwned = false; } }
+process.on('exit', release);
+function load() { if (!lockOwned) acquire(); return JSON.parse(fs.readFileSync(stateFile, 'utf8')); }
+function save(state) { const temporary = stateFile + '.' + process.pid; fs.writeFileSync(temporary, JSON.stringify(state)); fs.renameSync(temporary, stateFile); }
 function log(call) { fs.appendFileSync(path.join(root, 'calls.jsonl'), JSON.stringify(call) + '\n'); }
 function terminal(state, address) { return Object.values(state.terminals).find(t => t.address === address || t.name === address); }
 if (program === 'hc') {
@@ -136,6 +181,7 @@ if (program === 'hc') {
     if (method === 'terminal.run') {
       if (!path.isAbsolute(params.argv[0]) || !path.isAbsolute(params.argv[1]) || !fs.existsSync(params.argv[0]) || !fs.existsSync(params.argv[1])) throw new Error('Launch must not depend on the service PATH');
       if (process.env.TEST_SPAWN_FAILURE === '1') {
+        release();
         console.log(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'cannot start executable', data: { kind: 'spawn_failed' } } }));
         return;
       }
@@ -170,9 +216,13 @@ if (program === 'hc') {
     } else if (method === 'terminal.label') {
       result = terminal(state, params.terminal);
       if (!result) throw new Error('Unknown label target');
+      if (params.labels['pi.files-review'] && process.env.TEST_HOLD_ANNOTATION_LABEL === '1') {
+        release(); setInterval(() => {}, 1000); return;
+      }
       if (process.env.TEST_LABEL_FAILURE === '1') error = { code: -32000, message: 'simulated label failure' };
       else { Object.assign(result.labels, params.labels); save(state); }
     } else throw new Error('Unsupported method: ' + method);
+    release();
     console.log(JSON.stringify(error ? { jsonrpc: '2.0', id: request.id, error } : { jsonrpc: '2.0', id: request.id, result }));
   });
 } else {
@@ -222,24 +272,43 @@ if (program === 'hc') {
   await writeFile(join(scratch, 'empty-guidance.md'), '  \n');
   // The extension runs in Pi's CLI, not in this test runner.
   process.argv[1] = join(packageRoot, 'dist/cli.js');
-  const parent = await instance('parent');
+  // A real probe child fails once; a later bind in the same loaded module must
+  // discover Node again instead of retaining the rejected discovery promise.
+  const failedProbe = join(scratch, 'fail-node-probe.mjs');
+  await writeFile(failedProbe, `if (process.execArgv.includes('-e')) process.exit(1);`);
+  const previousNodeOptions = process.env.NODE_OPTIONS;
+  process.env.NODE_OPTIONS = `${previousNodeOptions ?? ''} --import=${pathToFileURL(failedProbe).href}`;
+  const parent = await instance('parent', [], undefined, false, { skipAnnotationWait: true });
+  await waitUntil(() => parent.state.warnings.some(warning => warning.includes('Files review unavailable')));
+  assert.deepEqual(await inboxNames(), [], 'failed discovery allocated no inbox');
+  if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
+  else process.env.NODE_OPTIONS = previousNodeOptions;
+  await parent.emit({ type: 'session_start', reason: 'resume' });
+  await waitUntil(async () => {
+    const descriptor = JSON.parse((await coreState()).terminals.t1.labels['pi.files-review'] ?? 'null');
+    if (descriptor?.sessionId !== 'parent') return false;
+    parent.endpoint = descriptor;
+    return timers.size === 1;
+  });
   assert.equal(process.env.PI_HERDR_MANAGED, undefined);
-  assert.deepEqual((await calls()).filter(call => call.method === 'terminal.label').map(call => call.params), [
+  assert.deepEqual((await calls()).filter(call => call.method === 'terminal.label' && call.params.labels['pi.session-id']).map(call => call.params), [
+    { terminal: 't1', labels: { 'pi.session-id': 'parent', 'pi.session-cwd': scratch } },
     { terminal: 't1', labels: { 'pi.session-id': 'parent', 'pi.session-cwd': scratch } },
   ]);
   await parent.emit({ type: 'session_shutdown', reason: 'resume' });
   const moved = await instance('moved', [], undefined, false, { cwd: join(scratch, 'nested'), startReason: 'resume' });
-  assert.deepEqual((await coreState()).terminals.t1.labels, {
+  assert.deepEqual(Object.fromEntries(Object.entries((await coreState()).terminals.t1.labels).filter(([key]) => key !== 'pi.files-review')), {
     'herdr.space': 'test-space', 'pi.session-id': 'moved', 'pi.session-cwd': join(scratch, 'nested'),
   });
-  assert.equal((await calls()).filter(call => call.method === 'terminal.label').length, 2);
+  assert.equal((await calls()).filter(call => call.method === 'terminal.label' && call.params.labels['pi.session-id']).length, 3);
   await moved.emit({ type: 'session_shutdown', reason: 'resume' });
   const beforeNoninteractive = (await calls()).length;
   await instance('rpc', [], undefined, false, { mode: 'rpc' });
   await instance('outside-herdr', [], undefined, false, { terminalId: '' });
   assert.equal((await calls()).length, beforeNoninteractive);
   await parent.emit({ type: 'session_start', reason: 'resume' });
-  assert.equal(timers.size, 0);
+  await delay(100);
+  assert.equal(timers.size, 1, 'annotation polling is independent of research polling');
   const beforePreflight = (await launches()).length;
   await assert.rejects(parent.call('herdr_new_session', { handoff: 'missing.md' }), /ENOENT/);
   await assert.rejects(parent.call('herdr_new_session', { appendSystemPrompt: 'empty-guidance.md' }), /empty/);
@@ -289,7 +358,7 @@ if (program === 'hc') {
   assert.equal((await coreState()).focus.tab, 'parent-tab');
   assert.equal((await coreState()).spaces[0].tabs.find(tab => tab.id === independent.tabId).name, 'Independent');
   assert.equal(parent.state.branch.length, 0);
-  assert.equal(timers.size, 0);
+  assert.equal(timers.size, 1);
 
   const explicit = await parent.call('herdr_new_session', { model: 'test/chosen', cwd: 'nested', workspace: 'test', appendSystemPrompt: 'guidance with spaces.md' });
   assert.notEqual(explicit.isError, true, JSON.stringify(explicit.details));
@@ -374,8 +443,11 @@ if (program === 'hc') {
   assert.equal(parent.state.messages.length, 1);
   assert.equal(parent.state.warnings.filter(warning => warning.includes('invalid')).length, 2);
   await parent.emit({ type: 'session_shutdown', reason: 'reload' });
+  const beforeFailedPublication = await inboxNames();
   process.env.TEST_LABEL_FAILURE = '1';
   const reloaded = await instance('parent', parent.state.branch, undefined, true);
+  await waitUntil(() => reloaded.state.warnings.some(warning => warning.includes('Files review unavailable')));
+  assert.deepEqual(await inboxNames(), beforeFailedPublication, 'failed publication removes only its never-active startup inbox');
   delete process.env.TEST_LABEL_FAILURE;
   assert(reloaded.state.warnings.some(warning => /simulated label failure/.test(warning)));
   await tick();
@@ -455,7 +527,7 @@ if (program === 'hc') {
   assert(!restored.state.messages.at(-1).message.content.includes('PRIVATE_RECOVERED_SUMMARY'));
   const recoveredFork = await instance('forked-recovered-worker', savedWorkerBranch, undefined, true);
   assert(recoveredFork.state.warnings.some(warning => /different Pi session/.test(warning)));
-  assert.deepEqual((await coreState()).terminals.t1.labels, {
+  assert.deepEqual(Object.fromEntries(Object.entries((await coreState()).terminals.t1.labels).filter(([key]) => key !== 'pi.files-review')), {
     'herdr.space': 'test-space', 'pi.session-id': 'forked-recovered-worker', 'pi.session-cwd': scratch,
   }, 'new identity is published before copied worker ownership is rejected');
   const beforeForkReport = restored.state.messages.length;
@@ -559,6 +631,140 @@ if (program === 'hc') {
     session.dispose();
   }
 
+  // Files review: real loaded extension, CLI processes and private filesystem; only
+  // hc and the public void sendUserMessage boundary are substituted.
+  const recipient = await instance('annotation-recipient');
+  const endpoint = recipient.endpoint;
+  assert.equal((await stat(endpoint.inbox)).mode & 0o777, 0o700);
+  const request = () => ({ v: 1, id: randomUUID(), instance: endpoint.instance,
+    target: { sessionId: endpoint.sessionId, terminal: endpoint.terminal },
+    origin: { space: 'synthetic-space', tab: 'synthetic-tab' }, instruction: '',
+    comments: [{ id: randomUUID(), body: 'Synthetic feedback', anchor: { kind: 'lines', source: { machine: null, root: scratch }, path: 'example.txt', side: 'worktree', startLine: 1, endLine: 2, capturedAt: new Date().toISOString(), excerpt: 'Synthetic context', excerptTruncated: false, viewLimited: false } }],
+    text: '/skill:must-not-expand\nExact sender-owned ``` text\n' });
+  const cli = async (operation, value, e = endpoint) => JSON.parse((await execute(e.node, [e.cli, operation, JSON.stringify(e), typeof value === 'string' ? value : JSON.stringify(value)], { timeout: 10000 })).stdout);
+  async function waitForFile(path) {
+    for (let i = 0; i < 300; i++) { try { await stat(path); return; } catch {} await delay(10); }
+    assert.fail('request publication did not occur');
+  }
+  const batch = request();
+  // File-source identity is data, independent of this Unix recipient's inbox.
+  batch.comments[0].anchor.source = { machine: 'synthetic-windows', root: 'C:\\synthetic' };
+  const uncSource = request(); uncSource.comments[0].anchor.source.root = '\\\\synthetic-host\\share';
+  validateRequest(uncSource);
+  const delivery = cli('send', batch);
+  await waitForFile(join(endpoint.inbox, `${batch.id}.request.json`));
+  await tick();
+  assert.equal((await delivery).status, 'handed_to_pi');
+  assert.deepEqual(recipient.state.users, [{ text: batch.text, options: { deliverAs: 'followUp', expandPromptTemplates: false } }]);
+  assert.equal((await cli('status', batch.id)).status, 'handed_to_pi');
+  assert.equal((await cli('send', batch)).status, 'handed_to_pi');
+  atomicRecord(endpoint, `${batch.id}.request.json`, batch);
+  await tick(); assert.equal(recipient.state.users.length, 1, 'even a directly republished duplicate cannot dispatch twice');
+  await rm(join(endpoint.inbox, `${batch.id}.request.json`));
+  const wrong = request(); wrong.target.sessionId = 'different-session';
+  assert.equal((await cli('send', wrong)).status, 'rejected');
+  const ambiguous = request(); atomicRecord(endpoint, `${ambiguous.id}.claimed.json`, ambiguous);
+  assert.equal((await cli('send', ambiguous)).status, 'unconfirmed');
+  assert.equal((await cli('status', ambiguous.id)).status, 'unconfirmed');
+  await tick(); assert.equal(recipient.state.users.length, 1, 'claimed crash state cannot replay');
+  const timedOut = request();
+  assert.equal((await cli('send', timedOut)).status, 'unconfirmed', 'bounded helper wait does not claim acceptance');
+  assert.equal((await cli('status', timedOut.id)).status, 'unconfirmed');
+  await tick();
+  assert.equal((await cli('status', timedOut.id)).status, 'handed_to_pi', 'status can recover a late receipt without sending');
+  recipient.state.refuseUser = true;
+  const refused = request(); atomicRecord(endpoint, `${refused.id}.request.json`, refused);
+  await tick(); assert.equal((await cli('status', refused.id)).status, 'rejected');
+  recipient.state.refuseUser = false;
+  const outside = join(scratch, 'outside-annotation.json');
+  await writeFile(outside, JSON.stringify(request()), { mode: 0o600 });
+  const outsideBefore = await readFile(outside, 'utf8');
+  const linked = request(); await symlink(outside, join(endpoint.inbox, `${linked.id}.request.json`));
+  const malformed = request(); malformed.comments[0].anchor.path = '../escape';
+  atomicRecord(endpoint, `${malformed.id}.request.json`, malformed);
+  const oversized = request();
+  await writeFile(join(endpoint.inbox, `${oversized.id}.request.json`), 'x'.repeat(65537), { mode: 0o600 });
+  await tick();
+  for (const invalid of [linked, malformed, oversized]) assert.equal((await cli('status', invalid.id)).status, 'rejected');
+  assert.equal(await readFile(outside, 'utf8'), outsideBefore);
+  for (const mutate of [r => r.comments[0].body = 'x'.repeat(4001), r => r.text = 'x'.repeat(65537), r => r.text = '\0', r => r.comments[0].anchor.endLine = 0, r => r.comments[0].anchor.source.root = 'relative', r => r.comments[0].anchor.excerpt = 'x'.repeat(2001), r => r.comments = Array(21).fill(r.comments[0])]) {
+    const invalid = request(); mutate(invalid); assert.throws(() => validateRequest(invalid), /Invalid Files review data/);
+  }
+  const invalidCli = request(); invalidCli.comments[0].anchor.path = '../PRIVATE_SENTINEL';
+  await assert.rejects(cli('send', invalidCli), error => !error.stderr.includes('PRIVATE_SENTINEL') && /Invalid or unavailable/.test(error.stderr));
+  const noManifest = { ...endpoint, inbox: await mkdtemp(join(scratch, 'missing-manifest-')) };
+  assert.equal((await cli('send', request(), noManifest)).status, 'rejected');
+  const alias = join(scratch, 'annotation-alias'); await symlink(endpoint.inbox, alias);
+  assert.equal((await cli('send', request(), { ...endpoint, inbox: alias })).status, 'rejected');
+  // Concurrent helpers serialize admission and never replace the first payload.
+  const concurrent = request();
+  const beforeConcurrent = recipient.state.users.length;
+  const contenders = [cli('send', concurrent), cli('send', concurrent)];
+  await waitForFile(join(endpoint.inbox, `${concurrent.id}.request.json`));
+  await tick();
+  const contenderResults = await Promise.all(contenders);
+  assert(contenderResults.every(r => ['handed_to_pi', 'unconfirmed'].includes(r.status)));
+  assert.equal(recipient.state.users.length, beforeConcurrent + 1);
+  const pendingIds = [];
+  for (let i = 0; i < 20; i++) { const pending = request(); pendingIds.push(pending.id); atomicRecord(endpoint, `${pending.id}.claimed.json`, pending); }
+  assert.equal((await cli('send', request())).status, 'rejected', 'pending admission is bounded');
+  for (const id of pendingIds) await rm(join(endpoint.inbox, `${id}.claimed.json`));
+  const beforeTree = endpoint.instance;
+  await recipient.emit({ type: 'session_tree' });
+  assert.equal(JSON.parse((await coreState()).terminals.t1.labels['pi.files-review']).instance, beforeTree);
+  const stale = request(); atomicRecord(endpoint, `${stale.id}.request.json`, stale);
+  recipient.ctx.sessionManager.getSessionId = () => 'replacement-before-poll';
+  const beforeStale = recipient.state.users.length;
+  await tick(); assert.equal(recipient.state.users.length, beforeStale, 'exact synchronous session recheck prevents stale dispatch');
+  const hcBeforeStop = (await calls()).length;
+  await recipient.emit({ type: 'session_shutdown', reason: 'resume' });
+  assert.equal((await calls()).length, hcBeforeStop, 'shutdown does not issue hc RPC');
+  assert.equal((await cli('status', batch.id)).status, 'handed_to_pi', 'closure never negates an existing result');
+  assert.equal((await cli('send', request())).status, 'rejected');
+  assert.equal((await cli('status', stale.id)).status, 'unconfirmed');
+  const replacement = await instance('annotation-replacement');
+  assert.notEqual(replacement.endpoint.instance, endpoint.instance);
+  await tick(); assert.equal(recipient.state.users.length, beforeStale, 'replacement cannot replay predecessor pending work');
+  const probeRuntime = { release: { name: 'node' }, versions: { node: '26.5.0' }, execPath: '/synthetic/bin/node' };
+  const response = { name: 'node', node: '26.5.0', bun: null, execPath: process.execPath };
+  const verified = await replacement.call('annotation_probe', { runtime: probeRuntime, response });
+  assert.equal(verified.node, process.execPath);
+  assert.equal(verified.invocation.command, probeRuntime.execPath);
+  assert.equal(verified.invocation.options.timeout, 3000); assert.equal(verified.invocation.options.maxBuffer, 4096);
+  for (const runtime of [{ ...probeRuntime, execPath: '/synthetic/pi' }, { ...probeRuntime, versions: { bun: '1.3.0', node: '26.0.0' } }]) {
+    assert.equal((await replacement.call('annotation_probe', { runtime, response })).invocation.command, 'node', 'compiled/Bun Pi is never executed as the helper');
+  }
+  for (const invalid of [{ ...response, node: '25.0.0' }, { ...response, bun: '1.3.0' }, { ...response, name: 'bun' }, { ...response, execPath: 'relative' }, {}, 'malformed']) {
+    await assert.rejects(replacement.call('annotation_probe', { runtime: probeRuntime, response: invalid }), /could not be verified/);
+  }
+  await assert.rejects(replacement.call('annotation_probe', { runtime: probeRuntime, response, missing: true }), /could not be verified/);
+  // Stop before the asynchronous cached probe continuation can publish anything.
+  await replacement.emit({ type: 'session_shutdown', reason: 'resume' });
+  replacement.ctx.sessionManager.getSessionId = () => 'cancelled-bind';
+  const labelBeforeCancel = (await calls()).filter(c => c.params?.labels?.['pi.files-review']).length;
+  const startCancelled = replacement.emit({ type: 'session_start', reason: 'resume' });
+  await replacement.emit({ type: 'session_shutdown', reason: 'quit' });
+  await startCancelled; await delay(100);
+  assert.equal((await calls()).filter(c => c.params?.labels?.['pi.files-review']).length, labelBeforeCancel, 'late runtime completion cannot advertise a stopped binding');
+
+  const beforeAbortedPublication = await inboxNames();
+  process.env.TEST_HOLD_ANNOTATION_LABEL = '1';
+  const aborting = await instance('aborted-publication', [], undefined, false, { skipAnnotationWait: true });
+  let abortedEndpoint;
+  await waitUntil(async () => {
+    for (const call of await calls()) {
+      const label = call.params?.labels?.['pi.files-review'];
+      if (label) { const descriptor = JSON.parse(label); if (descriptor.sessionId === 'aborted-publication') abortedEndpoint = descriptor; }
+    }
+    return !!abortedEndpoint;
+  });
+  assert((await stat(abortedEndpoint.inbox)).isDirectory(), 'startup owns a real inbox before publication settles');
+  await aborting.emit({ type: 'session_shutdown', reason: 'quit' });
+  await waitUntil(async () => { try { await stat(abortedEndpoint.inbox); return false; } catch (error) { return error.code === 'ENOENT'; } });
+  delete process.env.TEST_HOLD_ANNOTATION_LABEL;
+  assert.deepEqual(await inboxNames(), beforeAbortedPublication, 'aborted publication cleans only its own startup inbox');
+  assert.equal((await cli('status', batch.id)).status, 'handed_to_pi', 'startup cleanup preserves previously active final receipts');
+
   // Numbered tab naming uses the real input handlers and native app transport.
   // Only the model and hc/herdr-app processes are external fixtures.
   async function numberedTabs() {
@@ -648,9 +854,10 @@ if (program === 'hc') {
   assert.equal((await renames()).length, beforeShutdown);
   assert.equal((await coreState()).spaces[0].tabs[1].name, '2');
 
-  console.log('PASS: numbered tab titles, hc handoff/native workers, receipt recovery, session-bound mailbox privacy/reload, and real Pi skill/compaction flows.');
+  console.log('PASS: Numbered tab titles, Files review CLI/receiver/lifecycle/privacy plus retained hc research and real Pi skill/compaction flows.');
 } finally {
   for (const item of instances) await item.emit({ type: 'session_shutdown', reason: 'quit' });
+  for (const call of await calls()) if (call.params?.labels?.['pi.files-review']) runDirs.push(JSON.parse(call.params.labels['pi.files-review']).inbox);
   global.setInterval = realSetInterval;
   global.clearInterval = realClearInterval;
   for (const key of Object.keys(process.env)) if (!(key in environment)) delete process.env[key];

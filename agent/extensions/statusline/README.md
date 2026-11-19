@@ -81,7 +81,7 @@ Example configuration:
 ```
 
 The default is `native`, using Pi's built-in animation, color and cadence, with
-nine custom loading phrases in `loader.json`. Choose a `spinner`:
+custom loading phrases in `loader.json`. Choose a `spinner`:
 
 - `native`: delegates to Pi's own spinner without copying its frame definitions.
 - `scan`: a dot sweeps back and forth across five cells (`●····` → `·●···` …).

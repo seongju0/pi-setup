@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { applyChanges, createTodo, rejectRetiredCurrentState, validate, type Changes, type Todo } from "./state.ts";
+import { applyChanges, createTodo, rejectRetiredCurrentState, requireId, validate, type Changes, type Todo } from "./state.ts";
 import { effects, validateGraph, validateTransition } from "./dependencies.ts";
 import { canonicalRoot, decodeOwner, insertOwner, locator, readRows, synchronous, updateOwner, withRead, withWrite } from "./database.ts";
 
@@ -36,6 +36,43 @@ export async function create(root: string, type: Todo["type"], title: string, ou
     todo.depends_on = depends_on; validate(todo);
     const item = { todo, parent_id, directory: locator(root, todo.id, parent_id) };
     rows.push(item); validateGraph(rows); insertOwner(db, todo, parent_id); return effects(rows, item);
+  }, signal);
+}
+export type MoveInput = { id: string; parent: string; revision: number };
+function planMove(root: string, rows: Located[], input: MoveInput) {
+  requireId(input.id); requireId(input.parent);
+  const item = rows.find(row => row.todo.id === input.id);
+  const parent = rows.find(row => row.todo.id === input.parent);
+  if (!item) throw new Error(`Todo not found: ${input.id}`);
+  if (!parent || parent.todo.type !== "project" || parent.parent_id) throw new Error("Move destination must be a root project");
+  if (item.todo.type !== "simple") throw new Error("Only standalone simple todos can be moved into a project");
+  const directory = locator(root, item.todo.id, parent.todo.id);
+  if (item.parent_id === parent.todo.id) return { rows, item, parent, directory, moved: false };
+  if (item.parent_id) throw new Error("Only standalone simple todos can be moved into a project");
+  if (item.todo.revision !== input.revision) throw new Error("Stale revision; read the todo before moving");
+  const edges = [
+    ...rows.filter(row => item.todo.depends_on.includes(row.todo.id)).map(row => `depends on ${row.todo.title} (${row.todo.id}, ${row.todo.status})`),
+    ...rows.filter(row => row.todo.depends_on.includes(item.todo.id)).map(row => `required by ${row.todo.title} (${row.todo.id}, ${row.todo.status})`),
+  ];
+  if (edges.length) throw new Error(`Cannot move todo across dependency scopes: ${edges.join("; ")}`);
+  return { rows, item, parent, directory, moved: true };
+}
+/** Approval reads close their transaction before asking; the write revalidates its own snapshot. */
+export async function prepareMove(root: string, input: MoveInput) {
+  return withRead(root, (db, root) => planMove(root, readRows(db, root), input));
+}
+export async function move(root: string, input: MoveInput, signal?: AbortSignal) {
+  return withWrite(root, (db, root) => {
+    const plan = planMove(root, readRows(db, root), input);
+    if (!plan.moved) return { ...effects(plan.rows, plan.item), moved: false };
+    const todo = { ...plan.item.todo, revision: plan.item.todo.revision + 1, updated_at: new Date().toISOString() };
+    const updated = { directory: plan.directory, todo, parent_id: plan.parent.todo.id };
+    const rows = plan.rows.map(row => row.todo.id === input.id ? updated : row);
+    validateGraph(rows);
+    // Owner IDs key all artifact/retained bytes; only placement and source metadata change.
+    db.prepare("UPDATE owners SET parent_id=?,document=json_set(document,'$.revision',CAST(? AS INTEGER),'$.updated_at',?) WHERE id=?")
+      .run(plan.parent.todo.id, todo.revision, todo.updated_at, input.id);
+    return { ...effects(rows, updated), moved: true };
   }, signal);
 }
 function saveUpdate(db: DatabaseSync, rows: Located[], item: Located, activity: boolean) {

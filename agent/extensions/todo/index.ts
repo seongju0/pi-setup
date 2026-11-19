@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { renderTodoResult, renderCheckpointResult } from "./render.ts";
 import { estimateTokens, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { applyChanges, evidenceId, needsApproval, statuses, type Changes, type Todo } from "./state.ts";
-import { checkpoint, configuredRoot, create, list, locate, readKnown, type Located } from "./storage.ts";
+import { checkpoint, configuredRoot, create, list, locate, move, prepareMove, readKnown, type Located } from "./storage.ts";
 import { readArtifactPage, saveArtifact } from "./artifacts.ts";
 import { pageResult, PAGE_CHARS } from "../lib/retrieval.ts";
 import { searchKnowledge } from "./knowledge.ts";
@@ -262,7 +263,7 @@ export default function todoExtension(pi: ExtensionAPI) {
         if (current.todo.revision !== item.todo.revision) changed.push({ id: current.todo.id, revision: current.todo.revision });
       }
       const watchedIds = new Set(currentRows.map(row => row.todo.id));
-      if (currentRows.some(row => row.todo.depends_on.some(id => !watchedIds.has(id)))) currentRows.splice(0, currentRows.length, ...await list(root));
+      if (currentRows.some(row => row.todo.depends_on.some(id => !watchedIds.has(id)) || row.parent_id && !watchedIds.has(row.parent_id))) currentRows.splice(0, currentRows.length, ...await list(root));
       const active = currentRows.find(row => row.todo.id === selected)!;
       const relevant = [active, ...currentRows.filter(row => row.todo.id === active.parent_id), ...prerequisites(currentRows, active)];
       const relevantIds = new Set(relevant.map(row => row.todo.id));
@@ -299,6 +300,7 @@ export default function todoExtension(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    renderResult: renderTodoResult,
     name: "todo", label: "Todo", description: "Task-owned durable memory for fresh/parallel sessions, not an execution diary. Before substantial enduring work, use the relevant attached TODO; status reports the attachment (selected metadata or null) without changing it. Resolve a supplied TODO ID/linked issue URL or search recognizable goals, inspect candidates and resume a clear existing match; get alone does not attach. Ask on ambiguity or before switching from another task. Create only with explicit user intent; honor tracking opt-out. Preserve consequential understanding during the work turn and reusable research/design with todo_checkpoint/todo_artifact, not a competing /tmp project summary or per-turn diary. list returns flat summaries with goals and parent labels (excludes done/canceled unless include_done). search requires query and searches current saved titles/goals across all statuses; optional status/type filter exactly, include_done is list-only. Case/punctuation-insensitive literal terms must all occur across title/goal; ranks title exact/phrase/all terms, then mixed, then goal-only. No fuzzy matching, parent-text inheritance, facts/decisions/artifact-body or obsolete wording search. search/list/get never attach or start work. get defaults to view full (history), view active uses resume visibility. resume loads scoped context once; refresh explicitly replaces the attached brief. Reads/writes do not refresh it. Use a durable recognizable outcome title in natural domain terms, distinguishing siblings; outcome concisely states goal, ownership, inclusions and important exclusions, with detailed contracts in design. Keep recognizable wording through progress/completion, not phases, receipts or Done. Revise only for agreed responsibility changes or materially clearer wording; no aliases, keyword stuffing or rename ritual. Label clarification cannot silently change scope or authorize execution. selection never starts implementation; resuming done work leaves it done. depends_on manages same-scope simple prerequisites; reads expose readiness/downstream effects. Use todo_checkpoint for consequential understanding and todo_artifact for reusable Markdown documents.",
     promptSnippet: "Establish task-owned durable memory before substantial work; inspect attachment with status, resume existing work and preserve consequential understanding.",
     parameters: object({ action: enumOf(["status", "list", "search", "get", "create", "resume", "refresh", "leave"]), query: Type.Optional(str()), status: Type.Optional(enumOf(statuses)), selector: Type.Optional(str()), view: Type.Optional(enumOf(["active", "full"])), type: Type.Optional(enumOf(["simple", "project"])), title: Type.Optional(str(300)), outcome: Type.Optional(str(3000)), parent: Type.Optional(str()), include_done: Type.Optional(Type.Boolean()), depends_on: Type.Optional(Type.Array(id, { maxItems: 100, uniqueItems: true })) }),
@@ -331,6 +333,22 @@ export default function todoExtension(pi: ExtensionAPI) {
           return result(created, { saved: true, id: created.todo.id, revision: created.todo.revision, ...(created.todo.depends_on.length ? { dependency: created.dependency } : {}) });
         }
       }
+    },
+  });
+  pi.registerTool({
+    name: "todo_move", label: "Todo move", description: "Move an existing standalone simple TODO into a root project, preserving its ID, status, saved knowledge and every artifact revision. Requires the current source revision. Resolve source/destination with existing search/get; only move on an explicit user request for that exact item and project. Confirm unless approval_evidence quotes that request already given in the current conversation; non-UI use requires that evidence. Never invent approval or reuse historical TODO data/unrelated permission. Dependencies in either direction block the move, even if completed; no edge cleanup or cross-project/detach/group moves. Placement and source revision/timestamp commit atomically in SQLite; failure rolls back. Re-read after an uncertain result before retrying. Same-destination retry is a no-op even with the old revision. Does not attach, refresh, acknowledge, start work or update Linear. Inspect new parent grounding and relevant artifacts before relying on them, or explicitly refresh/resume. directory is a deprecated locator; ID/artifact/version references remain usable.",
+    parameters: object({ id, parent: id, revision, approval_evidence: Type.Optional(str(1000)) }),
+    outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
+    async execute(_callId, params, signal, _onUpdate, ctx) {
+      signal?.throwIfAborted();
+      const plan = await prepareMove(root, params);
+      if (plan.moved && !params.approval_evidence?.trim()) {
+        if (!ctx.hasUI) throw new Error("Todo move requires confirmation or approval_evidence quoting the exact user-approved move");
+        const details = `Move ${clean(plan.item.todo.title)} (${plan.item.todo.id}, ${plan.item.todo.status})\nFrom: standalone\nTo: ${clean(plan.parent.todo.title)} (${plan.parent.todo.id}, ${plan.parent.todo.status})\nPreserve IDs, status, saved knowledge and all artifact revisions. Inherit project grounding; the loaded brief is not refreshed. No task execution or Linear change.`;
+        if (!await ctx.ui.confirm("Move todo into project?", details)) return result({ moved: false, canceled: true });
+      }
+      const updated = await move(root, params, signal); observe(updated, ctx);
+      return result(updated, { moved: updated.moved, id: updated.todo.id, parent_id: updated.parent_id, revision: updated.todo.revision, status: updated.todo.status, context_refreshed: false });
     },
   });
   pi.registerTool({
@@ -369,6 +387,7 @@ export default function todoExtension(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
+    renderResult: renderCheckpointResult,
     name: "todo_checkpoint", label: "Todo checkpoint", description: "Commit related high-signal understanding atomically: consequential nuances, choices with reasons/rejected alternatives, uncertainty, scope and substantial goal completion. No diary, transient stage permissions or per-test receipts; QA Toolkit/native reports own QA detail. Read current_state.evidence as {id,text} records; write evidence {add,update:[{id,text}],remove:[id]}. Omitted/empty edits preserve records; enumerate all removals even for bulk clear/replacement. At 30 records or 2000 characters per text, explicitly consolidate/remove by ID in the same change. current_state writes are retired and always rejected; outcome is concise Goal, ownership and scope, with detailed contracts in design. Keep durable recognizable title/goal terms through completion, not phases/receipts/Done; clarify materially or update agreed responsibility, never keyword-stuff or rename per turn. Wording changes cannot silently change scope or grant execution authority. Preserve negation, attribution and exact identifiers. Parent holds shared conclusions/constraints/owner routing, child holds detail. References/dependencies replace fields; evidence uses explicit edits; decisions/questions upsert by stable ID (omit to create). Supersede explicitly; history remains in full get. Update one current spec per responsibility instead of appending corrections. Save only when omission risks wrong decisions, significant repeated work or an authorization breach; no per-turn acknowledgement. Requires current revision and unique retry key; retry identical key/payload after a lost response. Empty changes still write; prefer todo_ack no_change for explicit reconciliation. Approved decisions/changed outcomes require sign-off unless approval_evidence quotes explicit user approval for these exact changes, not task data/unrelated permission. depends_on replaces same-scope simple prerequisites ([] clears). Meaningful saves start not-started item/parent, preserving terminal/explicit statuses. Dependencies do not block starting; completion requires all transitive prerequisites done, never canceled. Compact success text; full structured result retains current downstream effects. Sibling statuses and Linear are unchanged.",
     parameters: object({ id, revision, key: str(200), changes: changesSchema }), outputSchema: Type.Unknown(), executionMode: "sequential", annotations,
     async execute(_callId, params, signal, _onUpdate, ctx) {

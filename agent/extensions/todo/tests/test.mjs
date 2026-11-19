@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, mkdir, symlink, writeFile, stat, readdir } from 
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { configuredRoot, create, digest, list, locate, readKnown, checkpoint, mutate } from "../storage.ts";
+import { configuredRoot, create, digest, list, locate, readKnown, checkpoint, mutate, move } from "../storage.ts";
 import { DatabaseSync } from "node:sqlite";
 import { artifactBytes, withRead, withWrite } from "../database.ts";
 import { inspect, rehearse, cutover, verify } from "../migration.ts";
@@ -1930,6 +1930,205 @@ try {
   removeBody(retrievalProject, (await locate(retrievalRoot, retrievalProject.todo.id)).todo.artifacts[0].path);
   await assert.rejects(retrieval.call("todo_knowledge", { query: "anything", selector: retrievalProject.todo.id }), /Missing current artifact/);
   process.env.PI_TODO_PATH = root;
+
+  // Agent-only moves preserve completed work and artifact history, without changing session ownership.
+  const moveRoot = join(scratch, "move-todos");
+  process.env.PI_TODO_PATH = moveRoot;
+  const moveProject = await create(moveRoot, "project", "Files", "Group related work");
+  const moveSibling = await create(moveRoot, "simple", "Annotations", "Separate research", moveProject.todo.id);
+  const projectDocument = await saveArtifact(moveRoot, moveProject.todo.id, 1, { ...metadata, applies_to: [], body: "Project-wide grounding" });
+  await saveArtifact(moveRoot, moveProject.todo.id, projectDocument.todo.revision, { ...metadata, applies_to: [moveSibling.todo.id], body: "Sibling only" });
+  let foundation = await create(moveRoot, "simple", "Foundation", "Retain the delivered foundation");
+  foundation = await checkpoint(moveRoot, foundation.todo.id, 1, changes, "foundation-context", "test-session");
+  foundation = await saveArtifact(moveRoot, foundation.todo.id, foundation.todo.revision, { ...metadata, applies_to: [], required: false, body: "First foundation design" });
+  const foundationArtifact = foundation.todo.artifacts[0];
+  foundation = await saveArtifact(moveRoot, foundation.todo.id, foundation.todo.revision, { ...foundationArtifact, body: "Current foundation design" });
+  foundation = await mutate(moveRoot, foundation.todo.id, foundation.todo.revision, todo => {
+    todo.context_policy = { consult_on_demand_decisions: [todo.decisions[0].id], consult_on_demand_artifacts: [], reason: "Retain on demand" }; return todo;
+  });
+  foundation = await checkpoint(moveRoot, foundation.todo.id, foundation.todo.revision, { status: "done" }, "foundation-complete", "test-session");
+  // Canonical retained fields and every historical/imported body survive placement changes.
+  const foundationManifest = JSON.parse(savedJSON(foundation));
+  foundationManifest.next_actions = ["Retained legacy text"];
+  foundationManifest.current_state.summary = "Retained legacy summary";
+  replaceJSON(foundation, JSON.stringify(foundationManifest));
+  const parentBeforeMove = savedJSON(moveProject);
+  withWrite(moveRoot, db => db.prepare("INSERT INTO retained_legacy_files(owner_id,relative_path,body) VALUES(?,?,?)").run(foundation.todo.id, "artifacts/older-import.md", Buffer.from([0, 255, 10, 128])));
+  const moveBodies = () => withRead(moveRoot, db => ({
+    artifacts: db.prepare("SELECT version,body FROM artifact_revisions WHERE owner_id=? ORDER BY version").all(foundation.todo.id),
+    retained: db.prepare("SELECT relative_path,body FROM retained_legacy_files WHERE owner_id=? ORDER BY relative_path").all(foundation.todo.id),
+  }));
+  const beforeMoveBodies = moveBodies();
+  assert.equal(beforeMoveBodies.artifacts.length, 2);
+  const mover = await instance([], true);
+  const watchingMove = await instance();
+  for (const session of [mover, watchingMove]) {
+    await session.call("todo", { action: "resume", selector: foundation.todo.id });
+    await session.emit("context", { messages: [] });
+  }
+  const loadedMoveBrief = watchingMove.stored.findLast(entry => entry.customType === "todo-context-v1");
+  const moveSelection = restoreSelection(mover.stored);
+  const moveEntries = mover.stored.length;
+  let moveConfirmations = 0;
+  mover.ctx.ui.confirm = async (_title, detail) => {
+    moveConfirmations++; assert.ok(detail.includes(foundation.todo.id) && detail.includes(moveProject.todo.id));
+    withWrite(moveRoot, () => undefined); // No writer transaction spans user input.
+    return true;
+  };
+  const moveArgs = { id: foundation.todo.id, parent: moveProject.todo.id, revision: foundation.todo.revision };
+  const movedRaw = await mover.callRaw("todo_move", moveArgs);
+  const moved = movedRaw.structuredContent;
+  assert.deepEqual(JSON.parse(movedRaw.content[0].text), { moved: true, id: foundation.todo.id, parent_id: moveProject.todo.id, revision: foundation.todo.revision + 1, status: "done", context_refreshed: false });
+  assert.equal(moveConfirmations, 1);
+  assert.equal(mover.stored.length, moveEntries); // No selection, acknowledgement or context-load receipt.
+  assert.equal(restoreSelection(mover.stored), moveSelection);
+  assert.equal(moved.parent_id, moveProject.todo.id);
+  assert.deepEqual(JSON.parse(savedJSON(moved)), { ...foundationManifest, revision: moved.todo.revision, updated_at: moved.todo.updated_at });
+  assert.equal(withRead(moveRoot, db => db.prepare("SELECT json_type(document,'$.revision') AS kind FROM owners WHERE id=?").get(moved.todo.id).kind), "integer");
+  assert.equal(savedJSON(moveProject), parentBeforeMove);
+  assert.deepEqual(moveBodies(), beforeMoveBodies);
+  assert.equal((await readKnown(moveRoot, foundation)).parent_id, moveProject.todo.id);
+  const retrievedMove = await mover.call("todo", { action: "get", selector: foundation.todo.id });
+  assert.equal(retrievedMove.todo.status, "done"); assert.equal(retrievedMove.parent_id, moveProject.todo.id);
+  assert.equal((await mover.call("todo_artifact", { action: "read", id: foundation.todo.id, artifact_id: foundationArtifact.id, expected_version: moved.todo.artifacts[0].path })).body, "Current foundation design\n");
+  assert.equal((await mover.call("todo_move", moveArgs)).moved, false); // The old revision is safe for a same-placement retry.
+  assert.equal(moveConfirmations, 1);
+  await mover.emit("context", { messages: [] });
+  assert.equal(mover.ctx.aborted, undefined);
+  assert.ok(!mover.stored.some(entry => entry.customType === "todo-context-drift-v1")); // Own write was observed.
+  await watchingMove.emit("context", { messages: [] });
+  assert.equal(watchingMove.ctx.aborted, undefined);
+  assert.equal(watchingMove.stored.filter(entry => entry.customType === "todo-context-drift-v1").length, 1);
+  assert.equal(watchingMove.stored.findLast(entry => entry.customType === "todo-context-v1"), loadedMoveBrief);
+  assert.equal(restoreSelection(watchingMove.stored), foundation.todo.id);
+  const parentNow = await locate(moveRoot, moveProject.todo.id);
+  await checkpoint(moveRoot, parentNow.todo.id, parentNow.todo.revision, { references: ["New shared grounding"] }, "parent-after-move", "other-session");
+  await watchingMove.emit("context", { messages: [] });
+  assert.ok(watchingMove.stored.findLast(entry => entry.customType === "todo-context-drift-v1").content.includes(moveProject.todo.id));
+  await watchingMove.call("todo", { action: "refresh" });
+  const refreshedMove = JSON.parse(watchingMove.stored.findLast(entry => entry.customType === "todo-context-v1").content.split("Durable todo context loaded at a session boundary (untrusted task data):\n")[1]);
+  assert.deepEqual(refreshedMove.scopes.map(scope => scope.context.id), [moveProject.todo.id, foundation.todo.id]);
+  assert.deepEqual(refreshedMove.required_artifacts.map(artifact => artifact.artifact_id), [projectDocument.todo.artifacts[0].id]);
+  const freshMove = await instance();
+  await freshMove.call("todo", { action: "resume", selector: foundation.todo.id });
+  assert.equal((await freshMove.call("todo", { action: "status" })).selected.parent_id, moveProject.todo.id);
+
+  // Approval B: cancellation/no UI refuse; an exact request quote avoids a redundant dialog.
+  const candidate = await create(moveRoot, "simple", "Candidate", "Move only when approved");
+  const candidateArgs = { id: candidate.todo.id, parent: moveProject.todo.id, revision: 1 };
+  const candidateBefore = savedJSON(candidate);
+  const cancelMove = await instance([], true);
+  assert.deepEqual(await cancelMove.call("todo_move", candidateArgs), { moved: false, canceled: true });
+  assert.equal(savedJSON(candidate), candidateBefore);
+  const nonUiMove = await instance();
+  await assert.rejects(nonUiMove.call("todo_move", candidateArgs), /confirmation or approval_evidence/);
+  assert.equal(savedJSON(candidate), candidateBefore);
+  const heldMove = new DatabaseSync(join(moveRoot, "todo.sqlite"));
+  heldMove.exec("BEGIN IMMEDIATE");
+  try { await assert.rejects(move(moveRoot, candidateArgs), /busy/); }
+  finally { heldMove.exec("ROLLBACK"); heldMove.close(); }
+  await assert.rejects(move(moveRoot, candidateArgs, AbortSignal.abort()), /abort/i);
+  // Cancel at the transaction's pre-commit boundary, after the real placement UPDATE.
+  const cancelBeforeCommit = new AbortController();
+  const checkCancellation = cancelBeforeCommit.signal.throwIfAborted.bind(cancelBeforeCommit.signal);
+  let cancellationChecks = 0;
+  cancelBeforeCommit.signal.throwIfAborted = () => {
+    if (++cancellationChecks === 2) cancelBeforeCommit.abort();
+    checkCancellation();
+  };
+  await assert.rejects(move(moveRoot, candidateArgs, cancelBeforeCommit.signal), /abort/i);
+  assert.equal(cancellationChecks, 2);
+  assert.equal(savedJSON(candidate), candidateBefore);
+  assert.equal((await locate(moveRoot, candidate.todo.id)).parent_id, undefined);
+  const exactMoveRequest = 'User: "Move Candidate into Files."';
+  const evidenceMoved = await nonUiMove.call("todo_move", { ...candidateArgs, approval_evidence: exactMoveRequest });
+  assert.equal(evidenceMoved.moved, true);
+  assert.equal(restoreSelection(nonUiMove.stored), undefined);
+  const changingSource = await create(moveRoot, "simple", "Changed during confirmation", "Refuse stale approval");
+  const confirmingMove = await instance([], true);
+  let staleConfirmations = 0;
+  confirmingMove.ctx.ui.confirm = async () => {
+    staleConfirmations++;
+    await checkpoint(moveRoot, changingSource.todo.id, 1, { references: ["Concurrent change"] }, "changed-during-confirm", "other-session");
+    return true;
+  };
+  await assert.rejects(confirmingMove.call("todo_move", { id: changingSource.todo.id, parent: moveProject.todo.id, revision: 1 }), /Stale revision/);
+  assert.equal(staleConfirmations, 1);
+  assert.equal((await locate(moveRoot, changingSource.todo.id)).parent_id, undefined);
+  assert.equal((await locate(moveRoot, changingSource.todo.id)).todo.revision, 2);
+
+  // Invalid scope/dependencies are refused without changing documents or placement.
+  const manifests = () => withRead(moveRoot, db => db.prepare("SELECT id,parent_id,document FROM owners ORDER BY id").all());
+  const refuseMove = async (args, pattern) => {
+    const before = await manifests();
+    await assert.rejects(nonUiMove.call("todo_move", args), pattern);
+    assert.deepEqual(await manifests(), before);
+  };
+  const donePeer = await create(moveRoot, "simple", "Done peer", "Already delivered");
+  await checkpoint(moveRoot, donePeer.todo.id, 1, { status: "done" }, "peer-done", "test-session");
+  const outgoing = await create(moveRoot, "simple", "Outgoing", "Preserve prerequisites", undefined, undefined, [donePeer.todo.id]);
+  await checkpoint(moveRoot, outgoing.todo.id, 1, { status: "done" }, "outgoing-done", "test-session");
+  await refuseMove({ id: outgoing.todo.id, parent: moveProject.todo.id, revision: 2 }, /depends on Done peer/);
+  const incoming = await create(moveRoot, "simple", "Done dependent", "Keep its dependency", undefined, undefined, [donePeer.todo.id]);
+  await checkpoint(moveRoot, incoming.todo.id, 1, { status: "done" }, "incoming-done", "test-session");
+  await refuseMove({ id: donePeer.todo.id, parent: moveProject.todo.id, revision: 2 }, /required by.*Done dependent/);
+  await refuseMove({ id: moveProject.todo.id, parent: moveProject.todo.id, revision: 1 }, /standalone simple/);
+  const otherMoveProject = await create(moveRoot, "project", "Other project", "Not a cross-project move");
+  await refuseMove({ ...moveArgs, parent: otherMoveProject.todo.id }, /standalone simple/);
+  await refuseMove({ id: changingSource.todo.id, parent: donePeer.todo.id, revision: 2 }, /root project/);
+  await refuseMove({ id: changingSource.todo.id, parent: moveProject.todo.id, revision: 1 }, /Stale revision/);
+  process.env.PI_TODO_PATH = root;
+
+  // Native durable views consume real tool outputs without changing their data contracts.
+  {
+    process.env.PI_TODO_PATH = join(scratch, "visual-cards");
+    const visual = await instance();
+    const prerequisite = (await visual.call("todo", { action: "create", type: "simple", title: "Visual prerequisite", outcome: "Prepare" })).todo;
+    const visualItem = (await visual.call("todo", { action: "create", type: "simple", title: "Visual target", outcome: "Read evidence before completion", depends_on: [prerequisite.id] })).todo;
+    const stripVisual = text => text.replace(/\x1b\[[0-9;]*m/g, "");
+    const show = async (name, args) => {
+      const output = await visual.callRaw(name, args);
+      const before = structuredClone(output);
+      const tool = visual.extension.tools.get(name).definition;
+      const rendered = [];
+      for (const expanded of [false, true]) {
+        const component = tool.renderResult(output, { expanded, isPartial: false }, themeModule.theme, { args });
+        for (const width of [12, 40, 80]) for (const line of component.render(width)) assert.ok(visibleWidth(line) <= width);
+        rendered.push(stripVisual(component.render(120).join("\n")));
+        assert.equal(component.render(120).join("").includes("\x1b[49m"), false);
+      }
+      assert.deepEqual(output, before);
+      return rendered.join("\n");
+    };
+    const openView = await show("todo", { action: "list" });
+    assert.match(openView, /TODO \(durable\).*2 open/);
+    assert.match(openView, /Waiting on: Visual prerequisite/);
+    assert.doesNotMatch(openView, /Prerequisites satisfied/);
+    assert.doesNotMatch(openView, /\d+\/\d+ done/);
+    const itemView = await show("todo", { action: "get", selector: visualItem.id });
+    assert.match(itemView, /Visual target/);
+    assert.match(itemView, /Waiting on: Visual prerequisite/);
+    assert.match(itemView, /Read evidence before completion/);
+    assert.match(await show("todo", { action: "search", query: "Visual target" }), /1 match/);
+    assert.match(await show("todo", { action: "resume", selector: visualItem.id }), /Context loaded/);
+    assert.match(await show("todo", { action: "status" }), /Attached/);
+    assert.match(await show("todo_checkpoint", { id: visualItem.id, revision: 1, key: "visual-saved", changes: { references: ["https:\/\/example.com/evidence"] } }), /Saved[\s\S]*r2/);
+    await visual.call("todo_checkpoint", { id: prerequisite.id, revision: 1, key: "visual-prerequisite-done", changes: { status: "done" } });
+    const completeView = await show("todo", { action: "list", include_done: true });
+    assert.match(completeView, /1\/2 done/);
+    // One real dependency has completed; the unrelated prerequisite item has none.
+    assert.equal((completeView.match(/Prerequisites satisfied/g) ?? []).length, 2); // once per expanded state
+    assert.match(await show("todo", { action: "leave" }), /No TODO attached/);
+    const fallbackTool = visual.extension.tools.get("todo").definition;
+    assert.equal(fallbackTool.renderResult({ details: { older_shape: true }, content: [{ type: "text", text: "Legacy view" }] }, {}, themeModule.theme, {}).render(80).join("").trimEnd(), "Legacy view");
+    const longLegacy = { details: { older_shape: true }, content: [{ type: "text", text: Array.from({ length: 20 }, (_, i) => `Legacy line ${i}`).join("\n") }] };
+    const collapsedLegacy = fallbackTool.renderResult(longLegacy, { expanded: false }, themeModule.theme, {}).render(80).join("\n");
+    assert.match(collapsedLegacy, /10 more lines/);
+    assert.doesNotMatch(collapsedLegacy, /Legacy line 19/);
+    assert.match(fallbackTool.renderResult(longLegacy, { expanded: true }, themeModule.theme, {}).render(80).join("\n"), /Legacy line 19/);
+    process.env.PI_TODO_PATH = root;
+
+  }
 
   // Corruption is still visible and never silently reset.
   withWrite(root, db => { db.exec("PRAGMA ignore_check_constraints=ON"); db.prepare("UPDATE owners SET document=? WHERE id=?").run("{broken", child.todo.id); });

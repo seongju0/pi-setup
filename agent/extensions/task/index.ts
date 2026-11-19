@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { SelectList, Text, truncateToWidth, type SelectItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { cleanLabel, statusCard, statusText, taskStyles } from "../lib/status-style.ts";
 import { apply, blockers, emptyState, loadState, saveState, sessionPath, statuses, type Input, type State, type Task } from "./state.ts";
 
 const idSchema = Type.String({ pattern: "^[1-9][0-9]*$" });
@@ -32,7 +33,7 @@ const outputSchema = Type.Object({
 const glyphs = { pending: "○", in_progress: "▶", completed: "✓", failed: "!", cancelled: "×" };
 const cleanLine = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 const cleanText = (text: string) => text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
-const sortedTasks = (state: State) => [...state.tasks].sort((a, b) => {
+const sortedTasks = <T extends Task>(state: { tasks: T[] }) => [...state.tasks].sort((a, b) => {
   const rank = { in_progress: 0, pending: 1, failed: 2, completed: 3, cancelled: 4 };
   return rank[a.status] - rank[b.status] || Number(a.id) - Number(b.id);
 });
@@ -169,13 +170,27 @@ export default function taskExtension(pi: ExtensionAPI) {
       };
     },
     renderCall(args, theme) { return new Text(theme.fg("toolTitle", `task ${args.action}${args.id ? ` #${args.id}` : ""}`), 0, 0); },
-    renderResult(result, { expanded }, theme) {
-      if (result.isError) return new Text(result.content.map(block => block.type === "text" ? block.text : "").join("\n"), 0, 0);
-      const details = result.details as { tasks: (Task & { blockedBy: string[] })[] };
-      const lines = details.tasks.slice(0, expanded ? details.tasks.length : 5).map(task =>
-        `${glyphs[task.status]} #${task.id} ${cleanLine(task.subject)} [${task.status}]${task.blockedBy.length ? ` · blocked: ${task.blockedBy.join(", ")}` : ""}${expanded ? `\n${cleanText(task.description)}` : ""}`);
-      if (!expanded && details.tasks.length > 5) lines.push(`… ${details.tasks.length - 5} more`);
-      return new Text(theme.fg("muted", lines.join("\n") || "No tasks"), 0, 0);
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      const fallback = () => new Text(result.content.map(block => block.type === "text" ? block.text : "").join("\n"), 0, 0);
+      const details = result.details as { tasks?: (Task & { blockedBy: string[] })[] } | undefined;
+      if (result.isError || isPartial || !Array.isArray(details?.tasks) || !details.tasks.every(task =>
+        task && Object.hasOwn(taskStyles, task.status) && typeof task.subject === "string" && typeof task.description === "string"
+        && typeof task.id === "string" && Array.isArray(task.blockedBy) && task.blockedBy.every(id => typeof id === "string"))) return fallback();
+      const tasks = sortedTasks({ tasks: details.tasks });
+      const limit = expanded ? 20 : 5;
+      const lines: string[] = [];
+      for (const task of tasks.slice(0, limit)) {
+        const style = taskStyles[task.status];
+        lines.push(`${statusText(theme, style.tone, style.label, style.glyph)}  #${task.id} ${cleanLabel(task.subject)}`);
+        if (task.status === "pending" && task.blockedBy.length) lines.push(statusText(theme, "warning", `Blocked ${task.blockedBy.map(id => `#${id}`).join(", ")}`));
+        if (expanded && task.description) lines.push(cleanText(task.description).slice(0, 800));
+      }
+      if (tasks.length > limit) lines.push(theme.fg("muted", `… ${tasks.length - limit} more · task get for details`));
+      if (!tasks.length) lines.push(theme.fg("muted", "No tasks"));
+      const progress = context?.args?.action === "list"
+        ? ` · ${tasks.filter(task => task.status === "completed").length}/${tasks.length} complete · ${tasks.filter(task => task.status === "in_progress").length} in progress · ${tasks.filter(task => task.status === "pending" && task.blockedBy.length).length} blocked`
+        : "";
+      return statusCard(theme, `Tasks (session)${progress}`, lines);
     },
   });
 

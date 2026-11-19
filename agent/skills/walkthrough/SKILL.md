@@ -51,7 +51,12 @@ Choose by what the reader must follow, not by the diagram category. A flow, sequ
 | **Bullets** | Independent requirements, facts, prerequisites or outcomes need scanning, not an implied sequence. |
 | **Numbered steps** | Order matters to the action or explanation. |
 | **Table** | Comparing the same meaningful dimensions across alternatives or outcomes helps; avoid paragraphs packed into cells. |
+| **Task list and progress summary** | Show actionable work and known item counts; distinguish saved state from live activity. |
+| **Status label or supported terminal chip** | Make a result, blocker or ask easy to scan; pair attention states with the cause, next action or decision. |
+| **Callout** | Set apart a consequential risk, decision or required action, using a bold lead label or a supported alert block. |
 | **Pseudocode or a code sketch** | The decision or implementation change itself is what the reader needs to understand. |
+
+Use these forms proactively and combine them when useful: a comparison table can contain status labels, and a task view can include counts and a blocker callout. Use existing tool-backed task/TODO views for actual saved state rather than inventing another checklist or repeating a full card in prose. Terminal-specific chip syntax stays out of files, PRs, issues, code and commands; use ordinary words there. Icons and color reinforce text, never replace meaning or grant permission.
 
 Use Mermaid proactively when those connections carry the explanation; do not wait for the user to request it or for the prose to become several paragraphs long. Keep plain text when a rendered graph adds boxes without making the relationships clearer. A short delivery-order diagram can remain plain text even when a more involved architecture or lifecycle benefits from Mermaid.
 

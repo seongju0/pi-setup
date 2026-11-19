@@ -96,28 +96,15 @@ Link to canonical design or implementation sources instead of copying them. Do n
 
 ## Visual compression
 
-Use visuals when they reduce reading time. They are not decoration.
+Apply [Walkthrough's illustration guidance](../walkthrough/SKILL.md#illustrations). Choose by the relationship the reader must follow, not by diagram category or a blanket ASCII-first preference.
 
-### ASCII first
+- **Plain text:** keep short paths, trees, before/after views and a few branches when the reader can follow them without tracing alignment or crossing arrows. A short delivery-order or dependency diagram does not automatically need Mermaid.
+- **Mermaid:** prefer it when explicit connections clarify branching/rejoining paths, loops, asynchronous callbacks, state transitions or responsibility boundaries. Do not wait until the explanation would require several paragraphs. Choose the diagram type for the question, not for decoration.
+- **Bullets or a table:** use these for requirements, prerequisites or comparisons that do not form a connected process. Do not invent a flow between independent launch requirements.
 
-Use a small `text` block for linear flows, ownership, cardinality, before/after shape, or a few branches:
+In `Shape`, keep enough prose to explain what this layer delivers and owns, its input and its handoff. Let the diagram carry the connections rather than repeating every arrow in prose. Keep important guarantees and limits explicit beside it.
 
-```text
-submission
-  ├── lock exact records
-  ├── validate all selections
-  └── create all or nothing
-```
-
-Keep labels short and put explanatory prose outside the diagram.
-
-### Mermaid when structure is genuinely complex
-
-Use Mermaid for a branching state machine, sequence, or dependency graph that would otherwise require several paragraphs. Keep it small, valid, and readable in Linear. Do not duplicate the same information in prose.
-
-### Bullets when simpler
-
-Use bullets instead of a diagram when the content is a short list. Never force ASCII or Mermaid around information that is clearer as three bullets.
+Use short labels and focused diagrams that remain legible in Linear's narrow issue pane. Split a dense graph rather than shrinking it. Verify the saved content; inspect rendering when available, and do not present a source/readback check as visual verification. Convert only the diagrams that become clearer; preserve the user's chosen format for the others.
 
 ## Ticket boundaries
 

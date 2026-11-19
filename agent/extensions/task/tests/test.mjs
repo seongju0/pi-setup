@@ -178,6 +178,27 @@ try {
   await interactive.emit({ type: "session_start", reason: "new" });
   assert.equal(interactive.widgets.has("task"), false);
 
+  // Render actual tool results without changing data; only full lists get progress totals.
+  await first.call({ action: "update", id: "3", status: "completed" });
+  await first.call({ action: "update", id: "4", status: "in_progress" });
+  const strip = text => text.replace(/\x1b\[[0-9;]*m/g, "");
+  for (const args of [{ action: "list" }, { action: "update", id: "4", status: "in_progress" }]) {
+    const output = await first.tool.execute("render", args, undefined, undefined, first.ctx);
+    const before = structuredClone(output);
+    for (const expanded of [false, true]) {
+      const component = first.tool.renderResult(output, { expanded, isPartial: false }, themeModule.theme, { args });
+      for (const width of [12, 40, 80]) for (const line of component.render(width)) assert.ok(visibleWidth(line) <= width);
+      const text = strip(component.render(120).join("\n"));
+      assert.match(text, /Tasks \(session\)/);
+      if (args.action === "list") { assert.match(text, /1\/12 complete/); assert.match(text, /1 blocked/); assert.match(text, /Blocked #1/); }
+      else assert.doesNotMatch(text, /complete|\/12/);
+      assert.equal(component.render(120).join("").includes("\x1b[49m"), false);
+    }
+    assert.deepEqual(output, before);
+  }
+  const legacy = { content: [{ type: "text", text: "Legacy result" }], details: {} };
+  assert.equal(first.tool.renderResult(legacy, {}, themeModule.theme, {}).render(80).join("").trimEnd(), "Legacy result");
+
   // Corrupt existing data is never silently overwritten by tools.
   await writeFile(sessionPath(scratch, "session-a"), "{broken");
   await assert.rejects(first.call({ action: "create", subject: "Do not overwrite", description: "" }), /Cannot read/);

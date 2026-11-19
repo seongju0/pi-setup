@@ -220,6 +220,70 @@ persistent guidance and a dedicated `reportDirectory`. Keep independent handoff
 as a local workflow's default unless the user requests reporting. A specialized
 launcher is a local addition, not registered by this extension.
 
+## Files review receiver (version 1)
+
+With this extension loaded, interactive TUI sessions with `HC_TERMINAL_ID`
+independently advertise `pi.files-review` after asynchronous verification of a
+standalone **Node 26+** runtime. Compiled Pi and Bun need a separate `node` on
+PATH; Pi itself is never launched as the helper. Missing runtime/publication
+leaves the receiver unavailable, without installing anything or blocking startup.
+The whole `herdr-session` directory is already a declared setup resource, so the
+protocol and CLI siblings travel with it. Existing running sessions need an
+explicitly authorized reload before they can advertise this feature.
+
+The compact label is `{v:1,sessionId,terminal,instance,inbox,node,cli}`. `terminal`
+is the recipient's machine-local terminal ID; `instance` is a fresh UUID for each
+binding. `inbox` is a canonical absolute OS-temp directory, owned by the current
+user with mode 0700. The receiver and helper validate the descriptor against its
+private manifest, and use owned, private regular files, no-follow reads, exclusive
+publication and atomic results. A session replacement gets a fresh endpoint;
+shutdown stops polling and closes the local manifest without hc RPC or label-clear.
+Research restoration and annotation binding are independent.
+
+Herdr owns recipient eligibility (live pane-hosted Pi in the originating tab),
+explicit host trust, drafts and exact message formatting. Its Preview, Copy and
+`request.text` must match. On the recipient machine it invokes the advertised
+standalone Node, with arguments rather than a shell:
+
+```text
+node <cli> send <endpoint-json> <submission-json>
+node <cli> status <endpoint-json> <submission-id>
+```
+
+The request is `{v,id,instance,target:{sessionId,terminal},origin:{space,tab},
+instruction,comments,text}`. Comments contain UUID `id`, `body` and captured
+`anchor` (file, lines or changeset). The shared validator enforces absolute source
+roots, nontraversing relative file paths, valid ranges/enums, timestamps, no NUL,
+20 comments, 4000 UTF-16 units per comment/instruction, 2000 per excerpt and
+64 KiB UTF-8 total request/text bounds. Shorten or split oversized batches; the
+receiver never reformats or silently omits content. Anchors are snapshots, not
+filesystem commands or session-file references.
+
+Every second, the receiver claims up to 20 pending records and immediately
+rechecks its exact current session/generation before synchronously calling:
+`pi.sendUserMessage(text,{deliverAs:'followUp',expandPromptTemplates:false})`.
+Idle Pi can start a turn; busy Pi queues a follow-up, not steering. No terminal
+input is used. Results echo `{v,id,instance,sessionId,status,reason?}`, with status
+`handed_to_pi`, `rejected` or `unconfirmed`.
+
+**Handed to Pi is only a void-API handoff**, not durable delivery, processing,
+model success or exactly-once execution. Input handlers may transform/consume it;
+later model/auth errors appear inside Pi. The CLI waits at most five seconds;
+status only reads, never sends. Repeated IDs cannot replace/re-enqueue work.
+Claims without final receipts remain unconfirmed and are never replayed. Final
+results remain readable after closure. Missing/closed manifests before a new
+publication are rejection; unavailable old published/claimed work is unconfirmed.
+Keep the submission ID, endpoint and exact text for status/Copy, and do not retry
+an unknown outcome automatically. A crash-held admission lock fails closed.
+Endpoints are ephemeral OS-temp state, not durable session history; there is no
+global scan/pruning of inboxes.
+
+**Supported only on explicitly confirmed trusted single-user Unix recipients**
+(local macOS or already-connected Unix machines). Private inbox permissions do
+not hide comments/excerpts in process argv from other OS users. This is not a
+shared-host-confidential transport. No server, HTTP call, credentials, automatic
+remote installation, Windows packaging or terminal-input fallback is provided.
+
 ## Checks
 
 From the repository root, run `npm test`.

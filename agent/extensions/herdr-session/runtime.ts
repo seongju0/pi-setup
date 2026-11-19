@@ -113,6 +113,10 @@ export async function getCoreTerminal(terminalId: string, signal?: AbortSignal) 
   return terminal;
 }
 
+export async function publishAnnotationEndpoint(endpoint: { terminal: string }, signal: AbortSignal) {
+  await core("terminal.label", { terminal: endpoint.terminal, labels: { "pi.files-review": JSON.stringify(endpoint) } }, signal);
+}
+
 export async function publishSessionIdentity(ctx: ExtensionContext) {
   if (ctx.mode !== "tui" || !process.env.HC_TERMINAL_ID) return;
   await core("terminal.label", { terminal: process.env.HC_TERMINAL_ID, labels: { "pi.session-id": ctx.sessionManager.getSessionId(), "pi.session-cwd": ctx.cwd } });
