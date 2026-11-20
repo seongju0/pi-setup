@@ -1,17 +1,35 @@
 ---
 name: linear-issues
-description: Create, rewrite, split, review, align, or update Linear issues and milestone descriptions using a low-cognitive-load standard. Use whenever work involves drafting or changing Linear ticket titles, descriptions, deliverables, dependencies, status, or milestone sequencing. Keeps tickets human-readable, high-level but specific, checkbox-driven, and visual where ASCII or Mermaid communicates faster than prose.
+description: Create, rewrite, split, review, align, or update Linear issues and milestones. Use for drafting or changing titles, descriptions, deliverables, dependencies, status, or milestone sequencing. Keep outcomes, ownership, and completion criteria clear; preserve tracker metadata and verify authorized changes.
 ---
 
 # Linear Issues
 
-Write Linear issues for the next human reader, not as a transcript of the planning session.
+Help the next reader understand what an issue or milestone delivers, who owns it, and when it is done. Keep the tracker consistent with the authorized scope, not a transcript of the planning session.
 
-A reader should understand the purpose, shape, boundaries, and end state by scanning the title, `Goal`, and `Done means`. Keep issues high-level, succinct, and understandable without the planning conversation. Preserve details that change implementation or delivery; remove detail that only proves how much analysis happened.
+## Workflow
 
-## Standard shape
+**Draft, plan, or review means no Linear mutation.** Present the proposed scope, title, deliverables, and relation changes; a later instruction such as `apply` authorizes the agreed write set. A direct request to create or update authorizes that work without another approval round unless a material scope decision remains unresolved.
 
-Use this structure unless the team already has a stricter template:
+1. **Read the current state.** For an existing issue, read its full description, status, relations, milestone, and directly related tickets. Check linked PR status when checkboxes or current scope depend on it. For a new issue, inspect nearby tickets and the milestone for local conventions. For milestone work, read its description, metadata, and affected issues so sequencing matches the actual work.
+2. **Draft only the requested change.** Use the writing guidance below for authored content. Keep unresolved decisions open rather than selecting an implementation prematurely. A status-only or metadata-only request does not authorize rewriting the description.
+3. **Review before presenting or applying.** Can a reader scan the purpose, boundaries, ownership, and end state? Is every checkbox verifiable? Are invariants, legacy behavior, rollout gates, and open decisions visible? Check whether a blocker applies to the whole issue and remove speculative or stale prose within the authorized scope.
+4. **Present or apply according to the request.** For draft-only work, return the proposal and stop. To apply, use the available Linear tools; if they are unavailable, report the prerequisite rather than introducing another provider.
+   - Preserve assignee, priority, cycle, project, milestone, labels, attachments, status, and unrelated relations unless the approved plan changes them.
+   - Prefer targeted description patches for small edits and a full replacement for an approved rewrite.
+   - Change descriptions and relation metadata together when a split or scope move would otherwise leave the tracker contradictory.
+   - Never mark a deliverable complete from assumption.
+5. **Refetch every changed issue and milestone.** Confirm title, description, and intended field changes landed; checkbox state matches verified work; status and milestone are correct; blockers and related links reflect the new scope; and canceled or superseded work no longer blocks active delivery. Report changed issue and milestone links and any field the available tools could not update.
+
+## Writing issues and milestones
+
+Apply [Walkthrough](../walkthrough/SKILL.md) for the shared writing and illustration method. Keep issues high-level, succinct, and understandable without the planning conversation. Preserve details that change implementation or delivery; remove detail that only proves how much analysis happened.
+
+For issues, a reader should understand the purpose, shape, boundaries, and end state by scanning the title, `Goal`, and `Done means`. Adapt milestone descriptions to their outcome and sequence rather than forcing an issue template.
+
+### Standard shape
+
+Use this flexible structure unless the team or active workflow requires a stricter format:
 
 ```markdown
 ## Goal
@@ -55,9 +73,9 @@ Omit `Shape` when a visual or explanation would only repeat the goal. Do not add
 
 ### Shape
 
-- Show the smallest flow or responsibility boundary that explains the issue.
+- Explain what this layer delivers and owns, its input, and its handoff. Show the smallest useful flow or responsibility boundary; let a diagram carry connections rather than repeating every arrow in prose.
 - Name existing concepts; do not imply a new model or framework unless that change is in scope.
-- Keep labels short. Prefer a few bullets when a diagram adds no clarity.
+- Keep important guarantees and limits explicit beside the explanation.
 
 ### Scope
 
@@ -96,15 +114,9 @@ Link to canonical design or implementation sources instead of copying them. Do n
 
 ## Visual compression
 
-Apply [Walkthrough's illustration guidance](../walkthrough/SKILL.md#illustrations). Choose by the relationship the reader must follow, not by diagram category or a blanket ASCII-first preference.
+Use Walkthrough's illustration guidance to choose the smallest useful view, not a blanket ASCII-first rule. Do not invent a flow between independent requirements or convert a diagram unless it becomes clearer; preserve the user's chosen format for the others.
 
-- **Plain text:** keep short paths, trees, before/after views and a few branches when the reader can follow them without tracing alignment or crossing arrows. A short delivery-order or dependency diagram does not automatically need Mermaid.
-- **Mermaid:** prefer it when explicit connections clarify branching/rejoining paths, loops, asynchronous callbacks, state transitions or responsibility boundaries. Do not wait until the explanation would require several paragraphs. Choose the diagram type for the question, not for decoration.
-- **Bullets or a table:** use these for requirements, prerequisites or comparisons that do not form a connected process. Do not invent a flow between independent launch requirements.
-
-In `Shape`, keep enough prose to explain what this layer delivers and owns, its input and its handoff. Let the diagram carry the connections rather than repeating every arrow in prose. Keep important guarantees and limits explicit beside it.
-
-Use short labels and focused diagrams that remain legible in Linear's narrow issue pane. Split a dense graph rather than shrinking it. Verify the saved content; inspect rendering when available, and do not present a source/readback check as visual verification. Convert only the diagrams that become clearer; preserve the user's chosen format for the others.
+Keep diagrams legible in Linear's narrow issue pane. Verify saved content and inspect rendering when available; saved-text readback is not visual verification.
 
 ## Ticket boundaries
 
@@ -141,53 +153,3 @@ When splitting an existing ticket:
 - A canceled ticket should briefly say why it no longer needs to exist and which ticket owns any surviving scope.
 - Do not keep an observe-only or speculative placeholder. Put required launch measurement on the launch ticket; create future work only when evidence identifies a concrete problem.
 - When one implementation supersedes another, state the chosen direction and close or unlink the obsolete artifact after approval.
-
-## Workflow
-
-### 1. Read before writing
-
-For an existing issue, read its full description, status, relations, milestone, and directly related tickets. Check linked PR status when checkboxes or current scope depend on it.
-
-For a new issue, inspect nearby tickets and the milestone so the title, fields, and level of detail match the local standard.
-
-### 2. Draft the smallest complete ticket
-
-Apply the standard shape. Prefer deletion over preserving stale prose. Keep unresolved decisions explicitly open instead of selecting an implementation prematurely.
-
-### 3. Review for cognitive load
-
-Before writing to Linear, confirm:
-
-- Can the title, Goal, Shape, and Done means explain the issue in one scan?
-- Does every checkbox describe a verifiable result?
-- Are important invariants, legacy behavior, rollout gates, and open decisions still visible?
-- Is any paragraph better as bullets, ASCII, or Mermaid?
-- Does any hard blocker apply only to part of the ticket?
-- Can any speculative section be deleted?
-
-### 4. Get approval before mutation
-
-When the user asks for a plan, review, or draft, do not modify Linear. Present the proposed scope, title, deliverables, and relation changes first. A later explicit instruction such as `apply` authorizes the agreed write set.
-
-If the user directly asks to create or update the issue, proceed without a second approval round unless a material scope decision is still unresolved.
-
-### 5. Apply safely
-
-Use the available Linear tools.
-
-- Preserve assignee, priority, cycle, project, milestone, labels, attachments, status, and unrelated relations unless the approved plan changes them.
-- Prefer targeted description patches for small edits and a full replacement for an approved rewrite.
-- Change descriptions and relation metadata together when a split or scope move would otherwise leave the tracker contradictory.
-- Never mark a deliverable complete from assumption.
-
-### 6. Verify
-
-Refetch every changed issue and milestone. Confirm:
-
-- title and description landed;
-- checkbox state matches verified work;
-- status and milestone are correct;
-- blockers and related links reflect the new scope;
-- canceled or superseded work no longer blocks active delivery.
-
-Report the changed issue links and any field the available tools could not update.

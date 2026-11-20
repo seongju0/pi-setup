@@ -1,203 +1,74 @@
 ---
 name: open-pr
-description: Create or refine pull request titles and descriptions as source-grounded walkthroughs that give reviewers an intuitive mental model of the change. Explain behavior in a natural order with concise prose, examples and small illustrations. Verify claims against the diff and read back published edits.
+description: Create or refine pull request titles and descriptions as source-grounded walkthroughs. Use when asked to open a PR or improve its title or body, including publication when authorized; not for code review. Verify claims against the diff and read back published edits.
 ---
 
 # Open PR
 
-Help an unfamiliar reviewer quickly see **the problem → the change → the proof**.
-Optimize for time to understanding, not word count or visual formatting alone.
-Lead with the reason, then choose the clearest way to explain the change: a
-journey, responsibility split, decision flow, concrete example or before/after.
-Use implementation names where they help the reader follow the real system.
-Do not make reviewers reconstruct the story from rules, caveats or test inventories.
-
-Before drafting the explanation, read [Walkthrough](../walkthrough/SKILL.md) and
-apply its approach and illustration guidance. Open PR owns publication, template
-adaptation and verification; Walkthrough supplies the explanatory method. Its
-session-output default does not override an authorized PR publication request.
+Help an unfamiliar reviewer understand **the problem → the change → the proof**.
+Read [Walkthrough](../walkthrough/SKILL.md) before drafting and apply its explanatory
+method. This skill owns PR grounding, repository templates and publication; the
+Walkthrough session-output default does not override an authorized PR request.
 
 ## Create or refresh
 
 When asked to create or refine a PR, update the actual PR unless the user requests
 a preview. Editing this skill or discussing an example PR does not itself
-authorize PR publication. Repeated PR refinements update the same description,
-not duplicates or appended summaries.
+authorize publication. Repeated refinements update the same description, not
+duplicates or appended summaries.
 
-1. Confirm the repository/branch and find its existing PR. Read the title, body, base and draft/ready state, plus the repository's template and contribution guidance.
-2. Inspect the current diff against the PR base and connected code needed to verify behavior. Distinguish local work from published changes; do not describe unpublished work as delivered.
-3. Write the title and description using the guidance below and the repository's required headings. Keep an existing title if it still fits. Preserve valid human context, links, required fields and material caveats; replace stale claims and duplicated explanation throughout the body.
-4. Check the draft, then update the existing PR or create a **draft** through the repository's normal CLI flow. Preserve an existing PR's base, draft/ready state and unrelated metadata. Do not commit, push or change implementation solely to refine its description. If the description already fits the current diff, leave it unchanged.
-5. Read back the actual saved title/body and verify metadata is unchanged except as intended. Return the PR link and a brief account of the refinement.
+1. **Establish the target.** Confirm the repository/branch and find its existing PR. Read its title, body, base and draft/ready state, plus the repository's template and contribution guidance.
+2. **Ground the explanation.** Inspect the current diff against the PR base and connected code needed to verify behavior. Distinguish local work from published changes; do not describe unpublished work as delivered. Any preparation of unpublished work must stay within the current request's or assigning workflow's authority; report a publication blocker if that authority is missing. Do not commit, push or change implementation solely to refine a description.
+3. **Draft in place.** Use the title and body guidance below and the repository's exact required headings and fields. Keep an existing title if it still fits. Preserve valid human context, links and material caveats; replace stale claims and duplicated explanation throughout the body. If the title and body already fit the current diff, leave the PR unchanged.
+4. **Check and publish.** Apply Final check. For a preview, return the proposed title/body and stop. Otherwise update the existing PR or create a **draft** through the repository's normal CLI flow. Preserve an existing PR's base, draft/ready state and unrelated metadata.
+5. **Verify the saved result.** Read back the actual saved title/body and verify metadata is unchanged except as intended. Return the PR link and a brief account of the refinement.
 
-## Titles: name the delivery
+## Title and description
 
-- Name a concrete action and outcome or changed component, recognizable in a PR list without opening the body. Preserve required issue prefixes and repository conventions.
-- Prefer **add, fix, remove, keep, route, extract** over vague “improvements,” “hardening,” or “enhancements.” Drop promotional adjectives such as “robust” or “seamless.” Use necessary domain terms, not unexplained internal shorthand.
-- Name what this PR delivers, not the larger initiative or future capability: **“Retry failed file uploads”**, not “Robust upload workflow improvements.”
+Name a concrete action and outcome or changed component, recognizable in a PR
+list. Preserve required issue prefixes and repository conventions. Name this
+delivery, not a larger initiative: **“Retry failed file uploads”**, not
+“Robust upload workflow improvements.” Prefer concrete verbs such as **add, fix,
+remove, keep, route, extract** over vague or promotional claims.
 
-## Explain the change as a walkthrough
+Use the repository's headings, not a new heading template. Where it separates
+context, changes and testing, give each a distinct job:
 
-Write for the reviewer asking, **“Walk me through this changeset.”** The goal is
-an intuitive mental model, not merely a shorter technical document.
+- **Context:** establish the prior problem, motivation and central idea without requiring a ticket read. Leave the detailed walkthrough to the change section.
+- **Changes:** explain before versus after and follow the operation from entry to outcome where parts interact. Use selective code pointers, not a file or commit inventory. Number steps or behavior-led subsections when useful, within this section rather than continuing into testing.
+- **Testing:** explain coverage, how it was exercised and what the evidence establishes, as detailed below. Use unnumbered coverage subheadings; numbered manual action steps are fine.
 
-Build understanding rather than just listing facts:
+Preserve an existing walkthrough the user selected: keep its explanatory sequence,
+examples and useful illustrations. Adapt only for factual corrections, the
+required template, current evidence and requested edits; do not replace it with
+a synopsis.
 
-```text
-Central idea
-    ↓
-Explain the behavior
-    ↓
-Show how the pieces connect
-    ↓
-Explain consequential choices beside the relevant step
-    ↓
-Show the proof and remaining limits
-```
+Keep current behavior distinct from future work, and a connected user path
+distinct from a merely available API or capability. Put consequential failure,
+transaction, privacy, authorization, compatibility, rollout and scope boundaries
+beside the step they affect. Link detailed setup or rationale, but keep essential
+restrictions in the PR itself rather than hiding them behind a link. Skip inventories
+of untouched areas and generic safety boilerplate.
 
-This is an explanatory progression, not a required set of headings or diagrams.
+Apply Walkthrough's illustration guidance to the reviewer question. Verify actors,
+transitions and outcomes against the diff and connected code; do not invent a
+failure to motivate the change. If the best illustration is unclear,
+read [PR illustration examples](references/illustration-examples.md) for
+responsibility splits, journeys, routing, recovery, algorithms, comparisons and
+delivery boundaries. The catalogue is illustrative, not application evidence.
 
-- **Start with one plain-English central idea.** Establish what this change does and why before stack position, implementation names or exceptions. Distinguish this delivery from future work without implying that a proposed campaign, flow or guarantee already exists.
-- **Follow the operation in a natural order.** Explain the important steps and how they connect: what starts the flow, where decisions happen, what changes, and what outcome follows. Use behavior-led subheadings within the required template when they help; do not impose a fixed number of sections or narrate every file.
-- **Prefer tracing interacting parts from entry to resolution.** When understanding the change depends on how multiple parts interact, follow Walkthrough's tracing guidance so reviewers can see how the implementation produces the described behavior. Use a simpler explanation for a localized change that is clear without tracing handoffs. The walkthrough is the preferred explanation for interacting parts; a diagram or exhaustive call graph is not required.
-- **Explain purpose before naming machinery.** Introduce a class, method or file when it gives the reader a useful place to look, after explaining the responsibility it owns. A selective code pointer is useful; a file inventory is not an explanation.
-- **Make consequential distinctions concrete.** Use a small example, contrast or decision tree to explain an abstract rule. Put failure, transaction, privacy and compatibility boundaries beside the step they affect rather than collecting an unexplained caveat list.
-- **Keep the explanation, trim repetition.** Concise means low reading effort, not the fewest words. Do not compress a clear walkthrough into a dense paragraph or a list of disconnected rules merely to shorten it. Scale the detail to the change and honor repository constraints and the user's requested depth.
-- **Reuse an explanation the user selected.** When asked to adopt an existing walkthrough, preserve its explanatory sequence, examples and useful illustrations. Adapt only what is needed for factual corrections, the required template, current evidence and the requested edits; do not silently replace it with a synopsis.
+## Testing claims
 
-## Description: context, change, proof
-
-Use the repository's headings; this is a reading order, not extra mandatory sections.
-Where the template separates background, changes and testing, give each a distinct job:
-
-- **Background/context:** the TL;DR and context the reviewer needs to understand the change. Establish the central idea and motivation; leave the detailed walkthrough to the change section.
-- **What the PR does:** the behavioral walkthrough. Number its steps or subsections when that helps the reader follow the flow; keep that numbering within this section rather than continuing it into testing.
-- **Testing:** walk through what is covered, how it was exercised and what the evidence establishes. Use unnumbered coverage subheadings; numbered manual action steps are fine when useful. Separate completed automated or manual checks from suggested steps and remaining gaps. Do not reduce this section to commands or a pass count.
-
-- **Set the scene.** Briefly explain the prior problem and why the change is needed, without requiring a ticket read. Put motivation before implementation names or stack position; skip project history and repeated TL;DRs.
-- **Show the delta.** Explain what a user or system did before, what it does now and why the difference matters. A list of new rules is not an explanation of the change. Organize around behavior, not files or commits; label future work as future.
-- **Let the form carry the explanation.** Use an illustration when relationships, ordering or behavior become easier to see than to describe. Use prose for the reason and consequential boundaries, not a second narration of the visual. If a sentence is clearer, use the sentence.
-- **Keep detail scannable.** Give each sentence or bullet one job. Cut repeated summaries, jargon, unchanged-behavior inventories and implementation detail the diff already explains. Keep essential compatibility and permission boundaries without burying the central change.
-- **State important boundaries once.** Keep consequential privacy, authorization, compatibility, failure, rollout and scope limits where they help judge the change. Skip inventories of untouched areas and generic safety boilerplate. Link detailed setup or rationale, but keep essential restrictions in the PR itself.
-- **Keep verification current and factual.** Use brief bullets for checks and what they establish, not a test-results ledger. Separate completed checks, suggested manual steps, and material gaps. Consolidate re-runs rather than accumulating test receipts; retain older evidence only when its scope still matters, clearly qualified. Never invent fixtures, results, live-service verification or full-suite/CI certification. Never include credentials, PHI or client identifiers.
-
-## Illustrations: choose the view that explains
-
-- **Start with the reviewer’s question.** Who owns what? How does a person move through this flow? Where does a decision happen? What result changes for the same input? Choose the view that answers the important question, not a prescribed diagram type.
-- **Match the shape to the subject.** Before/after for a changed boundary; a journey for entry and return; a tree for responsibilities; a flowchart for decisions and handoffs; a concrete input/output example for an algorithm; screenshots for visible UI behavior. Plain text and Mermaid are both useful—choose whichever is easier to read.
-- **Use tables when scanning across rows helps.** Alternatives, actions and outcomes, or checks and evidence may benefit from aligned columns. A tiny rule may be clearer in a sentence. Long prose cells may be clearer as a flow or bullets. Judge the reading effort, not the presence of a grid; do not replace a table with equivalent ASCII boxes.
-- **Allow complementary views.** A system flow can explain where a rule applies while a concrete example shows what it does. Add another view only when it answers a different consequential question. Do not prescribe one visual per PR or force every change into before/after.
-- **Make each view earn its space.** Use concrete labels and enough context to follow the relationships. Remove repeated narration, decorative arrows and unrelated branches. Aim for less reading without removing the details that make a complicated change understandable.
-- **Ground every claim.** Verify actors, transitions and outcomes against the diff and connected code. Do not invent a failure to motivate the change or imply that a presentation fixture proves backend behavior. Keep test evidence in the testing section.
-
-## Example formats
-
-These are illustrative mechanics, not application facts or ready-made PR text.
-Choose and adapt only the views that explain the actual change; do not include
-this whole catalogue or copy its behavior without verifying it.
-
-### Responsibility split: what moved, and what stayed?
-
-One component no longer owns both delivery mechanics and workflow effects.
-
-```text
-BEFORE                         AFTER
-Sender                         Sender
-├─ delivery + retries          ├─ delivery + retries (unchanged)
-└─ workflow completion         └─ completion → WorkflowLifecycle
-```
-
-### User journey: where does the person enter and return?
-
-After completing one item, return to the same list rather than ending the journey.
-
-```text
-Request list → select item → complete action → Done → same list
-                                                     ├─ items remain → continue
-                                                     └─ none remain  → finished
-```
-
-### Routing and convergence: what selects the owner?
-
-Explicit request type chooses the policy; both paths retain one response contract.
-
-```text
-Verified request + explicit type
-              ├─ Standard → StandardResolver ─┐
-              └─ Partner  → PartnerResolver ─┴→ Context → API response
-```
-
-### Failure and recovery: what survives, and what repeats?
-
-Persist the accepted handoff before delivery so a transport retry does not create
-another request.
-
-```text
-Accept request → save receipt → deliver receipt ID
-                                 ├─ succeeds → handed off
-                                 └─ fails    → retry same ID
-                                               saved receipt remains
-```
-
-Include the failure branch when it explains a consequential contract—not every
-possible exception. A larger decision pipeline may be clearer in Mermaid:
-
-```mermaid
-flowchart LR
-  A[Qualified results] --> B[Apply user filters]
-  B --> C{Priority enabled?}
-  C -->|Yes| D[Move preferred matches first]
-  C -->|No| E[Keep filtered order]
-  D --> F[Paginate]
-  E --> F
-```
-
-### Concrete input/output: what does the algorithm actually do?
-
-Priority changes ordering, not membership or eligibility.
-
-```text
-Filtered order:           [A, B, Preferred, C]
-Priority ON, first 2:      [Preferred, A]       total = 4
-Priority OFF, first 2:     [A, B]               total = 4
-Filter removes Preferred: [A, B, C]            priority cannot add it back
-```
-
-This can complement a pipeline diagram: the diagram locates the operation;
-the example demonstrates its effect.
-
-### Action/outcome table: which differences should readers compare?
-
-Use aligned rows when the reader needs to scan how several actions differ.
-
-| Action | Priority | Filters |
-| --- | --- | --- |
-| Open default view | On | Defaults |
-| Edit a filter | Off | User selection |
-| Clear | On | Reset to defaults |
-
-A lone rule such as “missing identity rejects the request” needs no table.
-
-### Delivery boundary: what is connected now versus merely available?
-
-Show new capability separately from the existing user path so reviewers do not
-mistake an API addition for a launched feature.
-
-```text
-CONNECTED: Existing screen → new command → existing workflow
-API ONLY:  New client type → new command → new lifecycle
-                            No screen or entry link yet
-```
-
-Use a screenshot or recording instead when the important difference is visual
-layout or interaction; label what it demonstrates and any unverified effects.
+- Keep test evidence in the testing section. Separate completed automated or manual checks, suggested manual steps and material gaps. Explain what each check establishes, not just commands or a pass count.
+- Keep evidence current and concise. Consolidate re-runs rather than accumulating receipts; retain older evidence only when its scope still matters, clearly qualified.
+- Never invent fixtures, results, live-service verification or full-suite/CI certification. A presentation fixture does not prove backend behavior; label screenshots or recordings with what they demonstrate and any unverified effects.
+- Keep credentials, PHI and client identifiers out of the PR title, body and evidence.
 
 ## Final check
 
-- Can an unfamiliar reviewer retell the main flow, what changed and why without reconstructing it from the diff or testing section? Does the description build understanding step by step rather than merely enumerate facts?
-- Does each illustration answer a useful reviewer question? Is a journey, responsibility view, example or sentence clearer for this change?
-- Does each table make scanning easier? Do complementary views add understanding rather than repeat it? Can removing a grid, paragraph or caveat reduce effort without hiding a material boundary?
-- Are current versus future behavior, required template fields, testing claims and material boundaries accurate?
-- Is publication within the user's permissions, and does the saved PR preserve the intended metadata?
+- Can an unfamiliar reviewer retell the main flow, what changed and why without reconstructing it from the diff or testing section? Does the explanation build understanding rather than merely enumerate facts?
+- Does each illustration answer a useful question? Do tables ease comparison and complementary views add understanding rather than repeat it? Can removing a grid, paragraph or caveat reduce effort without hiding a material boundary?
+- Are before/after, current/future and connected/available distinctions, required template fields, testing claims and material boundaries accurate?
+- Is publication within the user's or assigning workflow's authority, and does the saved PR preserve the intended metadata?
 
 Saved-body equality confirms the update—not its explanatory quality. Judge both.
