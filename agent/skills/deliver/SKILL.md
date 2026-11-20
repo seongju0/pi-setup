@@ -29,7 +29,7 @@ The map is an overview; the detailed gates and fallback rules below still apply.
 
 ### Stage skills and full reads
 
-Use [design](../design/SKILL.md) for spec refinement, [build](../build/SKILL.md) for implementation and remediation, [review](../review/SKILL.md) for independent review, and [open-pr](../open-pr/SKILL.md) for publication. Read each stage's actual SKILL.md on entering it and require the child to read it fully, plus relevant supporting references resolved from its directory. Use session-advertised absolute paths; default sibling paths are `../design/SKILL.md`, `../build/SKILL.md`, `../review/SKILL.md` and `../open-pr/SKILL.md`. Report missing prerequisites rather than inventing guidance. Do not delegate the deliver orchestrator itself.
+On entering each stage, read its linked SKILL.md fully and require the child to do the same, including relevant supporting references resolved from that skill's directory. Use session-advertised absolute paths when available; otherwise use the sibling links below. The stage skills own their detailed workflows; this skill adds parent gates and delegation boundaries. Report missing prerequisites rather than inventing guidance. Do not delegate the deliver orchestrator itself.
 
 ### Fresh children and fallbacks
 
@@ -65,14 +65,14 @@ Follow global AGENTS.md delegation policy. In each assignment, distinguish autho
 
 ### Approach and readiness
 
-- **Check readiness and necessity before build.** A build-ready spec resolves behavior, implementation locations, non-requirements and checks. For rough input, delegate design first for a direction checkpoint and build-ready spec.
-- Before accepting either a supplied spec or the design report, identify the ordinary operation, actual variation and rule owners. Challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.
+- For rough input, delegate design for its direction checkpoint and build-ready spec. **Before accepting either a supplied spec or the design report**, trace the ordinary operation through live code from entry to outcome, identifying actual variation and rule owners. Confirm behavior, implementation locations, non-requirements and checks are settled before build.
+- Check necessity as well as readiness: challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.
 - For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md) when accepting the approach. Carry the accepted caller contract, responsibility owners, consequential effects and relevant trade-offs into stage assignments; verify they survive build and review without mandating extra architecture work or reopening settled decisions.
 - Apply global AGENTS.md task-memory policy as the delivery parent, including owner resolution and tracking opt-out. Establish the [grounding described below](#grounding-and-handoffs) before launching children.
 
 ## 2. [Build](../build/SKILL.md) child: implement — parent verifies
 
-**Assignment:** Delegate the accepted scope to a build child.
+**Assignment:** Give a fresh build child the accepted scope and require [build](../build/SKILL.md), including its testing policy and final report.
 
 **Parent verification:**
 - Inspect the integrated diff, confirmed gaps/spec conflicts and test delta against the build skill's necessity, design and test policies. Worker confidence or completion alone is not verification. Treat out-of-scope hardening as a deviation to resolve, not a harmless improvement to retain by default.
@@ -86,11 +86,10 @@ Follow global AGENTS.md delegation policy. In each assignment, distinguish autho
 
 Use one fresh, read-only review child after integration. Supply:
 
-- Intended behavior, spec, supported flow, exclusions and accepted trade-offs.
+- Spec, intended behavior, supported flow, exclusions and accepted trade-offs; repository/worktree, applicable guidance and connected callers/tests.
 - Exact base commit/range plus relevant staged, unstaged and task-owned untracked files. Do not let a default HEAD diff omit committed work or new files.
-- Repository/worktree, applicable guidance and connected callers/tests. Require review of mechanisms and responsibility boundaries as well as spec conformance; do not coach toward a clean verdict.
+- A mandate to follow [review](../review/SKILL.md) across the affected flow, mechanisms and responsibility boundaries—not just spec conformance—and return its findings, flow questions, **Test review** and limits with exact revision/diff scope. Do not coach toward a clean verdict.
 - No edits, commits, publication, external writes or runtime commands against shared environments. Parent runs tests by default; separately authorized safe checks must not race with other DB users.
-- Actionable findings with severity, file/line, impact and smallest correction; the review skill's exception-based **Test review**; material unreviewed risks and exact revision/diff scope.
 
 ### Parent coverage gate
 
@@ -100,9 +99,9 @@ Before treating accumulated clean reports as integrated approval, confirm the wh
 
 ### Disposition
 
-- Check every finding against code, supported behavior and existing protection. Fix confirmed defects in specified behavior at their existing owner and behavior-preserving clarity problems. Record concise evidence-backed reasons for declining findings. No accepted fixes is a valid result. Resolve consequential flow questions from code where practical; otherwise carry them into disposition as explicit limits on the verdict, not silently dropped questions. A confirmed defect remains a finding even when its correction needs a product or scope decision.
-- **New behavior still needs a scope decision.** New guarantees, policies, recovery behavior, storage or architectural contracts are not routine corrections. Decline speculative extras or proposals contradicting settled non-requirements with a brief reason; ask about a material trade-off only when you recommend accepting it. A security label does not expand permissions: preserve required trust-boundary protections and escalate changes that materially alter approved behavior or conflict with an accepted trade-off.
-- Apply justified test consolidation and stub repairs while retaining distinct regression protection. Added tests must meet review's missing-test bar, not merely cover another branch.
+- Check every finding against code, supported behavior and existing protection. Accept confirmed fixes to specified behavior at the existing owner and behavior-preserving clarity corrections; record concise evidence-backed reasons for declines. No accepted fixes is valid. Resolve consequential flow questions from code where practical; otherwise record explicit limits on the verdict. A confirmed defect remains a finding even when its correction needs a product or scope decision.
+- Apply review's distinction between defects and speculative extras, and its test-review bar for consolidation, stub repairs and added coverage. Preserve distinct regression protection and settled non-requirements.
+- **New behavior still needs a scope decision.** New guarantees, policies, recovery behavior, storage or architectural contracts are not routine corrections. Ask about a material trade-off only when recommending it. A security label does not expand permissions: preserve required trust-boundary protections and escalate changes that materially alter approved behavior or conflict with an accepted trade-off.
 
 ### Remediation, only if fixes are accepted
 
@@ -118,13 +117,13 @@ Record the report and disposition, then delegate accepted fixes to a fresh remed
 
 ### Assignment
 
-After parent verification, give a fresh PR child the final diff scope, intended base, verification receipts, review disposition and scoped commit/push/draft-PR permission. It must read the open-pr SKILL.md fully and follow it with repository commit/PR instructions, use required stack tooling and confirm task-only changes before staging. It must not change implementation or mutate another owner's stack.
+After parent verification, give a fresh PR child the final diff scope, intended base, verification receipts, review disposition and scoped commit/push/draft-PR permission. Require [open-pr](../open-pr/SKILL.md) and repository commit/PR instructions, required stack tooling and confirmation of task-only changes before staging. No implementation changes or mutations to another owner's stack.
 
-Update an existing task PR rather than duplicate it. Preserve unrelated content/metadata and draft/ready state as instructed. After a failed or lost publication response, inspect remote state before retrying.
+Use open-pr's existing-PR, metadata/state preservation and saved-result verification rules. After a failed or lost publication response, inspect remote state before retrying.
 
 ### Parent publication audit
 
-Require the PR URL, base/head IDs, final title/body and publication receipts. The parent reads the diff first, then audits the actual PR against open-pr's final check, repository requirements, intended base/state and verification claims—not just the child's summary. If correction is needed, record it, use a fresh narrowly scoped PR child and recheck. Surface unresolved nonblocking risks; distinguish tests run from suggested manual checks.
+Require the PR URL, base/head IDs, final title/body and publication receipts. Read the diff first, then audit the actual saved PR against open-pr's **Final check**, repository requirements, intended base/state and verification claims—not just the child's summary or saved-body equality. Surface unresolved nonblocking risks and distinguish tests run from suggested manual checks. For corrections, record the issue, use a fresh narrowly scoped PR child and recheck.
 
 ## 6. Parent: report the outcome and stop
 
