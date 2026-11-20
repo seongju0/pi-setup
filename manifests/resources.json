@@ -35,6 +35,7 @@
     "agent/skills/open-pr",
     "agent/skills/research",
     "agent/skills/review",
-    "agent/skills/walkthrough"
+    "agent/skills/walkthrough",
+    "agent/skills/writing-skills"
   ]
 }

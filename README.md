@@ -60,6 +60,11 @@ unavailable, skills disclose their fallback and its persistence limits. TODO doe
 not launch the workflows or require their stage sequence. See the
 [memory contract](agent/extensions/todo/docs/memory.md).
 
+## Author skills
+
+Use `/skill:writing-skills` to create or refine a skill with concise prose,
+clear activation and a focused workflow. See the [authoring guide](agent/skills/writing-skills/SKILL.md).
+
 ## Features and dependencies
 
 See [extensions](agent/extensions/README.md) and [custom skills](agent/skills) for
