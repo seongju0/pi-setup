@@ -7,9 +7,7 @@ description: Settle an approach and produce a codebase-verified, build-ready imp
 
 Settle what to build, then define exactly how to build it. Produce an implementation specification that a smaller model in a fresh session can execute without rediscovering architecture, making product decisions, or guessing core behavior. Detail should remove ambiguity, not add speculative scope.
 
-The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions; do not reopen what the product should do. Do not automatically implement or start another session. Delegate bounded research or specification work when useful under the global delegation contract; retain ownership of the final design.
-
-Follow the global AGENTS.md task-memory and delegation contract. Standalone parents resolve ownership; workers use supplied context and request missing material from the parent. Honor tracking opt-out and disclose fallback limits; it does not prevent design.
+The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions. Do not automatically implement or start another session. Delegate bounded research or specification work when useful; retain ownership of the final design.
 
 ## Direction checkpoint
 
@@ -28,7 +26,7 @@ For consequential structural choices, read [Codebase Design](../codebase-design/
 
 Justify each proposed mechanism with its supported caller sequence, consequence and why the existing owner is insufficient. A code citation, pattern or spec prescription alone does not establish need. If a mechanism creates another edge case, reconsider it before layering exceptions. Reapply this check when revising from research or review; reusing behavior does not require transplanting its defensive machinery.
 
-Do not add support for hypothetical callers, artificial test states, race or staleness recovery, upstream re-checks or security hardening merely because a failure can be imagined. Default to omitting speculative extras. For material hardening you recommend, explain the triggering sequence, plausibility and uncertainty, consequence, and implementation and maintenance cost as a flow question; get agreement before including it. Record notable exclusions under considered-but-omitted, not an inventory of imagined failures. **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. Preserve approved requirements and surface conflicts rather than silently restoring excluded behavior.
+Do not add support for hypothetical callers, artificial test states, race or staleness recovery, upstream re-checks or security hardening merely because a failure can be imagined. Default to omitting speculative extras. Raise recommended material hardening as a flow question and get agreement before including it. Record notable exclusions under considered-but-omitted, not an inventory of imagined failures. **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. Preserve approved requirements and surface conflicts rather than silently restoring excluded behavior.
 
 ## Ground the specification
 
@@ -50,14 +48,13 @@ Give ordered, actionable steps. For each substantial step, specify:
 
 ## Test plan: few flow-level specs
 
-Plan tests once for the whole change, from the user-visible flow inward, using [Codebase Design's interface-testing principles](../codebase-design/SKILL.md#test-the-meaningful-interface). Retained coverage may suffice. Build follows the agreed plan; if implementation reveals a concrete coverage gap, it surfaces the regression and smallest correction before expanding the plan.
+When writing the Test plan, read the [shared testing policy](../build/references/testing.md). Plan once for the whole change, from the user-visible flow inward; retained coverage may suffice.
 
-- **Scenarios, not files.** List the few caller-level scenarios (request/system/job/integration spec) that prove the outcome end to end with real internal collaborators. Stub only external HTTP/vendor boundaries. For each: spec file (extend an existing one first), setup, trigger, asserted outcome or readback, and the regression it catches. Select distinguishing supported actors/client types/versions where their semantics differ; when new state changes existing consumers' decisions, assert the outcome through those consumers, not just the new operation's success.
-- **Choose the workflow owner.** For substantial browser-facing features, prefer one representative existing Playwright/system scenario spanning navigation, actions and persisted outcome; keep backend-only contracts and detailed permutations in focused integration tests. Name real/stubbed boundaries and optional same-run capture.
-- **Focused tests:** do not plan a file per class. Justify focused tests for complex logic by the distinct regression protection that caller-level scenarios do not adequately provide—not by whether the logic is pure.
-- **Deliberately not tested:** list what stays out (log/metric shape, permutation matrices, guarantees another layer already owns) so build does not add it.
-- **Consolidate:** name redundant specs and retained or replacement coverage before proposing merges or deletions.
-- Commands, environmental prerequisites and remaining manual checks, stated separately.
+- **Scenarios, not files.** For each representative caller-level scenario, name the spec file (extend an existing one first), setup, trigger, asserted outcome or readback, and regression it catches. Select distinguishing supported actors/client types/versions where semantics differ. When new state changes existing consumers' decisions, assert the outcome through those consumers, not just the new operation's success.
+- **Execution owner and boundaries.** Name the workflow/spec that owns the proof and its real/stubbed boundaries; note optional same-run capture for browser workflows. Follow the shared policy's browser-versus-backend coverage split.
+- **Deliberately not tested.** Name exclusions such as incidental log/metric shape, permutation matrices or guarantees another layer owns, so build does not add them.
+- **Consolidation.** Name redundant specs and retained or replacement coverage before proposing merges or deletions.
+- State commands, environmental prerequisites and remaining manual checks separately.
 
 Avoid vague instructions such as “handle errors,” “add tests,” or “update callers” without naming which behavior, failures, or callers matter. A builder may choose routine syntax and formatting, but should not need to choose architecture or infer intended semantics.
 
@@ -83,4 +80,4 @@ Unanswered flow questions block only when the answer changes the core design; ot
 
 **Presentation and preservation are independent choices.** Present the spec in the conversation unless the user or workflow requests another output. Under delegation, return the specification body and relevant context to the parent; follow deliver's default final-answer report policy when applicable, without a duplicate report file.
 
-The standalone owner or parent preserves reusable design under the global task-memory contract, with one authoritative body rather than competing copies; inline presentation alone is not preservation. Workers return the specification for the parent to curate. Saving or labeling a spec ready does not approve implementation. Stop after the spec; do not automatically invoke `/skill:build`.
+The standalone owner or parent preserves reusable design in one authoritative home; inline presentation alone is not preservation. Workers return the specification for the parent to curate. Stop after the spec; do not automatically invoke `/skill:build`.

@@ -11,7 +11,7 @@ Review the requested change. If none is specified, review staged and unstaged ch
 
 - Read the diff, relevant surrounding code, implementation plan/spec and primary references named in the request. Find repository guidance in the changed files' directory ancestry; follow relevant references, not unrelated documentation broadly.
 - Establish supported behavior, exclusions and accepted trade-offs before judging. Trace affected callers and outcomes; a spec describes intent but does not prove its mechanism is necessary or its outcome correct. For a new writer or newly admitted actor/client/variant, verify the existing readers and effects that consume its output. A settled mechanism or exclusion is not acceptance of a changed existing invariant; if it conflicts with a business contract, escalate the conflict rather than silently reopening or fixing it.
-- For relevant React/Next changes, apply `/skill:vercel-react-best-practices`; also read `/skill:vercel-composition-patterns` for component API or composition design. Follow the global AGENTS.md memory and delegation contract; worker confidence or severity is not evidence for added behavior.
+- For relevant React/Next changes, apply `/skill:vercel-react-best-practices`; also read `/skill:vercel-composition-patterns` for component API or composition design.
 
 ## Inspect the changed flow
 
@@ -36,15 +36,12 @@ A missing-guard concern must name the triggering caller sequence, plausibility a
 
 ## Test review
 
-Audit every changed test on the first pass, not just missing coverage. Apply [Codebase Design's interface-testing principles](../codebase-design/SKILL.md#test-the-meaningful-interface) and judge distinct regression protection rather than test volume.
+For every Test review, read the [shared testing policy](../build/references/testing.md), including when no tests changed. Audit every changed test on the first pass, not just missing coverage; judge distinct regression protection rather than test volume.
 
-- **Trace caller to outcome.** Check realistic inputs, real internal collaborators and assertions on results, persisted readback or consequential effects. For substantial browser-facing workflows, favor one representative existing Playwright/system scenario spanning navigation, actions and persisted outcome; keep backend contracts and detailed permutations in focused integration tests. Do not demand browser coverage without a browser-facing contract.
-- **Audit meaningful mocks.** External HTTP/vendor boundaries can be stubbed. For internal decision, writer or orchestration stubs, name the wrong behavior that still passes because the stub bypasses the claimed guarantee. Mock use alone does not make a test tautological.
-- **Select by risk.** Look for representative success and distinct failure, authorization, transaction or retry protection where applicable—not every constructible permutation. Focused tests for complex logic are justified by protection caller-level scenarios do not adequately provide, not purity. Do not request a file per class.
-- **Keep one contract owner.** Identify duplicate guarantees and name retained coverage before recommending merges or deletions. Preserve distinct rollback, security/privacy, partial-effect, compatibility and wrong-actor protection. A redundant test is not necessarily tautological.
-- **Reject incidental observability testing.** Logger wording, metric tags and payload shapes need an explicit acceptance criterion or consequential consumer, such as an alert, audit record or functional payload contract. Even for observability work, prefer a few contract assertions in real scenarios over mock-only shape matrices.
+- **Trace the claimed guarantee.** Check caller-to-outcome and consumer contracts against the actual setup and assertions. Do not demand browser coverage without a browser-facing contract.
+- **Audit meaningful mocks.** For internal decision, writer or orchestration stubs, name the wrong behavior that still passes because the stub bypasses the claimed guarantee. Mock use alone does not make a test tautological.
+- **Identify retained protection.** Name retained coverage before recommending merges or deletions; preserve distinct protections required by the shared policy. A redundant test is not necessarily tautological.
 - **Make missing coverage earn its place.** Name the plausible regression, affected consumer, why retained tests miss it and the smallest catching scenario/assertion. Calibrate severity to consequence and likelihood; absent coverage alone is not a major defect.
-- **Recommend the smallest correction.** Extend a scenario, repair a bypassing stub or consolidate coverage before requesting files, fixtures or harnesses. Coverage percentages, test-to-code ratios, convention and “new code needs tests” do not justify additions. Honor explicit project checks and constraints; surface conflicts.
 - **Separate evidence from confidence.** Passing suites, schema validation and fault injection prove different things. State remaining verification gaps without automatically requesting manual end-to-end testing.
 
 ## Report
