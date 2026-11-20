@@ -45,7 +45,9 @@ Search must actually run, native source URLs must be present, and the response m
 
 Public research only. Never send PHI, credentials, private code, or sensitive records. Only the query, optional purpose, and fixed research instructions go to the helper—not the current transcript. Provider policies/retention still apply.
 
-Use the `agent-browser` skill/CLI for reading pages, PDFs, screenshots, and browser interaction. This extension deliberately has no arbitrary URL fetching, PDF/video extraction, browser automation, result cache, source-check tool, curator UI, provider registry, or automatic provider fallback.
+Use the upstream `agent-browser` skill/CLI for public/headless page inspection and isolated QA, including test logins. For the user's existing signed-in account or current Ardia tab, use the `authed-browser` skill with `ardia browse`; do not send that private context to public search. Missing Ardia access is a prerequisite to resolve, not a reason to launch Ghostty or silently switch browsers/accounts.
+
+This extension deliberately has no arbitrary URL fetching, PDF/video extraction, browser automation, result cache, source-check tool, curator UI, provider registry, or automatic provider fallback.
 
 Token usage is returned to Pi with catalog-priced estimates. Search-specific service fees and subscription accounting are not represented by the token estimate; this is not an invoice. Usage from a request that fails before a final result is not recovered.
 

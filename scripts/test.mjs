@@ -27,6 +27,18 @@ try {
   assert.equal(loaded.extensions.length, entries.length);
   console.log(`PASS: all ${entries.length} foundation extension entry points load.`);
 
+  // Explicit manifest paths only: validate real skill discovery/frontmatter,
+  // without loading installed user skills or their external tool integrations.
+  const { loadSkills } = await import(pathToFileURL(join(piRoot, "dist/core/skills.js")));
+  const skills = loadSkills({ cwd: scratch, agentDir: env.PI_CODING_AGENT_DIR, skillPaths: resources.skills.map(path => join(repo, path)), includeDefaults: false });
+  assert.deepEqual(skills.diagnostics, []);
+  assert.equal(skills.skills.length, resources.skills.length);
+  const authed = skills.skills.filter(skill => skill.name === "authed-browser");
+  assert.equal(authed.length, 1);
+  assert.equal(authed[0].disableModelInvocation, false);
+  assert.equal(authed[0].filePath, join(repo, "agent/skills/authed-browser/SKILL.md"));
+  console.log(`PASS: all ${skills.skills.length} foundation skills load; authed-browser is discoverable for model selection.`);
+
   let suites = 0;
   for (const path of resources.extensions) {
     const test = join(extname(path) ? dirname(join(repo, path)) : join(repo, path), "tests/test.mjs");

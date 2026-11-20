@@ -25,6 +25,7 @@
     "agent/extensions/lib/status-style.ts"
   ],
   "skills": [
+    "agent/skills/authed-browser",
     "agent/skills/build",
     "agent/skills/checkout",
     "agent/skills/codebase-design",

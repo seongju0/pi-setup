@@ -267,6 +267,9 @@ test('existing agent: preserve conflicts, local settings and runtime data; add m
   await fs.symlink('/nonexistent/pi-setup-old', path.join(f.target, 'extensions/continue'));
   await fs.mkdir(path.join(f.target, 'extensions/task'));
   await fs.writeFile(path.join(f.target, 'extensions/task/local-data'), 'original task data');
+  const oldBrowser = path.join(f.target, 'skills/authed-browser');
+  await fs.mkdir(oldBrowser, { recursive: true });
+  await fs.writeFile(path.join(oldBrowser, 'SKILL.md'), 'obsolete local Ghostty guide');
   const before = await fs.readFile(f.settings, 'utf8');
   await f.setup({ dryRun: true, ask: async () => { throw new Error('dry run must not prompt'); } });
   await f.setup({ ask: async () => false });
@@ -285,6 +288,15 @@ test('existing agent: preserve conflicts, local settings and runtime data; add m
   assert.deepEqual(settings, { ...base, ...local, terminal: { ...base.terminal, ...local.terminal } });
   assert.equal(await exists(f.calls), false);
   assert.equal((await fs.lstat(path.join(f.target, 'extensions/move'))).isDirectory(), true);
+  assert.equal(await fs.readFile(path.join(oldBrowser, 'SKILL.md'), 'utf8'), 'obsolete local Ghostty guide');
+  // Explicitly discard the obsolete local guide; setup preserves conflicts
+  // and only links the replacement once its destination is missing.
+  await fs.rm(oldBrowser, { recursive: true });
+  const beforeMigration = await fs.readFile(f.settings, 'utf8');
+  const migrated = await f.setup();
+  assert.equal(await fs.readlink(oldBrowser), path.join(f.root, 'agent/skills/authed-browser'));
+  assert.equal(migrated.backup, undefined);
+  assert.equal(await fs.readFile(f.settings, 'utf8'), beforeMigration);
   const inspection = await inspectSetup({ root: f.root, env: f.env });
   assert.equal(Object.hasOwn(inspection, 'packages'), false);
   assert.ok(inspection.preferences.every(change => change.conflict));
