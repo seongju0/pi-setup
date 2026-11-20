@@ -5,79 +5,80 @@ description: Settle an approach and produce a codebase-verified, build-ready imp
 
 # Design
 
-Settle what to build, then define exactly how to build it. Produce an implementation specification that a smaller model in a fresh session can execute without rediscovering architecture, making product decisions, or guessing core behavior. Detail should remove ambiguity, not add speculative scope.
+Decide what to build and write a specification a smaller model can implement in a fresh session. Resolve the architecture, product choices and core behavior rather than leaving the builder to guess. Use detail to remove ambiguity, not add speculative scope. Stop before implementation.
 
-The usual sequence is research → design → build, but no prior skill invocation or particular document is required. Work from research reports, a direct user request, or the current conversation. Preserve settled decisions. Do not automatically implement or start another session. Delegate bounded research or specification work when useful; retain ownership of the final design.
+Start from research, a direct request or settled conversation context; no earlier workflow or document is required. Preserve settled decisions. Delegate bounded research or specification work when useful, but own the final design. Do not automatically start another session.
 
-## Direction checkpoint
+## 1. Agree the direction
 
-Before specifying, state direction in a few lines:
-- **Outcome and success criteria:** what changes for the user, and how we know it works.
-- **Approach and ownership:** ground the direction in a representative real path traced through the live code from entry to resolution. Identify the ordinary operation, what actually varies, and who owns decisions, data and side effects before prescribing files or classes. Reuse existing behavior; compare alternatives only for a real unresolved trade-off and recommend one.
-- **Scope, non-goals and non-requirements:** what this change will deliberately not handle.
-- **Flow questions:** at most 3 material questions, each with a default; omit hypothetical gap inventories.
-- **Slices:** for larger work, small reviewable segments in dependency order, each with what it delivers.
+Read research reports and their primary sources, not just summaries. Separate verified facts from assumptions. Then give a short direction checkpoint:
 
-Read research reports and primary references, not just summaries; separate facts from assumptions. If direction is already settled in the conversation, restate it briefly and continue. If a choice would materially change behavior, scope or safety, stop after the checkpoint and ask; do not write a full spec on a guessed direction or invent approval.
+- **Outcome:** what changes for the user and how success will be checked.
+- **Approach:** trace one real operation through the live code from entry to outcome. Identify what varies and who owns the decisions, data and effects before choosing files or classes.
+- **Boundaries:** scope, non-goals, non-requirements and accepted trade-offs.
+- **Questions:** at most 3 material flow questions, each with a default.
+- **Slices:** for larger work, reviewable segments in dependency order, each with a useful result.
 
-## Necessity and design
+Reuse existing behavior. Compare alternatives only for a real unresolved trade-off and recommend one. If direction is already settled, restate it briefly and continue. If a choice would materially change behavior, scope or safety, stop at the checkpoint and ask; do not finish a spec on a guessed direction or assume approval.
 
-For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md). Settle the caller contract, responsibility owners and consequential effects; compare alternatives only for a real unresolved choice and carry the decision into the specification.
+## 2. Check the code and its callers
 
-Justify each proposed mechanism with its supported caller sequence, consequence and why the existing owner is insufficient. A code citation, pattern or spec prescription alone does not establish need. If a mechanism creates another edge case, reconsider it before layering exceptions. Reapply this check when revising from research or review; reusing behavior does not require transplanting its defensive machinery.
+Read project instructions and the affected code and tests. Follow the actual entry points, shared functions and callers through inputs, decisions, permissions, persistence and effects. Verify research assumptions against live code; a report is a starting point, not a substitute for inspection.
 
-Do not add support for hypothetical callers, artificial test states, race or staleness recovery, upstream re-checks or security hardening merely because a failure can be imagined. Default to omitting speculative extras. Raise recommended material hardening as a flow question and get agreement before including it. Record notable exclusions under considered-but-omitted, not an inventory of imagined failures. **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. Preserve approved requirements and surface conflicts rather than silently restoring excluded behavior.
+When adding a writer, actor, client type, version or other variant, check how existing code consumes what it produces and what actions follow. A prescribed mechanism or an exclusion does not by itself approve changing an existing invariant. Raise that conflict unless the consequence was explicitly accepted.
 
-## Ground the specification
+Keep the exclusions and trade-offs agreed at the checkpoint, in conversation or in task memory. Do not silently restore excluded behavior. Choose the smallest complete change; prefer existing helpers, standard libraries, platform features and installed dependencies. Follow the project's domain model and conventions; avoid unrelated cleanup and a parallel architecture.
 
-1. Read project instructions and the actual code/tests affected. Trace entry points, shared functions and their callers, data flow, persistence, permissions, and existing patterns. For a new writer or newly admitted actor/client/variant, trace what it produces into the existing readers and effects that consume it; a spec's mechanism or exclusions constrain the change but do not accept a changed outcome for an existing invariant unless that consequence was explicitly accepted—surface the conflict instead. Validate research assumptions against the live code; reports are starting evidence, not a substitute for inspection. Carry forward non-requirements and accepted trade-offs from the checkpoint, the conversation and any durable todo decisions; do not silently reinstate them.
-2. Prefer existing helpers, stdlib, native platform features, and installed dependencies. Choose the smallest complete change; avoid speculative abstractions and unrelated cleanup.
-3. For React work, read and apply `../vercel-react-best-practices/SKILL.md` relative to this skill directory. For component API/architecture work, also apply `../vercel-composition-patterns/SKILL.md`. Follow the project's domain model and conventions rather than introducing a parallel architecture.
-4. Resolve implementation-critical uncertainties before declaring the spec ready. Verify existing file paths, symbols, interfaces, and test commands. Explicitly mark new files/symbols as proposed. Do not leave core implementation locations as candidates for the builder to discover.
+Read these guides when they apply:
+- [Codebase Design](../codebase-design/SKILL.md) for consequential structural choices. Settle the caller contract, responsibility owners and important effects; carry the decision into the spec.
+- `../vercel-react-best-practices/SKILL.md` for React work, plus `../vercel-composition-patterns/SKILL.md` for component APIs or architecture.
 
-## Specify the change
+## 3. Keep only the mechanisms the change needs
 
-Make the spec self-contained: repository/worktree, objective, current behavior, intended behavior, scope, non-goals, settled decisions, relevant references, and permissions. Never rely on “as discussed” or an unstated conversation dependency.
+For each proposed mechanism, explain the supported caller sequence, its consequence and why the existing owner is insufficient. A code citation, existing pattern or spec instruction is not enough. Recheck this when revising from research or review. Reusing behavior does not mean copying its defensive machinery; if a mechanism creates more edge cases, reconsider it before adding exceptions.
 
-Give ordered, actionable steps. For each substantial step, specify:
-- Exact existing or proposed files and symbols; what to add, change, remove, or reuse, and what must remain unchanged.
-- Inputs/outputs, type or interface shapes, state transitions, and how callers and components connect. For consequential structural choices, name responsibility owners, distinguish what genuinely varies from the ordinary flow, and show a small code-shape sketch or diagram. Resolve the structure without prescribing every local helper or dumping a speculative full implementation.
-- Required branches, invariants, boundary validation and error handling. Each guard, fallback, recovery path or new storage mechanism names its real triggering flow and consequence not already covered by the existing owner. Cover concurrency, cancellation, retries, compatibility or migrations only when the actual change needs them.
-- Which **Test plan** scenario proves the step. Do not plan a spec file per step or per new class.
-- Dependencies on earlier steps and a clear completion condition.
+Do not add handling just for a hypothetical caller or artificial test state. Add race recovery, stale-state recovery, upstream re-checks or security hardening only for a real supported need, not an imagined failure. Raise recommended material hardening as a flow question and get agreement before including it.
 
-## Test plan: few flow-level specs
+Record notable exclusions as **considered-but-omitted**, so build does not add them. Keep entries brief; do not create an inventory of imagined failures or questions. Preserve approved requirements and surface conflicts.
+
+**This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement.
+
+## 4. Write the implementation steps
+
+Make the spec self-contained. State the objective, current and intended behavior, scope, exclusions and settled decisions. Include the repository/worktree, references and permissions; do not rely on “as discussed.”
+
+Verify existing paths, symbols, interfaces and test commands. Mark new files and symbols as proposed. Resolve implementation-critical uncertainties; do not leave core locations as candidates for the builder to discover.
+
+Give ordered steps. For each substantial step, name:
+
+- **Location:** exact files and symbols to add, change, remove or reuse, plus what must stay unchanged.
+- **Behavior:** inputs, outputs, types/interfaces, state transitions and connections between callers and components.
+- **Rules and failures:** invariants, boundary validation, error handling and required branches. Tie each guard, fallback, recovery path or storage mechanism to its real trigger and consequence not already handled by another owner.
+- **Proof:** the **Test plan** scenario that proves the step. Map steps to scenarios, not one test file per step or class.
+- **Order and finish:** dependencies on earlier steps and a clear completion condition.
+
+For consequential structural choices, name the owners and what genuinely varies; show a small code-shape sketch or diagram. Resolve the structure without prescribing every local helper or writing a speculative full implementation. Cover concurrency, cancellation, retries, compatibility and migrations only when the actual change needs them.
+
+The builder may choose routine syntax and formatting, not architecture or intended semantics. Replace vague directions such as “handle errors,” “add tests” or “update callers” with the specific behavior, failure or caller involved.
+
+## 5. Test plan
 
 When writing the Test plan, read the [shared testing policy](../build/references/testing.md). Plan once for the whole change, from the user-visible flow inward; retained coverage may suffice.
 
-- **Scenarios, not files.** For each representative caller-level scenario, name the spec file (extend an existing one first), setup, trigger, asserted outcome or readback, and regression it catches. Select distinguishing supported actors/client types/versions where semantics differ. When new state changes existing consumers' decisions, assert the outcome through those consumers, not just the new operation's success.
-- **Execution owner and boundaries.** Name the workflow/spec that owns the proof and its real/stubbed boundaries; note optional same-run capture for browser workflows. Follow the shared policy's browser-versus-backend coverage split.
-- **Deliberately not tested.** Name exclusions such as incidental log/metric shape, permutation matrices or guarantees another layer owns, so build does not add them.
-- **Consolidation.** Name redundant specs and retained or replacement coverage before proposing merges or deletions.
-- State commands, environmental prerequisites and remaining manual checks separately.
+- **Scenarios:** for each representative caller-level scenario, name the spec file, setup, trigger, asserted outcome/readback and regression it catches. Extend an existing spec first. Select supported actors, client types and versions where semantics differ; assert changed consumer decisions through those consumers, not just the new operation's success.
+- **Execution:** name the workflow/spec that owns the proof and its real/stubbed boundaries. Note optional same-run capture for browser workflows; follow the shared policy's browser/backend split.
+- **Deliberate omissions:** say what stays out, such as incidental log/metric shape, permutation matrices or guarantees another layer owns.
+- **Consolidation:** name redundant specs and retained or replacement coverage before proposing merges or deletions.
+- **Commands and gaps:** state commands, environmental prerequisites and remaining manual checks separately.
 
-Avoid vague instructions such as “handle errors,” “add tests,” or “update callers” without naming which behavior, failures, or callers matter. A builder may choose routine syntax and formatting, but should not need to choose architecture or infer intended semantics.
+## 6. Return the spec and stop
 
-## Deliverable and readiness
+Scale detail to the task, but keep what the builder needs to implement it. Include relevant risks, prerequisites and unresolved decisions. An acceptance checklist can help; the sections above are not a mandatory document template.
 
-Scale the spec to the task, but do not sacrifice implementation-critical detail for brevity. Use these sections as needed:
+Mark the spec **ready for build** only when implementation-critical decisions and locations are resolved. Otherwise mark it **blocked** and name what must be decided or verified. Readiness is not user approval or permission to implement.
 
-```md
-# Direction checkpoint (outcome, approach, slices)
-# Objective, scope, and starting point
-# Verified current behavior and proposed changes
-# Interfaces, data flow, and invariants
-# Non-requirements and considered-but-omitted (one line each, so build does not add them)
-# Ordered file-level implementation steps
-# Test plan (scenarios, spec files, deliberately not tested, consolidation) and acceptance checklist
-# Risks, prerequisites, and unresolved decisions
-# Build handoff and stop condition
-```
+An unanswered flow question blocks only if its answer changes the core design. Otherwise state the default and omit the extra handling. End with a build handoff: approved direction, execution order, commands and expected results, prohibited changes (including omitted safeguards and tests outside the plan), final report requirements and stop condition.
 
-Mark the spec **ready for build** only when implementation-critical decisions and locations are resolved. Otherwise mark it **blocked** and state exactly what must be decided or verified. This readiness label is not permission to implement or user approval.
+Present the spec in conversation unless the user or workflow names another destination. Under delegation, return the spec body and relevant context for the parent to curate. When delegated through deliver, use its default final-answer report policy without a duplicate report file.
 
-Unanswered flow questions block only when the answer changes the core design; otherwise state the default and leave the extra handling out. The build handoff lists the approved direction, execution order, commands, expected results, prohibited changes (including omitted safeguards and tests outside the test plan), and final report requirements.
-
-**Presentation and preservation are independent choices.** Present the spec in the conversation unless the user or workflow requests another output. Under delegation, return the specification body and relevant context to the parent; follow deliver's default final-answer report policy when applicable, without a duplicate report file.
-
-The standalone owner or parent preserves reusable design in one authoritative home; inline presentation alone is not preservation. Workers return the specification for the parent to curate. Stop after the spec; do not automatically invoke `/skill:build`.
+The standalone owner or parent preserves reusable design in one authoritative home; inline presentation alone is not preservation. Stop after the spec; do not automatically invoke `/skill:build`.
