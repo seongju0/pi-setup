@@ -97,7 +97,7 @@ Put the assignment, supported flow, settled decisions, exclusions, accepted trad
 
 For required stage guidance, identify the skill in `message`, preferably by absolute `SKILL.md` path, and require a full read before applicable work. A name suffices when the child's catalog resolves it unambiguously. Resolve relative supporting references from the skill directory, not the worker cwd, and require only relevant reads. The parent still reads guidance needed to orchestrate and verify, but need not read it solely to copy it into a payload.
 
-For example, include in `message`: “Before implementing /tmp/task/spec.md, read and follow /absolute/skills/build/SKILL.md fully and read applicable supporting references relative to that skill directory. Report scoped changes and check results to /tmp/task/build.md; stop after implementation and checks.” Keep task-specific boundaries such as “No commits, pushes or live service operations” in `instructions`.
+For example, include in `message`: “Before implementing /tmp/task/spec.md, read and follow /absolute/skills/build/SKILL.md fully and read applicable supporting references relative to that skill directory. Return scoped changes and check results in your final answer; stop after implementation and checks.” Keep task-specific boundaries such as “No commits, pushes or live service operations” in `instructions`.
 
 Skills with `disable-model-invocation: true` are absent from automatic selection; do not select them automatically. When explicitly requested guidance requires one, provide its exact path and require a read rather than assuming `/skill:name` embedded in prose expands it. Do not delegate parent orchestrators such as deliver or research to stage workers. If required guidance is unavailable, report the missing prerequisite and safe partial findings; do not invent instructions, silently substitute a skill or bypass trust/access restrictions with a direct path.
 
@@ -107,7 +107,15 @@ Guidance grants no tools, project trust or permissions. The parent verifies retu
 
 ### Research reports
 
-Assign distinct report paths to research workers and retain child-ID/report-path references. Reports survive worker completion and stopped conversations can reopen with `send`; `/tmp/` is not permanent archival storage. Completion comes from automatic terminal reports, not watching files.
+Use the manager-saved full final answer as the default research report; retain
+child/run IDs and the returned result path. Assign distinct document paths only
+for substantive supporting detail or an explicit workflow requirement, not a
+duplicate summary. Stopped conversations can reopen with `send`. Optional
+documents under `/tmp/` are not permanent archival storage. Completion comes
+from automatic terminal reports, not watching files.
+
+Registered Herdr research has its own explicit file/report-submission contract;
+this native default does not replace it.
 
 ## A conversation is not a process
 
