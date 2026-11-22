@@ -47,6 +47,39 @@ when ready; setup never reloads Pi or restarts apps.
 `PI_CODING_AGENT_DIR` selects another Pi directory; `PI_SETUP_HOME` selects another
 managed installation location.
 
+## Browser workflows
+
+- **Existing signed-in account or current Ardia tab:** the repository-owned
+  [authed-browser skill](agent/skills/authed-browser/SKILL.md) uses `ardia browse`
+  directly. Requires Ardia and its CLI installed through their owner, Ardia
+  running with **Let the ardia command control Ardia** enabled, and the intended
+  account signed in. No Ghostty, Chrome-profile copying, or standalone
+  agent-browser is needed for this path.
+- **Public/headless browsing and isolated QA:** use the upstream `agent-browser`
+  skill and CLI, installed through their owner. Test logins in an isolated QA
+  browser stay on this path.
+- **Public research:** use `web_search`; inspect public sources with
+  agent-browser. Never send private signed-in page content to public search.
+
+Ardia sessions share the browser's account cookies; a named session is not an
+isolated login. Missing Ardia access or the wrong account requires user action,
+not an automatic fallback. Some Ardia commands are policy-restricted; consult
+`ardia browse --help` rather than assume full agent-browser parity.
+
+### Replacing the local Ghostty workflow
+
+The new skill keeps the name `authed-browser`. An existing local copy is not
+changed merely by updating this source. When deliberately migrating, discard the
+obsolete Ghostty guide at the installed `skills/authed-browser` path, then use
+`pi-setup install` to link the repository-owned replacement. No backup of that
+obsolete guide is needed. Setup preserves existing resource conflicts; it does
+not remove or replace the old guide for you.
+
+Check for duplicate skills in custom resource roots, then reload idle Pi sessions
+when ready. Do not edit installed upstream skills, delete saved browser state or
+profile aliases, or uninstall Ghostty as part of this migration. Setup never
+performs those cleanup operations or reloads Pi for you.
+
 ## Workflow and task memory
 
 The declared resources ship TODO, workflow skills and shared guidance together,
@@ -78,7 +111,8 @@ usage. Dependencies are installed and configured separately:
 | GitHub skill updates | [GitHub CLI](https://cli.github.com/) with `gh skill` support |
 | Web search / delegation | Available models and provider authentication; see [search auth support](agent/extensions/web-search/README.md) |
 | Optional Linear features | Your configured Linear MCP integration |
-| Browser workflows | A browser CLI and skill, such as [agent-browser](https://agent-browser.dev) |
+| Authenticated browsing | Running Ardia with CLI control enabled; use [authed-browser](agent/skills/authed-browser/SKILL.md) |
+| Public/headless browsing and isolated QA | Upstream [agent-browser CLI and skill](https://agent-browser.dev) |
 | `/no-sleep` | macOS `caffeinate` |
 | `/usage` | Local session/subagent metadata |
 

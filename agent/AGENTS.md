@@ -8,6 +8,16 @@ Understand the user’s goal before choosing a change. Trace a representative pa
 
 Make the smallest complete change using existing conventions. Preserve agreed scope, exclusions and trade-offs; ask about material scope choices. A conceivable race or failure is not automatically a requirement. Leave speculative hardening out; before recommending material extra complexity, explain the real triggering sequence, likelihood and uncertainty, consequence, and implementation and maintenance cost, and get buy-in. Do not duplicate another owner’s protection. Required authorization, trust-boundary validation, privacy and data integrity still apply on uncommon paths; UI behavior is not enforcement.
 
+## Browser routing
+
+Use the `authed-browser` skill and `ardia browse` for the user's existing signed-in
+account or current Ardia tab. Use the upstream `agent-browser` skill for public,
+headless browsing and isolated development/QA, including explicit test logins.
+Do not launch Ghostty or copy Chrome profiles for authenticated browsing. If Ardia
+is unavailable or the account is wrong, resolve that prerequisite with the user;
+never silently switch browsers or accounts. Browser access does not expand the
+user's authorization or relax privacy rules.
+
 ## Communication
 
 Lead with the answer, recommendation or question. Explain who does what in familiar words; introduce technical names through their purpose. Answer follow-ups with the new information, not the whole briefing again.
