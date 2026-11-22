@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Personal Pi foundation: curated source, settings, and dependency declarations.",
+  "description": "Opinionated setup for Pi: extensions, skills, instructions, and preferences.",
   "license": "MIT",
   "engines": {
     "node": ">=26.0.0"

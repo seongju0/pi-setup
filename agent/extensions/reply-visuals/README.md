@@ -2,6 +2,9 @@
 
 Native terminal emphasis inspired by [pi-emphasis](https://github.com/johnlindquist/pi-emphasis), implemented with Pi's public Markdown transformer and existing parser rather than copying its reply template or code.
 
+Copy this whole directory and sibling `lib/status-style.ts`, preserving their
+layout under your Pi extension directory. No external app or package is needed.
+
 ## Chat components
 
 - Optional square status chips: `[[Done]]`, `[[Passed 12/12]]`, `[[Blocked]]`, `[[Needs you]]`, `[[Decision]]` and the vocabulary listed in `index.ts`.

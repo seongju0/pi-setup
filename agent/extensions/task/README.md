@@ -1,6 +1,10 @@
 # task
 
-Personal Pi extension. Run `/reload` after installation, then `/task` to open the keyboard-driven task panel. A compact task summary stays above the editor.
+Copy the whole `task/` directory and sibling `lib/status-style.ts`, preserving
+their layout under your Pi extension directory. No external tools are required;
+preserve existing task records when updating source. Deliberately run `/reload`
+after adoption, then `/task` to open the keyboard-driven task panel. A compact
+task summary stays above the editor.
 
 The `task` tool supports:
 

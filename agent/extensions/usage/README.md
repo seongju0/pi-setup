@@ -2,13 +2,13 @@
 
 Run **`/usage`** (or **`/usage month`**) for the current month, or **`/usage week`** for the current week, to compare locally recorded token usage and cost estimates across providers in an on-demand Pi overlay. It scans local sessions **and subagents**, not just the current conversation. The centered modal uses the todo extension's rounded border and padded layout, with an aligned provider comparison on wider terminals and stacked summaries on narrow ones. Model details and coverage notes expand on demand. Nothing is added to the footer, and there is no background polling.
 
-## Managed installation and rename
+## Copy and rename
 
-This extension is included explicitly in `manifests/resources.json` and linked as
-`extensions/usage` by pi-setup. The command is `/usage`; no `/meter` alias is
-registered. Setup does not remove the old standalone `extensions/meter` directory.
-After installing this resource, retire that old copy explicitly if you no longer
-want `/meter` available. No session history or personal settings need to move.
+Copy this whole directory to `<pi-dir>/extensions/usage/`; there are no sibling
+source dependencies. The command is `/usage`; no `/meter` alias is registered.
+If you have an old standalone `extensions/meter` copy, retire it deliberately
+only if you no longer want `/meter` available. Adopting this source does not
+remove it. No session history or personal settings need to move.
 
 ## Controls
 

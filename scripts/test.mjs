@@ -1,60 +1,74 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
-const resources = JSON.parse(await readFile(join(repo, "manifests/resources.json"), "utf8"));
 const piRoot = join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "@earendil-works/pi-coding-agent");
 const scratch = await mkdtemp(join(tmpdir(), "pi-setup-test-"));
 const before = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, PI_TODO_PATH: process.env.PI_TODO_PATH };
 const env = { ...process.env, HOME: join(scratch, "home"), PI_CODING_AGENT_DIR: join(scratch, "agent"), PI_TODO_PATH: join(scratch, "todos"), PI_TEST_PACKAGE_ROOT: piRoot };
 
+async function itemDirectories(root, entry) {
+  const result = [];
+  for (const item of await readdir(root, { withFileTypes: true })) {
+    if (!item.isDirectory()) continue;
+    const path = join(root, item.name);
+    try { await access(join(path, entry)); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    result.push(path);
+  }
+  return result.sort();
+}
+
 try {
   for (const path of [env.HOME, env.PI_CODING_AGENT_DIR]) await mkdir(path);
   for (const key of Object.keys(before)) process.env[key] = env[key];
-  for (const path of resources.instructions) await access(join(repo, path));
-  for (const path of resources.skills) await access(join(repo, path, "SKILL.md"));
-  for (const path of resources.support) await access(join(repo, path));
+  const extensions = await itemDirectories(join(repo, "agent/extensions"), "index.ts");
+  const skillDirs = await itemDirectories(join(repo, "agent/skills"), "SKILL.md");
+  assert.ok(extensions.length > 0);
+  assert.ok(skillDirs.length > 0);
 
-  // Real Pi loader, no session_start, provider calls, or user-state access.
-  const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(join(piRoot, "dist/core/extensions/loader.js")));
-  const entries = resources.extensions.map(path => extname(path) ? join(repo, path) : join(repo, path, "index.ts"));
-  const loaded = await loadExtensions(entries, scratch, undefined, createExtensionRuntime());
+  // Exercise adoption by copying source, preserving sibling dependencies. Real
+  // Pi discovery must load entries, not lib/ or nested tests/. No lifecycle hooks
+  // are fired: no provider calls, browser actions or installed user-state access.
+  await cp(join(repo, "agent/extensions"), join(env.PI_CODING_AGENT_DIR, "extensions"), { recursive: true });
+  await cp(join(repo, "agent/skills"), join(env.PI_CODING_AGENT_DIR, "skills"), { recursive: true });
+  const { discoverAndLoadExtensions } = await import(pathToFileURL(join(piRoot, "dist/core/extensions/loader.js")));
+  const loaded = await discoverAndLoadExtensions([], scratch, env.PI_CODING_AGENT_DIR);
   assert.deepEqual(loaded.errors, []);
-  assert.equal(loaded.extensions.length, entries.length);
-  console.log(`PASS: all ${entries.length} foundation extension entry points load.`);
+  assert.deepEqual(loaded.extensions.map(extension => extension.path).sort(), extensions.map(path => join(env.PI_CODING_AGENT_DIR, "extensions", basename(path), "index.ts")).sort());
+  assert.ok(loaded.extensions.some(extension => extension.tools.has("session_history")));
+  assert.ok(loaded.extensions.some(extension => extension.tools.has("todo_recap")));
+  console.log(`PASS: all ${extensions.length} copied extension entry points load through Pi discovery; support files are not extensions.`);
 
-  // Explicit manifest paths only: validate real skill discovery/frontmatter,
-  // without loading installed user skills or their external tool integrations.
   const { loadSkills } = await import(pathToFileURL(join(piRoot, "dist/core/skills.js")));
-  const skills = loadSkills({ cwd: scratch, agentDir: env.PI_CODING_AGENT_DIR, skillPaths: resources.skills.map(path => join(repo, path)), includeDefaults: false });
+  const skills = loadSkills({ cwd: scratch, agentDir: env.PI_CODING_AGENT_DIR, skillPaths: [join(env.PI_CODING_AGENT_DIR, "skills")], includeDefaults: false });
   assert.deepEqual(skills.diagnostics, []);
-  assert.equal(skills.skills.length, resources.skills.length);
+  assert.equal(skills.skills.length, skillDirs.length);
   const authed = skills.skills.filter(skill => skill.name === "authed-browser");
   assert.equal(authed.length, 1);
   assert.equal(authed[0].disableModelInvocation, false);
-  assert.equal(authed[0].filePath, join(repo, "agent/skills/authed-browser/SKILL.md"));
-  console.log(`PASS: all ${skills.skills.length} foundation skills load; authed-browser is discoverable for model selection.`);
+  assert.equal(authed[0].filePath, join(env.PI_CODING_AGENT_DIR, "skills/authed-browser/SKILL.md"));
+  console.log(`PASS: all ${skills.skills.length} copied skills load; authed-browser is discoverable for model selection.`);
 
   let suites = 0;
-  for (const path of resources.extensions) {
-    const test = join(extname(path) ? dirname(join(repo, path)) : join(repo, path), "tests/test.mjs");
+  for (const path of extensions) {
+    const test = join(path, "tests/test.mjs");
     try { await access(test); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
-    console.log(`\n--- ${path} ---`);
+    console.log(`\n--- ${path.slice(repo.length + 1)} ---`);
     const result = spawnSync(process.execPath, [test], { cwd: repo, env, stdio: "inherit" });
     if (result.error) throw result.error;
     assert.equal(result.status, 0, `${path} suite failed${result.signal ? ` (${result.signal})` : ""}`);
     suites++;
   }
-  for (const suite of ["tests/setup.test.mjs", "tests/client.test.mjs", "tests/checkout.test.mjs", "agent/extensions/herdr-session/tests/restore.test.mjs"]) {
+  for (const suite of ["tests/checkout.test.mjs", "agent/extensions/herdr-session/tests/restore.test.mjs"]) {
     const result = spawnSync(process.execPath, [join(repo, suite)], { cwd: repo, env, stdio: "inherit" });
     if (result.error) throw result.error;
     assert.equal(result.status, 0, `${suite} flow checks failed`);
   }
-  console.log(`\nPASS: loader check, ${suites} retained suites, and setup/client/checkout/reboot-restore flows; temporary state only.`);
+  console.log(`\nPASS: copied-resource discovery, ${suites} retained extension suites, checkout and reboot-restore flows; temporary state only.`);
 } finally {
   for (const [key, value] of Object.entries(before)) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;

@@ -2,6 +2,13 @@
 
 Durable work context for Pi, not autonomous goal execution. Reload Pi with `/reload` to load this directory's `index.ts`.
 
+To adopt, copy the whole `todo/` and sibling `session-history/` directories, plus
+`lib/retrieval.ts` and `lib/status-style.ts`, preserving their layout under your
+Pi extension directory. **Load session-history too:** recap returns references
+read through its `session_history` tool. Requires Node's built-in SQLite; optional
+Linear integration uses your existing configured MCP tools. Preserve existing
+TODO storage; copying source is not a data migration.
+
 This README is the human-readable architecture/design reference. Use `/skill:walkthrough` for presentation: small inline diagrams beside the behavior they explain, shallow responsibility trees, and brief tables. Keep the reference here, not in a second competing architecture document. The skill is a presentation aid, not a runtime dependency.
 
 **Start here:** [Memory contract](#memory-contract) · [Commands](#commands) · [Architecture](#architecture) · [Design invariants](#design-invariants) · [Compaction](#compaction) · [Checks](#checks)

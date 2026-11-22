@@ -1,22 +1,22 @@
 # Developing pi-setup
 
-This repository is the source of the reusable Pi foundation. Installed Pi files,
-sessions, credentials, and workplace additions are not development targets.
-This file guides repository development; `agent/AGENTS.md` is the separate
-instruction file installed for Pi consumers.
+This repository holds copyable custom Pi extensions, skills, optional guidance
+and example preferences. Installed Pi files, sessions, credentials and workplace
+additions are not development targets. `agent/AGENTS.md` is consumer guidance to
+selectively integrate into an existing file, not a replacement to install.
 
-- Edit source under `agent/`, not a live agent directory.
-- Keep resource inclusion explicit in `manifests/resources.json`.
-- Own only custom Pi resources, guidance, and explicit preference defaults.
-  Do not install or offer external apps, tools, packages, or upstream companion skills;
-  document feature dependencies instead.
-- Do not copy credentials, MCP configuration, workplace policy, or runtime data.
-- Preserve compatibility with existing persisted state and tool names.
-- Reconcile missing declared links and missing preference leaves only, with one
-  safe-change preview and approval. Preserve existing settings, skip/report resource
-  conflicts, and never prune or replace resources. Settings remain a regular local file.
-- Run `npm test`. Tests must use temporary state and no real service calls.
-- Do not run live setup, reload/restart Pi or Herdr, or publish without authorization.
-- Prefer the smallest complete change; avoid new frameworks and unrelated refactors.
+- Edit reusable source under `agent/`, not live agent directories.
+- Keep the root README as the catalog. Document what to copy, repository-local
+  dependencies and external prerequisites there and in relevant item READMEs.
+- No installer, resource manifest, registry, provisioning or automatic migration.
+  External apps, tools, packages and upstream skills stay with their owners.
+- Preserve existing tool names, persisted-state paths and runtime behavior.
+  Feature scripts are runtime code, not obsolete installation machinery.
+- Never copy credentials, MCP configuration, workplace policy or runtime data.
+- Treat settings as optional examples to merge, not defaults to enforce. Preserve
+  user configuration when describing adoption or updates.
+- Run `npm test`. Tests use temporary state and no real service calls.
+- Do not install locally, reload/restart Pi or Herdr, or publish without authority.
+- Prefer the smallest complete change; no unrelated refactors or new frameworks.
 
-See `README.md` for the supported environment and development commands.
+See `README.md` for the catalog and development commands.

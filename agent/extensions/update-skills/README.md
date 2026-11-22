@@ -4,7 +4,6 @@
 
 | Owner | Recognition | `/skills update` behavior |
 |---|---|---|
-| Repository | Symlink into this checkout's `agent/skills/` | Edit through pi-setup; setup/reload explicitly, never auto-pull |
 | GitHub | `github-repo` tracking metadata | Runs `gh skill update <managed names> --dir ~/.pi/agent/skills --unpin --all` |
 | Pi package | Loaded from a configured npm Pi package | Runs targeted `pi update <package-source>` |
 | GWS | Installed `gws-*` generated skill names | Reports its upstream/tool-managed status only |
@@ -19,11 +18,16 @@ Commands:
 /skills update
 ```
 
-`/skills update` only updates user-scoped GitHub skills and packages that provide currently listed skills. GitHub skill names remain explicit; `--all` applies those selected updates without an interactive confirmation. It reports the native updater output (including available versions/change notes when the owner provides them), reports skipped repository/tool/symlink/personal skills with their management instruction, and reloads only when output indicates a change. It never infers or runs an arbitrary command from a skill's frontmatter, adopts an untracked repository, or changes project skills.
+`/skills update` only updates user-scoped GitHub skills and packages that provide currently listed skills. GitHub skill names remain explicit; `--all` applies those selected updates without an interactive confirmation. It reports the native updater output (including available versions/change notes when the owner provides them), reports skipped tool/symlink/personal skills with their management instruction, and reloads only when output indicates a change. It never infers or runs an arbitrary command from a skill's frontmatter, adopts an untracked repository, or changes project skills.
 
 GitHub updates require `gh` with `gh skill` support and any required authentication.
 
 GWS skills should remain tied to the installed `gws` tool. Update that tool first, then deliberately regenerate/select its skills; `gws generate-skills` writes a broad skill set in the current directory, so it is intentionally not called here.
+
+Copied skills from this catalog are local, user-owned files. Compare them with
+newer source and merge chosen changes manually; `/skills update` does not replace
+them. Legacy checkout links are ordinary symlinks and are also left untouched.
+No shared files or other catalog extensions are required for this extension.
 
 ## Checks
 

@@ -16,7 +16,7 @@ Optionally create `~/.pi/agent/extensions/move/config.json` (under Pi's agent di
 
 Existing `{"root":"~/Work"}` configurations remain supported without rewriting: `root` supplies the scope only when `scope` is absent. A supplied `scope` takes precedence, including `[]`. Invalid JSON, non-object configuration, empty/relative/NUL-containing paths, and invalid value types report an error instead of falling back to broader discovery.
 
-Setup links only `index.ts` into this local extension directory; it does not link or replace the whole directory. Keep `config.json` here, not in the checkout. An existing configuration survives setup and later reinitialization. The picker never creates configuration or configured directories. Configuration is read on each opening.
+Copy this whole feature directory to your Pi extension directory. On adoption or update, compare existing files and preserve your local `config.json`; do not replace the directory blindly. External prerequisites are managed separately. The picker never creates configuration or configured directories. Configuration is read on each opening.
 
 `/move <path>` bypasses picker configuration and discovery. Its existing path interpretation is unchanged (including no new shell/tilde parsing).
 

@@ -28,7 +28,14 @@ Main Pi session
 
 ## Quick start
 
-Pi discovers `extensions/subagent/index.ts`. Run `/reload` after installing or changing the extension.
+Copy the whole `subagent/` directory plus sibling `lib/models.ts`,
+`lib/pi-invocation.ts` and `web-search/`, preserving their layout. The default
+launch explicitly loads web-search; missing source fails even if no search is
+requested. Only callers setting `web: false` can omit it. Available physical
+models/provider authentication and any selected MCP configuration remain
+owner-managed. Preserve existing saved child sessions and metadata.
+
+Pi discovers `extensions/subagent/index.ts`. Run `/reload` deliberately after adopting or changing the extension.
 
 Ask the parent to delegate, or use the tool directly:
 

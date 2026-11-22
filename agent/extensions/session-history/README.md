@@ -3,6 +3,10 @@
 `session_history` retrieves raw historical text without changing compaction or
 injecting context. Loading it creates no files, indexes, or background work.
 
+Copy the whole `session-history/` directory and sibling `lib/retrieval.ts`,
+preserving their layout under your Pi extension directory. No external service
+is needed; preserve saved sessions used by archived references.
+
 - Search: `{ action: "search", query: "literal text", limit: 10 }`. Search is
   case-insensitive, preserves punctuation, and covers only the active branch's
   raw ancestry, including precompaction originals and active-context entries.

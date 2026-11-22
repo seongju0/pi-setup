@@ -1,123 +1,84 @@
 # pi-setup
 
-My custom [Pi](https://pi.dev) extensions, skills, guidance, and preference defaults.
+Opinionated setup for [Pi](https://pi.dev): extensions, skills, instructions and
+preferences for coding, research and ongoing work. Built around explicit
+permissions, durable task context, deliberate delegation and independent review.
 
-```text
-Managed checkout                         ~/.pi/agent/
-  agent/extensions/<feature> ── link ──> extensions/<feature>
-  agent/skills/<skill>       ── link ──> skills/<skill>
-  agent/AGENTS.md            ── link ──> AGENTS.md
-  agent/settings.base.json  ── fill ──> settings.json (missing defaults only)
-```
+Use it as a reference or copy the parts that fit your workflow. There is no
+installer or automatic sync.
 
-## Install
+## Use it
 
-Requires **macOS, Node.js 26+, Pi, and Git** already installed. Run in a terminal:
+Copy whole feature directories from `agent/` into `~/.pi/agent/` (or
+`$PI_CODING_AGENT_DIR`) for personal use, or `.pi/` for a project. Read each item's
+docs for dependencies and preserve sibling paths, including shared `extensions/lib/`
+files and companion skills. External tools and accounts are managed separately.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/seongju0/pi-setup/main/install.sh | sh
-```
+Compare existing files before copying. Merge selected instruction sections from
+[`agent/AGENTS.md`](agent/AGENTS.md) and preferences from
+[`agent/settings.base.json`](agent/settings.base.json); do not replace your own
+instructions or settings. Adapt instruction links and adopt their required tools
+and skills too.
 
-Or clone, inspect `install.sh` and `scripts/`, then run `./install.sh`.
-Both paths create a managed checkout at `~/.local/share/pi-setup/checkout/`
-and a command at `~/.local/bin/pi-setup`.
+Load extensions in a new session or use `/reload` deliberately in an idle session.
+To try one from this checkout, use `pi -e ./agent/extensions/task/index.ts`.
 
-## Use
+## Extensions
 
-```sh
-pi-setup install   # Preview → confirm → link resources and fill missing defaults
-pi-setup update    # Fast-forward managed source, then reconcile
-pi-setup check     # Read-only status
-```
-
-From a checkout, `./setup.sh --dry-run` previews without prompts or writes.
-Use the full command path if `~/.local/bin` is not on `PATH`.
-
-### Sync behavior
-
-Links [declared resources](manifests/resources.json) and fills missing
-[defaults](agent/settings.base.json). Existing settings and conflicting files are
-preserved. Settings are backed up under `~/.local/state/pi-setup/backups/` before
-modification. Nothing is deleted.
-
-Updates require a clean checkout and tracking upstream. **Linked code changes
-when Git pulls—even if you cancel reconciliation.** Reload idle Pi sessions
-when ready; setup never reloads Pi or restarts apps.
-
-`PI_CODING_AGENT_DIR` selects another Pi directory; `PI_SETUP_HOME` selects another
-managed installation location.
-
-## Browser workflows
-
-- **Existing signed-in account or current Ardia tab:** the repository-owned
-  [authed-browser skill](agent/skills/authed-browser/SKILL.md) uses `ardia browse`
-  directly. Requires Ardia and its CLI installed through their owner, Ardia
-  running with **Let the ardia command control Ardia** enabled, and the intended
-  account signed in. No Ghostty, Chrome-profile copying, or standalone
-  agent-browser is needed for this path.
-- **Public/headless browsing and isolated QA:** use the upstream `agent-browser`
-  skill and CLI, installed through their owner. Test logins in an isolated QA
-  browser stay on this path.
-- **Public research:** use `web_search`; inspect public sources with
-  agent-browser. Never send private signed-in page content to public search.
-
-Ardia sessions share the browser's account cookies; a named session is not an
-isolated login. Missing Ardia access or the wrong account requires user action,
-not an automatic fallback. Some Ardia commands are policy-restricted; consult
-`ardia browse --help` rather than assume full agent-browser parity.
-
-### Replacing the local Ghostty workflow
-
-The new skill keeps the name `authed-browser`. An existing local copy is not
-changed merely by updating this source. When deliberately migrating, discard the
-obsolete Ghostty guide at the installed `skills/authed-browser` path, then use
-`pi-setup install` to link the repository-owned replacement. No backup of that
-obsolete guide is needed. Setup preserves existing resource conflicts; it does
-not remove or replace the old guide for you.
-
-Check for duplicate skills in custom resource roots, then reload idle Pi sessions
-when ready. Do not edit installed upstream skills, delete saved browser state or
-profile aliases, or uninstall Ghostty as part of this migration. Setup never
-performs those cleanup operations or reloads Pi for you.
-
-## Workflow and task memory
-
-The declared resources ship TODO, workflow skills and shared guidance together,
-but integrate through a task-memory contract rather than runtime orchestration.
-Skills own how work is performed; TODO owns durable understanding and retrieval.
-Standalone sessions and parents resolve the owner, while delegated workers use
-supplied context and return results for the parent to curate. Presentation and
-preservation are separate decisions; native saved results normally suffice for
-stage reports without duplicate files. If durable tracking is declined or
-unavailable, skills disclose their fallback and its persistence limits. TODO does
-not launch the workflows or require their stage sequence. See the
-[memory contract](agent/extensions/todo/docs/memory.md).
-
-## Author skills
-
-Use `/skill:writing-skills` to create or refine a skill with concise prose,
-clear activation and a focused workflow. See the [authoring guide](agent/skills/writing-skills/SKILL.md).
-
-## Features and dependencies
-
-See [extensions](agent/extensions/README.md) and [custom skills](agent/skills) for
-usage. Dependencies are installed and configured separately:
-
-| Feature | Dependency |
+| Extension | Purpose |
 | --- | --- |
-| Herdr sessions, handoff, research | [Herdr App / `hc`](https://github.com/herdrdev/herdr-app); run Pi inside Herdr |
-| `/view` | Your configured editor; defaults to [Zed](https://zed.dev) |
-| `/move` directory discovery | [`fd`](https://github.com/sharkdp/fd) on PATH, or Pi’s existing managed `bin/fd`; setup does not install it |
-| GitHub skill updates | [GitHub CLI](https://cli.github.com/) with `gh skill` support |
-| Web search / delegation | Available models and provider authentication; see [search auth support](agent/extensions/web-search/README.md) |
-| Optional Linear features | Your configured Linear MCP integration |
-| Authenticated browsing | Running Ardia with CLI control enabled; use [authed-browser](agent/skills/authed-browser/SKILL.md) |
-| Public/headless browsing and isolated QA | Upstream [agent-browser CLI and skill](https://agent-browser.dev) |
-| `/no-sleep` | macOS `caffeinate` |
-| `/usage` | Local session/subagent metadata |
+| [continue](agent/extensions/continue) | Idle-only continue shortcut |
+| [move](agent/extensions/move/README.md) | Move a saved session to another directory |
+| [no-sleep](agent/extensions/no-sleep) | Keep macOS awake during runs with `caffeinate` |
+| [statusline](agent/extensions/statusline/README.md) | Git, model, context and cache footer; configurable loader |
+| [reply-visuals](agent/extensions/reply-visuals/README.md) | Chat emphasis and status chips |
+| [task](agent/extensions/task/README.md) | Session-local task board |
+| [todo](agent/extensions/todo/README.md) | Durable task context, artifacts and knowledge retrieval |
+| [session-history](agent/extensions/session-history/README.md) | Search saved conversation history and read exact references |
+| [update-skills](agent/extensions/update-skills/README.md) | Inspect skill ownership and use owner-native updates |
+| [usage](agent/extensions/usage/README.md) | Local token usage and cost estimates |
+| [view](agent/extensions/view/README.md) | Open paths in your editor; defaults to Zed |
+| [web-search](agent/extensions/web-search/README.md) | Native Anthropic/OpenAI public search |
+| [herdr-session](agent/extensions/herdr-session/README.md) | Herdr tabs, research workers, reports and optional reboot restore |
+| [subagent](agent/extensions/subagent/README.md) | Parent-owned background workers and selected MCP capabilities |
+
+TODO requires Node's built-in SQLite and a loaded session-history extension.
+Subagents require sibling web-search source unless callers explicitly use
+`web: false`. See the linked READMEs for required shared files and external tools.
+
+## Skills
+
+| Skill | Purpose |
+| --- | --- |
+| [authed-browser](agent/skills/authed-browser/SKILL.md) | Use an existing signed-in Ardia account or tab |
+| [build](agent/skills/build/SKILL.md) | Implement and verify a settled change |
+| [checkout](agent/skills/checkout/SKILL.md) | Cache and refresh repositories for inspection |
+| [codebase-design](agent/skills/codebase-design/SKILL.md) | Define boundaries, ownership and caller contracts |
+| [deliver](agent/skills/deliver/SKILL.md) | Implementation, independent review and draft PR |
+| [design](agent/skills/design/SKILL.md) | Produce a build-ready specification |
+| [handoff](agent/skills/handoff/SKILL.md) | Transfer work to an independent session |
+| [linear-issues](agent/skills/linear-issues/SKILL.md) | Write and organize issues and milestones |
+| [open-pr](agent/skills/open-pr/SKILL.md) | Write source-grounded PR descriptions |
+| [research](agent/skills/research/SKILL.md) | Coordinate read-only Herdr research |
+| [review](agent/skills/review/SKILL.md) | Review correctness, regressions and tests |
+| [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly |
+| [writing-skills](agent/skills/writing-skills/SKILL.md) | Author focused skills |
+
+## Updates
+
+Compare with newer source and merge the changes you want. Preserve local
+`move/config.json`, `statusline/loader.json`, settings and runtime data.
+
+For older linked setups, update the checkout through Git, not `pi-setup update`:
+the retired updater can pull successfully, then fail on the removed setup script.
+The old `~/.local/bin/pi-setup` launcher becomes dangling; retire it manually.
+Resource paths are unchanged. Keep any checkout still used by links or restore
+hooks, Pi sessions/tasks/TODOs/subagent records, and
+`~/.local/state/pi-setup/{herdr-sessions,backups}/`.
 
 ## Development
 
-Run `npm test`. See [development guidance](AGENTS.md).
+Run `npm test` with Node.js 26+ and an existing Pi installation. Tests use
+temporary state and no real service calls. See [AGENTS.md](AGENTS.md).
 
 [MIT license](LICENSE).

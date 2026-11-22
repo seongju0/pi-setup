@@ -38,9 +38,9 @@ try {
   assert.match(list, /local.*personal.*local/);
   assert.match(list, /gws-docs.*tool.*googleworkspace\/cli/);
   assert.match(list, /terminal-browser.*symlink/);
-  assert.match(list, /build.*repository.*pi-setup checkout/);
+  assert.match(list, /build.*symlink/);
   await command.handler('details build', ctx);
-  assert.match(notices.at(-1).message, /Edit in pi-setup, run \.\/setup\.sh, then \/reload when ready/);
+  assert.match(notices.at(-1).message, /Update the owning tool/);
   await command.handler('details gws-docs', ctx);
   assert.match(notices.at(-1).message, /Update gws, then regenerate selected skills deliberately/);
   await command.handler('update nope', ctx);

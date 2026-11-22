@@ -67,8 +67,9 @@ app handlers and theme.
 ### Configurable loader
 
 Edit `~/.pi/agent/extensions/statusline/loader.json`, then `/reload`.
-With a managed pi-setup link this edits tracked checkout source; preserve or
-commit your customizations before updating, since updates require a clean checkout.
+If this directory is symlinked into a checkout, edits change that source too.
+When adopting updates, compare files and preserve your customized `loader.json`;
+do not replace the directory blindly.
 
 Example configuration:
 

@@ -13,7 +13,7 @@ Name the input, outcome and stop condition. Before drafting, choose representati
 
 Reuse an existing skill when it owns the job; do not split every step into another skill. Favor durable workflows and domain rules. Keep model-specific workarounds only for observed problems; revisit them when models change.
 
-Edit the canonical source, not installed upstream copies. For pi-setup, use `agent/skills/` and declare new skills in `manifests/resources.json`; keep workplace policy separate. Authoring does not authorize executing the workflow, installing dependencies or publishing.
+Edit the canonical source, not installed upstream copies. For pi-setup, use `agent/skills/` and add a root README catalog entry describing what to copy, repository companions and external prerequisites; no manifest or installer is needed. Keep workplace policy separate. Authoring does not authorize executing the workflow, installing dependencies or publishing.
 
 ## 2. Write the smallest useful guide
 

@@ -5,6 +5,12 @@ session-bound asynchronous reports and follow-up guidance. This extension owns
 launching and report transport, not a particular analysis workflow or provider
 policy. It never reads a named skill's guidance file.
 
+Copy this whole directory, including restore/runtime scripts, plus sibling
+`lib/models.ts` and `lib/pi-invocation.ts`, preserving their layout. External
+Herdr tools are managed by their owner; copying source does not enable reboot
+restore or change hooks. Preserve `~/.local/state/pi-setup/herdr-sessions/` and
+any checkout still referenced by restore hooks.
+
 Requires `hc` (herdr-core) and an interactive Pi TUI with a live
 `HC_TERMINAL_ID`. The caller terminal is validated before launching. Public tool
 and command names stay unchanged; the launch/control backend is core-only, with
@@ -77,7 +83,7 @@ line of `~/.zshrc`** yourself (adjust the path if `PI_CODING_AGENT_DIR` differs)
 [[ -r ~/.pi/agent/extensions/herdr-session/restore.zsh ]] && source ~/.pi/agent/extensions/herdr-session/restore.zsh
 ```
 
-Setup does not edit your shell files or enable the hook. Node must be on the
+Copying this source does not edit your shell files or enable the hook. Node must be on the
 login shell's PATH. The root recovery shell runs Pi as its own foreground child,
 with terminal redirects that bypass Powerlevel10k instant-prompt redirection.
 Nothing is typed into the pane; no Herdr UI is driven.
