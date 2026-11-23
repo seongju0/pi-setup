@@ -382,6 +382,6 @@ Primary references reviewed against installed Pi **1.1.0** and upstream commit [
 7. [RpcClient implementation](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/src/modes/rpc/rpc-client.ts) and [client example](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/examples/rpc-client.ts): command correlation, event subscription before prompting, and client lifecycle.
 8. [SDK](https://pi.dev/docs/latest/sdk): the in-process alternative; RPC was chosen to retain a CLI process boundary.
 9. Local [`lib/models.ts`](../lib/models.ts): physical-model validation.
-10. [Terminal UI](https://pi.dev/docs/latest/tui), [widget-placement example](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/examples/extensions/widget-placement.ts), and local [`task`](../task/index.ts): above-editor widget placement, theme-aware rendering, width-safe lines, and independent widget keys.
+10. [Terminal UI](https://pi.dev/docs/latest/tui), [widget-placement example](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/examples/extensions/widget-placement.ts), and local [Context session-task registration](../context/tasks/register.ts): above-editor widget placement, theme-aware rendering, width-safe lines, and independent widget keys.
 
 Live `latest` documentation can change. Recheck the installed CLI/API contracts when upgrading Pi.

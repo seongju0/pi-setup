@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
-const piRoot = join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "@earendil-works/pi-coding-agent");
+const piRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "@earendil-works/pi-coding-agent");
 const scratch = await mkdtemp(join(tmpdir(), "pi-setup-test-"));
 const before = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, PI_TODO_PATH: process.env.PI_TODO_PATH };
 const env = { ...process.env, HOME: join(scratch, "home"), PI_CODING_AGENT_DIR: join(scratch, "agent"), PI_TODO_PATH: join(scratch, "todos"), PI_TEST_PACKAGE_ROOT: piRoot };
@@ -40,7 +40,11 @@ try {
   assert.deepEqual(loaded.errors, []);
   assert.deepEqual(loaded.extensions.map(extension => extension.path).sort(), extensions.map(path => join(env.PI_CODING_AGENT_DIR, "extensions", basename(path), "index.ts")).sort());
   assert.ok(loaded.extensions.some(extension => extension.tools.has("session_history")));
-  assert.ok(loaded.extensions.some(extension => extension.tools.has("todo_recap")));
+  const context = loaded.extensions.filter(extension => extension.tools.has("todo_recap"));
+  assert.equal(context.length, 1);
+  assert.equal(basename(dirname(context[0].path)), "context");
+  assert.ok(context[0].tools.has("task"));
+  assert.ok(!loaded.extensions.some(extension => ["task", "todo"].includes(basename(dirname(extension.path)))));
   console.log(`PASS: all ${extensions.length} copied extension entry points load through Pi discovery; support files are not extensions.`);
 
   const { loadSkills } = await import(pathToFileURL(join(piRoot, "dist/core/skills.js")));

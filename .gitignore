@@ -12,6 +12,8 @@ mcp-oauth/
 sessions/
 subagents/
 tasks/
+# Context's session-task module is source, not runtime task data.
+!agent/extensions/context/tasks/
 todos/
 *-cache/
 *.local.json
