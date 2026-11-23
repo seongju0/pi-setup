@@ -40,7 +40,7 @@ try {
   assert.deepEqual(loaded.errors, []);
   assert.deepEqual(loaded.extensions.map(extension => extension.path).sort(), extensions.map(path => join(env.PI_CODING_AGENT_DIR, "extensions", basename(path), "index.ts")).sort());
   assert.ok(loaded.extensions.some(extension => extension.tools.has("session_history")));
-  const context = loaded.extensions.filter(extension => extension.tools.has("todo_recap"));
+  const context = loaded.extensions.filter(extension => extension.tools.has("context_project_recap"));
   assert.equal(context.length, 1);
   assert.equal(basename(dirname(context[0].path)), "context");
   assert.ok(context[0].tools.has("task"));

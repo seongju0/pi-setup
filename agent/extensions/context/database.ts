@@ -26,23 +26,23 @@ export function canonicalRoot(root: string): string { mkdirSync(root, { recursiv
 export function privateDatabase(root: string): string {
   const file = join(root, "todo.sqlite");
   try { closeSync(openSync(file, "wx", 0o600)); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  if (!lstatSync(file).isFile() || lstatSync(file).isSymbolicLink()) throw new Error(`Unsafe todo database: ${file}`);
+  if (!lstatSync(file).isFile() || lstatSync(file).isSymbolicLink()) throw new Error(`Unsafe project database: ${file}`);
   return file;
 }
 function version(db: DatabaseSync): number { return Number(db.prepare("PRAGMA user_version").get()!.user_version); }
 function objects(db: DatabaseSync): string[] { return db.prepare("SELECT name FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY name").all().map(row => String(row.name)); }
 export function validateDatabase(db: DatabaseSync) {
-  if (version(db) !== 2) throw new Error("Unsupported todo database schema; run explicit sqlite-upgrade.ts for schema1; do not reset or fall back to JSON");
+  if (version(db) !== 2) throw new Error("Unsupported project database schema; run explicit sqlite-upgrade.ts for schema1; do not reset or fall back to JSON");
   const normalize = (sql: string) => sql.trim().replace(/\s+/g, " ");
   const expected = schema.split(";").map(normalize).filter(Boolean).sort();
   const actual = db.prepare("SELECT sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'").all().map(row => normalize(String(row.sql))).sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("Unsupported todo database schema objects");
-  if (db.prepare("SELECT value FROM store_metadata WHERE key='application'").get()?.value !== application) throw new Error("Not a supported todo database");
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("Unsupported project database schema objects");
+  if (db.prepare("SELECT value FROM store_metadata WHERE key='application'").get()?.value !== application) throw new Error("Not a supported project database");
   if (db.prepare("SELECT value FROM store_metadata WHERE key='context_model'").get()?.value !== "3") throw new Error("Unsupported Context project model metadata");
-  if (db.prepare("PRAGMA journal_mode").get()?.journal_mode !== "wal") throw new Error("Unsupported todo database journal mode; expected WAL");
+  if (db.prepare("PRAGMA journal_mode").get()?.journal_mode !== "wal") throw new Error("Unsupported project database journal mode; expected WAL");
 }
 function freshGuard(root: string) {
-  if (readdirSync(root).some(name => /^[a-f0-9-]{36}(\.creating)?$/.test(name) || name === ".write-lock" || name.startsWith(".todo-import-"))) throw new Error("Todo migration required or incomplete cutover; inspect legacy source/fence/staging before initializing");
+  if (readdirSync(root).some(name => /^[a-f0-9-]{36}(\.creating)?$/.test(name) || name === ".write-lock" || name.startsWith(".todo-import-"))) throw new Error("Project migration required or incomplete cutover; inspect legacy source/fence/staging before initializing");
 }
 export function initialize(db: DatabaseSync, origin: string, fingerprint?: string) {
   db.exec(schema);
@@ -74,7 +74,7 @@ function open(root: string, write: boolean): { root: string; db: DatabaseSync } 
   } catch (error) { if (db.isOpen) db.close(); throw error; }
 }
 export function synchronous<T>(value: T): T {
-  if (value && typeof (value as any).then === "function") throw new Error("Todo transaction callbacks must be synchronous");
+  if (value && typeof (value as any).then === "function") throw new Error("Project transaction callbacks must be synchronous");
   return value;
 }
 function transaction<T>(root: string, write: boolean, operation: (db: DatabaseSync, root: string) => T, signal?: AbortSignal): T {
@@ -86,7 +86,7 @@ function transaction<T>(root: string, write: boolean, operation: (db: DatabaseSy
     catch (error) { if (db.isTransaction) db.exec("ROLLBACK"); throw error; }
   } catch (error) {
     const sqliteCode = Number((error as Error & { errcode?: number }).errcode) & 0xff;
-    if (sqliteCode === 5 || sqliteCode === 6) throw new Error("Todo store is busy; retry", { cause: error });
+    if (sqliteCode === 5 || sqliteCode === 6) throw new Error("Project store is busy; retry", { cause: error });
     throw error;
   } finally { db?.close(); }
 }

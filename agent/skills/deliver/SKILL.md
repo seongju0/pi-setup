@@ -52,7 +52,7 @@ If the selected model is unavailable, report the affected launch as blocked rath
 
 ### Assignment context
 
-Follow global AGENTS.md delegation policy. In each assignment, distinguish authoritative context (owner TODO ID and canonical design artifact/document) and evidence/report paths from transient execution scope (worktree, exact base/revision and task-owned files, permissions and stop condition). Carry the accepted flow, caller contracts, owners/effects, decisions, exclusions and consequential unsaved deltas. Require relevant full reads; supply bounded material when TODO access is unavailable. Put task context in `message` and task-specific boundaries/quality gates in `instructions`.
+Follow global AGENTS.md delegation policy. In each assignment, distinguish authoritative context (Context project ID and canonical design artifact/document) and evidence/report paths from transient execution scope (worktree, exact base/revision and task-owned files, permissions and stop condition). Carry the accepted flow, caller contracts, owners/effects, decisions, exclusions and consequential unsaved deltas. Require relevant full reads; supply bounded material when project-memory tool access is unavailable. Put task context in `message` and task-specific boundaries/quality gates in `instructions`.
 
 ## 1. Parent: accept the approach — [design](../design/SKILL.md) if needed
 
@@ -133,9 +133,9 @@ Verify the PR exists and targets the intended base. Report its URL and draft sta
 
 ### Durable understanding and transient execution
 
-- **Durable grounding:** the owner TODO and canonical design own shared understanding; the parent curates consequential findings under global AGENTS.md policy. Do not create a parallel comprehensive handoff ledger or a child TODO per stage. Keep detailed QA/review/execution evidence with its native owner, linking material conclusions and limitations rather than copying reports. Stage changes alone require no checkpoint or bookkeeping turn.
+- **Durable grounding:** the owning Context project and canonical design own shared understanding; the parent curates consequential findings under global AGENTS.md policy. Do not create a parallel comprehensive handoff ledger or a child project per stage. Keep detailed QA/review/execution evidence with its native owner, linking material conclusions and limitations rather than copying reports. Stage changes alone require no checkpoint or bookkeeping turn.
 - **Transient execution:** keep any needed revision/worktree, resource leases, temporary permissions and report routing outside the repository, linked to authoritative context. Saved permissions are context, not renewed authorization.
-- **Tracking declined or unavailable:** disclose the limitation and use a task-specific `handoff.md` outside the repository, preferably an existing artifact location or unique `/tmp` directory. Capture objective, supported flow, decisions/exclusions/trade-offs, worktree, stage, revision scope, permissions, spec/report paths, disposition, blockers and next action; link substantive detail. Temporary files can survive compaction but not guaranteed cleanup or machine loss; a `/tmp` pointer alone is not durable preservation. A missing TODO parameter does not justify this fallback.
+- **Tracking declined or unavailable:** disclose the limitation and use a task-specific `handoff.md` outside the repository, preferably an existing artifact location or unique `/tmp` directory. Capture objective, supported flow, decisions/exclusions/trade-offs, worktree, stage, revision scope, permissions, spec/report paths, disposition, blockers and next action; link substantive detail. Temporary files can survive compaction but not guaranteed cleanup or machine loss; a `/tmp` pointer alone is not durable preservation. A missing project-ID parameter does not justify this fallback.
 
 ### Reports and recovery
 

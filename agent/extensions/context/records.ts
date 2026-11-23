@@ -42,7 +42,7 @@ export function artifactProvenance(todo: Todo, artifact: Artifact): Provenance {
 }
 
 export function recordTarget(todo: Todo, record: Pick<RecordText, "source_kind" | "index" | "record_id">, view: "active" | "full", offset: number, limit?: number) {
-  return { tool: "todo_record", id: todo.id, expected_revision: todo.revision, source_kind: record.source_kind,
+  return { tool: "context_project_record", id: todo.id, expected_revision: todo.revision, source_kind: record.source_kind,
     ...(record.index !== undefined ? { index: record.index } : { record_id: record.record_id }), view, offset, ...(limit !== undefined ? { limit } : {}) };
 }
 

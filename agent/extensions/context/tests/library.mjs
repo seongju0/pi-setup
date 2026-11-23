@@ -208,10 +208,10 @@ try {
   const memoryNext = await searchKnowledge(root, { query: "SCOPE.NEEDLE", selector: consumer.todo.id, limit: 20, cursor: memoryPage.next_cursor });
   assert.equal(memoryNext.results.length, 6); assert.equal(memoryNext.next_cursor, null);
   const recordHit = scoped.results.find(r => r.id === grounded.todo.id);
-  assert.equal(recordHit.read.tool, "todo_record"); assert(recordHit.read.offset > 0);
+  assert.equal(recordHit.read.tool, "context_project_record"); assert(recordHit.read.offset > 0);
   assert((await readRecordPage(root, recordHit.read)).body.includes("SCOPE.NEEDLE grounded record"));
   const artifactHit = scoped.results.find(r => r.id === artifactOnly.todo.id);
-  assert.equal(artifactHit.read.tool, "todo_artifact"); assert.equal(artifactHit.read.artifact_id, artifactSource.todo.artifacts[0].id);
+  assert.equal(artifactHit.read.tool, "context_project_artifact"); assert.equal(artifactHit.read.artifact_id, artifactSource.todo.artifacts[0].id);
   assert((await readArtifactPage(root, await locate(root, artifactHit.read.id), artifactHit.read.artifact_id, artifactHit.read.offset, undefined, artifactHit.read.expected_version)).body.includes("SCOPE.NEEDLE referenced document"));
   assert(readTarget(scoped.results[0].read).body.includes("SCOPE.NEEDLE"));
   const global = await context(root, { action: "search", query: "SCOPE.NEEDLE", limit: 20 });

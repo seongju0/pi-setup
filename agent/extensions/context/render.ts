@@ -51,30 +51,30 @@ export const renderTodoResult: NonNullable<ToolDefinition["renderResult"]> = (re
     const limit = expanded ? 20 : 5;
     for (const row of rows.slice(0, limit)) addRow(row);
     if (rows.length > limit) lines.push(theme.fg("muted", `… ${rows.length - limit} more · use a narrower search/get`));
-    return statusCard(theme, `TODO (durable) · ${summary}`, lines);
+    return statusCard(theme, `Project (durable) · ${summary}`, lines);
   }
   if (!record(data)) return fallback();
   if (isRow(data.todo)) {
     addRow(data.todo, data.dependency);
-    return statusCard(theme, args.action ? `TODO (durable) · ${cleanLabel(args.action)}` : "TODO (durable) · Saved", lines);
+    return statusCard(theme, args.action ? `Project (durable) · ${cleanLabel(args.action)}` : "Project (durable) · Saved", lines);
   }
   if (isRow(data.selected)) {
     addRow(data.selected);
-    return statusCard(theme, "TODO (durable) · Attached", lines);
+    return statusCard(theme, "Project (durable) · Attached", lines);
   }
-  if (data.selected === null || data.detached === true) return statusCard(theme, "TODO (durable)", [theme.fg("muted", "No TODO attached")]);
+  if (data.selected === null || data.detached === true) return statusCard(theme, "Project (durable)", [theme.fg("muted", "No project attached")]);
   if (typeof data.selected === "string" && typeof data.title === "string" && typeof data.revision === "number" && data.context_loaded === true) {
     const readiness = waiting(data.dependency);
-    return statusCard(theme, "TODO (durable) · Attached", [cleanLabel(data.title), theme.fg("muted", `r${data.revision} · Context loaded`), ...(readiness ? [statusText(theme, data.dependency?.dependencies_satisfied ? "muted" : "warning", readiness)] : [])]);
+    return statusCard(theme, "Project (durable) · Attached", [cleanLabel(data.title), theme.fg("muted", `r${data.revision} · Context loaded`), ...(readiness ? [statusText(theme, data.dependency?.dependencies_satisfied ? "muted" : "warning", readiness)] : [])]);
   }
-  if (typeof data.selected === "string" && data.context_loaded === true) return statusCard(theme, "TODO (durable)", [theme.fg("muted", "Context refreshed")]);
+  if (typeof data.selected === "string" && data.context_loaded === true) return statusCard(theme, "Project (durable)", [theme.fg("muted", "Context refreshed")]);
   return fallback();
 };
 
 export const renderCheckpointResult: NonNullable<ToolDefinition["renderResult"]> = (result, options, theme, context) => {
   if (record(result.details) && isRow(result.details.todo) && !result.isError && !options.isPartial) {
     const row = result.details.todo;
-    return statusCard(theme, "TODO (durable) · Saved", [statusText(theme, "success", `r${row.revision} · ${row.title}`, "✓")]);
+    return statusCard(theme, "Project (durable) · Saved", [statusText(theme, "success", `r${row.revision} · ${row.title}`, "✓")]);
   }
   return renderTodoResult(result, options, theme, context);
 };

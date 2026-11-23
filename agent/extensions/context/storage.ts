@@ -13,7 +13,7 @@ export async function rootPath(root: string): Promise<string> { return canonical
 export async function readKnown(root: string, item: Located): Promise<Located> {
   return withRead(root, (db, root) => {
     const row = db.prepare("SELECT id,document FROM owners WHERE id=?").get(item.todo.id);
-    if (!row) throw new Error(`Todo not found: ${item.todo.id}`);
+    if (!row) throw new Error(`Project not found: ${item.todo.id}`);
     return decodeOwner(root, row);
   });
 }
@@ -21,7 +21,7 @@ export async function list(root: string): Promise<Located[]> { return withRead(r
 function select(rows: Located[], selector: string): Located {
   const exact = rows.filter(row => row.todo.id === selector || row.todo.title === selector || row.todo.linear?.url === selector);
   const candidates = exact.length ? exact : rows.filter(row => row.todo.id.startsWith(selector));
-  if (candidates.length !== 1) throw new Error(candidates.length ? "Ambiguous todo selector; use the full ID" : `Todo not found: ${selector}`);
+  if (candidates.length !== 1) throw new Error(candidates.length ? "Ambiguous project selector; use the full ID" : `Project not found: ${selector}`);
   return candidates[0];
 }
 export async function locate(root: string, selector: string): Promise<Located> { return withRead(root, (db, root) => select(readRows(db, root), selector)); }
@@ -36,10 +36,10 @@ export async function create(root: string, type: "simple" | "project", title: st
 }
 export type MoveInput = { id: string; parent: string; revision: number };
 export async function prepareMove(_root: string, _input: MoveInput): Promise<never> {
-  throw new Error("todo_move is retired; use context_link to associate independent projects");
+  throw new Error("Project nesting/move is retired; use context_link to associate independent projects");
 }
 export async function move(_root: string, _input: MoveInput, _signal?: AbortSignal): Promise<never> {
-  throw new Error("todo_move is retired; use context_link to associate independent projects");
+  throw new Error("Project nesting/move is retired; use context_link to associate independent projects");
 }
 function saveUpdate(db: DatabaseSync, rows: Located[], item: Located, _activity: boolean) {
   updateOwner(db, item);
@@ -70,7 +70,7 @@ export async function checkpoint(root: string, id: string, revision: number, cha
       if (item.todo.last_checkpoint.digest !== hash || item.todo.last_checkpoint.session_id !== session_id) throw new Error("Checkpoint key reused with different content/owner");
       return effects(rows, item);
     }
-    if (item.todo.revision !== revision) throw new Error("Stale revision; read the todo before checkpointing");
+    if (item.todo.revision !== revision) throw new Error("Stale revision; read the project before checkpointing");
     const next = applyChanges(item.todo, changes); const now = new Date().toISOString();
     const activity = Object.keys(changes).some(key => !["status", "approval_evidence"].includes(key)) || changes.status === "in_progress" || changes.status === "done";
     if (activity && changes.status === undefined && next.status === "todo") next.status = "in_progress";

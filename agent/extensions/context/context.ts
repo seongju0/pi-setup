@@ -8,7 +8,7 @@ export const sizeType = "todo-context-size-warning-v1";
 export const usageType = "todo-context-usage-warning-v1";
 export const detachedType = "todo-context-detached-v1";
 export const anchorEntry = "todo-context-anchor-v1";
-export type ContextNote = { role: "custom"; customType: string; content: string; display: boolean; details: { load_id: string; anchor_version?: number; context_model?: number; warning_key?: string; drift_key?: string }; timestamp: number };
+export type ContextNote = { role: "custom"; customType: string; content: string; display: boolean; details: { load_id: string; anchor_version?: number; context_model?: number; project_tool_api?: number; warning_key?: string; drift_key?: string }; timestamp: number };
 export type Anchor = { id: string; epoch: string; after: string | null };
 const ownedTypes = new Set([contextType, driftType, sizeType, usageType, detachedType, checkpointMessage, preservationType]);
 export const isTodoNote = (message: any) => ownedTypes.has(message.customType);
@@ -28,7 +28,7 @@ export function projectContext(messages: AgentMessage[], boundary: ContextNote, 
   for (const note of [boundary, ...notes]) {
     const anchor = anchors.get(note.details.load_id)!;
     const index = anchor.after === null ? -1 : ordinary.findIndex(message => messageKey(message) === anchor.after);
-    if (anchor.after !== null && index < 0) throw new Error("Todo context anchor is missing; refresh the todo context before continuing");
+    if (anchor.after !== null && index < 0) throw new Error("Project context anchor is missing; refresh the project context before continuing");
     const bucket = buckets.get(index) ?? []; bucket.push(note); buckets.set(index, bucket);
   }
   const projected: AgentMessage[] = [...buckets.get(-1) ?? []];

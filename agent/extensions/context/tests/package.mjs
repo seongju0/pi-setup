@@ -16,8 +16,8 @@ try {
   assert.deepEqual(loaded.errors, []);
   assert.deepEqual(loaded.extensions.map(extension => extension.path), [entry]);
   const extension = loaded.extensions[0];
-  for (const name of ["task", "todo", "todo_recap", "context", "context_knowledge", "context_link"]) assert.ok(extension.tools.has(name), name);
-  assert.deepEqual([...extension.commands.keys()].sort(), ["context", "task", "todo"]);
+  assert.deepEqual([...extension.tools.keys()].sort(), ["context", "context_knowledge", "context_link", "context_project", "context_project_ack", "context_project_artifact", "context_project_checkpoint", "context_project_linear", "context_project_recap", "context_project_record", "context_project_search", "context_project_tighten", "task"].sort());
+  assert.deepEqual([...extension.commands.keys()].sort(), ["context", "task"]);
   for (const name of ["context", "context_knowledge", "context_link"]) {
     const schema = extension.tools.get(name).definition.parameters;
     assert.equal(schema.type, "object");
@@ -25,7 +25,7 @@ try {
     check(schema);
   }
   await assert.rejects(stat(join(process.env.PI_TODO_PATH, "todo.sqlite")), { code: "ENOENT" });
-  console.log("PASS: one discovered Context entry owns current task/todo tools and commands, without initializing SQLite.");
+  console.log("PASS: one discovered Context entry owns current task/context tools and commands, without initializing SQLite.");
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }

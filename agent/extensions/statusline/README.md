@@ -12,7 +12,7 @@ native `CustomEditor` subclass with one blank row above and below the top border
 worktree (branch*)      claude-sonnet-5-5 · high · ctx 43%/200k · cache 92%
   ──────────────────────────────────────────────────────────────────
 on-call · … · ⚠ …
-todo · in progress · brief ~3.2k (1.2%) · Title
+project · in progress · brief ~3.2k (1.2%) · Title
 ~/Projects/worktree
 ```
 
@@ -26,11 +26,11 @@ todo · in progress · brief ~3.2k (1.2%) · Title
 - Optional info rows, one per extension, separated from the main line by a thin, centered grey
   divider inset two columns on each side (`borderMuted` theme color): existing
   `setStatus()` values. The divider is omitted when there is no info. The
-  `on-call-mode` status comes first so a long TODO does not hide its safety warning. Existing ANSI
+  `on-call-mode` status comes first so a long project title does not hide its safety warning. Existing ANSI
   styling is retained for other extensions; the `todo` row uses the same muted
   theme as the main footer. Newlines, tabs and Unicode line separators become
-  spaces. TODO supplies its own compact wording, for example
-  `todo · in progress · brief ~3.2k (1.2%) · Title`; the percentage is the loaded
+  spaces. Context supplies its own compact wording, for example
+  `project · in progress · brief ~3.2k (1.2%) · Title`; the percentage is the loaded
   brief's share of the model window, not overall session context occupancy.
 - Bottom path row: the session's current `ctx.cwd`, below all extension info rows
   (or directly below the main row when no extensions publish status). The home

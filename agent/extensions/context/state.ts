@@ -72,7 +72,7 @@ export function evidenceId(todoId: string, baseRevision: number, addOrdinal: num
   return derivedId(todoId, "evidence", baseRevision, addOrdinal);
 }
 export function rejectRetiredCurrentState(input: unknown) {
-  if (input && typeof input === "object" && Object.hasOwn(input, "current_state")) throw new Error("current_state whole-list writes are retired and never applied; use evidence {add, update:[{id,text}], remove:[id]} with IDs from todo get.");
+  if (input && typeof input === "object" && Object.hasOwn(input, "current_state")) throw new Error("current_state whole-list writes are retired and never applied; use evidence {add, update:[{id,text}], remove:[id]} with IDs from context_project get.");
 }
 function validateEvidence(rows: unknown): asserts rows is Evidence[] {
   if (!Array.isArray(rows)) throw new Error("Expected evidence records");
@@ -167,7 +167,7 @@ export function applyChanges(todo: Todo, changes: Changes): Todo {
     }
     const targets = [...(edit.update ?? []).map(row => row.id), ...(edit.remove ?? [])];
     if (new Set(targets).size !== targets.length) throw new Error("Each evidence ID may be updated or removed once per change.");
-    for (const id of targets) if (!todo.current_state.evidence.some(row => row.id === id)) throw new Error(`Evidence ID not found at this revision: ${id}; read the todo again.`);
+    for (const id of targets) if (!todo.current_state.evidence.some(row => row.id === id)) throw new Error(`Evidence ID not found at this revision: ${id}; read the project again.`);
     next.current_state.evidence = next.current_state.evidence.filter(row => !edit.remove?.includes(row.id)).map(row => ({ ...row, text: edit.update?.find(patch => patch.id === row.id)?.text ?? row.text }));
     next.current_state.evidence.push(...(edit.add ?? []).map((text, ordinal) => ({ id: evidenceId(todo.id, todo.revision, ordinal), text })));
   }

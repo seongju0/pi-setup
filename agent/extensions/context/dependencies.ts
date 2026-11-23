@@ -8,7 +8,7 @@ export function validateGraph(rows: Located[]) {
     for (const id of row.todo.depends_on) {
       const target = byId.get(id);
       if (!target) throw new Error(`Dependency does not exist: ${id}`);
-      if (id === row.todo.id) throw new Error("Todo cannot depend on itself");
+      if (id === row.todo.id) throw new Error("Project cannot depend on itself");
       downstream.set(id, [...(downstream.get(id) ?? []), row.todo.id]);
     }
   }
@@ -16,7 +16,7 @@ export function validateGraph(rows: Located[]) {
   for (let index = 0; index < ready.length; index++) for (const id of downstream.get(ready[index]) ?? []) {
     const remaining = counts.get(id)! - 1; counts.set(id, remaining); if (!remaining) ready.push(id);
   }
-  if (ready.length !== rows.length) throw new Error("Todo dependencies contain a cycle");
+  if (ready.length !== rows.length) throw new Error("Project dependencies contain a cycle");
 }
 
 export function prerequisites(rows: Located[], item: Located): Located[] {

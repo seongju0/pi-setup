@@ -97,7 +97,7 @@ export async function collectKnowledgeMatches(root: string, input: { query: stri
       add(`artifact/${artifact.id}`, "artifact", [artifact.title, artifact.description, body].join("\n"), {
         artifact_id: artifact.id, artifact_version: artifact.path, lifecycle: artifact.lifecycle, ...provenance,
         match_field: bodyMatch >= 0 ? "body" : "metadata", ...(bodyMatch >= 0 ? { match_offset: bodyMatch } : {}),
-        read: { tool: "todo_artifact", action: "read", id: todo.id, artifact_id: artifact.id, expected_version: artifact.path, offset: Math.max(0, bodyMatch - 80) },
+        read: { tool: "context_project_artifact", action: "read", id: todo.id, artifact_id: artifact.id, expected_version: artifact.path, offset: Math.max(0, bodyMatch - 80) },
       }, !provenance.in_active_context);
     }
   }

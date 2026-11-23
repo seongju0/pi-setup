@@ -24,7 +24,7 @@ Call `herdr_research_start` with:
 
 - `tasks`: one object per worker, with a useful `label` and self-contained `brief`. Include:
   - The assigned question, bounded context, supported flow, settled decisions, exclusions, permissions, and stop condition.
-  - The owner TODO ID, relevant authoritative artifact IDs or stable canonical document paths, evidence pointers, and absolute report path. Workers use this supplied context and return evidence; they do not establish shared ownership. If they lack TODO access, supply enough context without creating another authoritative copy.
+  - The owning Context project ID, relevant authoritative artifact IDs or stable canonical document paths, evidence pointers, and absolute report path. Workers use this supplied context and return evidence; they do not establish shared ownership. If they lack project-memory tool access, supply enough context without creating another authoritative copy.
   - Required skills, preferably by absolute `SKILL.md` path, with full reads required before applicable work. Workers do not inherit the parent conversation.
 - `appendSystemPrompt`: the absolute path to `worker-rules.md`.
 - `reportDirectory`: the existing absolute `reports/` directory. This makes reporting file-only; notifications contain the report path, not inline findings or arbitrary summaries.

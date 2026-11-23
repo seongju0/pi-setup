@@ -54,7 +54,7 @@ export function evidenceId(todoId: string, baseRevision: number, addOrdinal: num
   return derivedId(todoId, "evidence", baseRevision, addOrdinal);
 }
 export function rejectRetiredCurrentState(input: unknown) {
-  if (input && typeof input === "object" && Object.hasOwn(input, "current_state")) throw new Error("current_state whole-list writes are retired and never applied; use evidence {add, update:[{id,text}], remove:[id]} with IDs from todo get.");
+  if (input && typeof input === "object" && Object.hasOwn(input, "current_state")) throw new Error("current_state whole-list writes are retired and never applied; use evidence {add, update:[{id,text}], remove:[id]} with IDs from context_project get.");
 }
 function validateEvidence(rows: unknown): asserts rows is Evidence[] {
   if (!Array.isArray(rows)) throw new Error("Expected evidence records");
