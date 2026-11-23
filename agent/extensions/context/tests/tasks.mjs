@@ -125,6 +125,10 @@ try {
   assert.deepEqual((await first.call({ action: "get", id: "2" })).tasks[0].blockedBy, ["1"]);
   const beforeCycle = await readFile(listed.storage, "utf8");
   await assert.rejects(first.call({ action: "update", id: "1", dependsOn: ["2"] }), /cycle/);
+  await assert.rejects(first.call({ action: "update", status: "in_progress" }), /requires id.*tasks\[0\]\.id/);
+  await assert.rejects(first.call({ action: "get" }), /requires id/);
+  await assert.rejects(first.call({ action: "update", id: "invalid" }), /validation/i);
+  await assert.rejects(first.call({ action: "get", id: "99" }), /does not exist/);
   assert.equal(await readFile(listed.storage, "utf8"), beforeCycle);
   const resumed = await instance("session-a");
   assert.equal((await resumed.call({ action: "list" })).tasks.length, 12);
@@ -141,7 +145,14 @@ try {
   assert.deepEqual((await resumed.call({ action: "list" })).tasks, []);
 
   const ephemeral = await instance("ephemeral", false);
-  await ephemeral.call({ action: "create", subject: "Memory only", description: "" });
+  const created = await ephemeral.call({ action: "create", subject: "Memory only", description: "" });
+  assert.deepEqual(Object.keys(created).sort(), ["storage", "tasks"]);
+  assert.equal(created.tasks.length, 1);
+  const changed = await ephemeral.call({ action: "update", id: created.tasks[0].id, status: "in_progress" });
+  assert.equal(changed.tasks[0].id, created.tasks[0].id);
+  assert.equal(changed.tasks[0].status, "in_progress");
+  const native = await ephemeral.tool.execute("native", { action: "get", id: created.tasks[0].id }, undefined, undefined, ephemeral.ctx);
+  assert.deepEqual(JSON.parse(native.content[0].text), changed.tasks[0]);
   assert.equal((await ephemeral.call({ action: "list" })).storage, null);
   await assert.rejects(stat(sessionPath(scratch, "ephemeral")), { code: "ENOENT" });
   assert.deepEqual((await (await instance("ephemeral", false)).call({ action: "list" })).tasks, []);

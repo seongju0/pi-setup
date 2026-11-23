@@ -241,6 +241,13 @@ try {
   await assert.rejects(blank.call("context_project", { action: "search" }), /query required/);
   await assert.rejects(blank.call("context_project", { action: "search", query: " --!? " }), /letters or numbers/);
   await assert.rejects(blank.call("context_project", { action: "search", query: "Migrate", status: "blocked" }), /validation/i);
+  await assert.rejects(blank.call("context", { action: "read", selector: child.todo.id, view: "full" }), /kind.*project.*selector.*knowledge.*id/i);
+  await assert.rejects(blank.call("context", { action: "read", kind: "all", view: "full" }), /kind.*project.*knowledge/i);
+  await assert.rejects(blank.call("context", { action: "read", kind: "project", id: child.todo.id }), /selector.*id.*forbidden/i);
+  await assert.rejects(blank.call("context", { action: "read", kind: "project", selector: child.todo.id, offset: 0 }), /forbidden.*fields/i);
+  await assert.rejects(blank.call("context_project_artifact", { action: "upsert", id: child.todo.id, revision: 3, title: "Incomplete", kind: "design", required: false, applies_to: [] }), /missing: description, lifecycle/);
+  await assert.rejects(blank.call("context_project_artifact", { action: "upsert", id: child.todo.id, ...metadata, applies_to: undefined }), /missing: revision, applies_to/);
+  assert.equal((await blank.call("context", { action: "read", kind: "project", selector: child.todo.id, view: "full" })).todo.id, child.todo.id);
   assert.deepEqual(await list(root), beforeSearchErrors);
   assert.deepEqual(blank.stored, []);
   await assert.rejects(blank.call("context_project_checkpoint", { id: child.todo.id, revision: 3, key: "invalid", changes: { arbitrary: true } }), /validation|additional/i);

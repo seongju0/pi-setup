@@ -55,6 +55,8 @@ The command supports `resume <selector>`, `refresh`, `recap`, `checkpoint`, `tig
 
 ### Read deliberately
 
+`context` reads require an explicit entity kind: `{action:"read", kind:"project", selector:"<project ID or selector>", view:"active"}` or `{action:"read", kind:"knowledge", id:"<knowledge ID>"}`. Project reads use `selector`, not `id`; kinds and identifiers are never inferred.
+
 `context_project list` and `context_project search` add compact association navigation: `links: {count, read: {tool: "context_link", action: "list", endpoint: {kind: "project", id}, direction: "both"}}`. The count includes active incoming and outgoing associations; follow `read` for bounded neighbor pages. `context_project get` and `context read` project retain the full `links.items` / `links.next_cursor` page instead of this discovery summary.
 
 Unified search uses literal case-insensitive substrings with punctuation preserved. It returns one best match per entity, bounded excerpts and typed positioned readers. Scoped search includes own project records/catalog bodies, directly referenced grounding records, individually referenced artifacts and directly linked knowledge. Ordinary associated bodies and recursive neighbors are excluded. `context_project_search` remains project-memory-only with its retained matching/read targets; `context_project search` retains title/goal term ranking. Lists/searches are live, not snapshots; continue with unchanged filters, or restart if a cursor anchor disappears.
@@ -64,6 +66,8 @@ Knowledge summary reads omit the explanation. Content pages contain at most 1200
 Project record reads require `expected_revision` on every page. Artifact reads use their **source owner** plus artifact ID and opaque expected version. Required documents load as metadata/read targets, never eager bodies; read relevant bodies before relying on them. A grounding reference alone does not enroll source artifacts; an artifact reference alone does not enroll source records. Own artifacts also enter the brief only through explicit references. New artifact creation atomically adds its owner reference; removing it leaves catalog/history readable. Imported `applies_to` is immutable provenance, not live inheritance.
 
 ### Write safely
+
+`context_project_artifact` upsert requires `id`, `revision` and the complete catalog metadata on every create/update: `title`, `kind`, `description`, `lifecycle`, `required`, `applies_to`. `required:false` and `applies_to:[]` are valid; `body` is optional for metadata-only updates. Read current metadata before updating; omitted fields are not copied or defaulted.
 
 Project evidence is `{id,text}` on read; checkpoint edits use `evidence:{add,update:[{id,text}],remove:[id]}`. Omitted records survive; enumerate all removals, including consolidation at the 30-record/2000-character limit. Retired whole-list `current_state` writes always reject. Decisions/questions upsert by stable ID; supersession/resolution and reversible visibility remain explicit. Artifact upserts accept research/design; legacy kinds remain readable. Artifact uncertain retries require read-before-retry.
 

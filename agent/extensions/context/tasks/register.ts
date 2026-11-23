@@ -150,7 +150,7 @@ export function registerSessionTasks(pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "task", label: "Task", parameters, outputSchema,
-    description: "Track this session's planned work. Actions: create (subject, description, optional dependsOn), list, get (id), update (id, optional subject/description/status/dependsOn). Dependencies must exist and be acyclic. Only completed dependencies unblock work. This does not launch workers or execute tasks.",
+    description: "Track this session's planned work. Actions: create (subject, description, optional dependsOn), list, get (id), update (id, optional subject/description/status/dependsOn). Dependencies must exist and be acyclic. Only completed dependencies unblock work. Codemode returns {tasks, storage}; create/get/update return the affected task in tasks[0], not a root id. Use result.tasks[0].id for subsequent calls; native text displays that single task. This does not launch workers or execute tasks.",
     promptSnippet: "Track multi-step work with session-local tasks and dependencies.",
     promptGuidelines: [
       "Use task for substantial multi-step work, not trivial requests. List existing tasks before creating duplicates.",
