@@ -1,9 +1,9 @@
 ---
-name: open-pr
-description: Create or refine pull request titles and descriptions as source-grounded walkthroughs. Use when asked to open a PR or improve its title or body, including publication when authorized; not for code review. Verify claims against the diff and read back published edits.
+name: draft-pr
+description: Create draft pull requests or refine existing PR titles and descriptions as source-grounded walkthroughs. Use when asked to draft or open a PR or improve its title or body, including publication when authorized; not for code review. Preserve existing draft/ready state and verify saved edits.
 ---
 
-# Open PR
+# Draft PR
 
 Help an unfamiliar reviewer understand **the problem → the change → the proof**.
 Read [Walkthrough](../walkthrough/SKILL.md) before drafting and apply its explanatory

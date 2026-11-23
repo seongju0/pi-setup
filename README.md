@@ -53,10 +53,10 @@ Subagents require sibling web-search source unless callers explicitly use
 | [checkout](agent/skills/checkout/SKILL.md) | Cache and refresh repositories for inspection |
 | [codebase-design](agent/skills/codebase-design/SKILL.md) | Define boundaries, ownership and caller contracts |
 | [deliver](agent/skills/deliver/SKILL.md) | Implementation, independent review and draft PR |
-| [design](agent/skills/design/SKILL.md) | Produce a build-ready specification |
+| [draft-pr](agent/skills/draft-pr/SKILL.md) | Create draft PRs and refine existing titles and descriptions |
 | [handoff](agent/skills/handoff/SKILL.md) | Transfer work to an independent session |
 | [linear-issues](agent/skills/linear-issues/SKILL.md) | Write and organize issues and milestones |
-| [open-pr](agent/skills/open-pr/SKILL.md) | Write source-grounded PR descriptions |
+| [plan](agent/skills/plan/SKILL.md) | Produce a codebase-verified, build-ready implementation plan |
 | [research](agent/skills/research/SKILL.md) | Coordinate read-only Herdr research |
 | [review](agent/skills/review/SKILL.md) | Review correctness, regressions and tests |
 | [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly |
@@ -118,6 +118,12 @@ Compare with newer source and merge the changes you want. Preserve local
 External skills, packages and tool-generated guidance use their owner's update
 mechanism; this catalog does not provide a skill-updater command.
 
+The SDLC skills `design` and `open-pr` are now `plan` and `draft-pr`. When adopting
+these names, copy the new directories or replace per-skill links, and update
+`/skill:` invocations and required skill paths. Compare local changes before
+manually retiring the old copies or links. Old-name aliases are not provided;
+keeping both entries can expose duplicate guidance.
+
 For older linked setups, update the checkout through Git, not `pi-setup update`:
 the retired updater can pull successfully, then fail on the removed setup script.
 The old `~/.local/bin/pi-setup` launcher becomes dangling; retire it manually.
@@ -125,9 +131,9 @@ Context replaces the old source `task/` and `todo/` entries; its runtime data pa
 are unchanged. The custom `update-skills` extension and `/skills` updater were
 retired. Remove an older `extensions/update-skills/` entry explicitly if you no
 longer want that command; copying new source does not remove the old copy.
-Other resource paths are unchanged. Keep any checkout still used by links or
-restore hooks, Pi sessions/tasks/TODOs/subagent records, and
-`~/.local/state/pi-setup/{herdr-sessions,backups}/`.
+Other resource paths are unchanged apart from the skill renames above. Keep any
+checkout still used by links or restore hooks, Pi sessions/tasks/TODOs/subagent
+records, and `~/.local/state/pi-setup/{herdr-sessions,backups}/`.
 
 ## Development
 

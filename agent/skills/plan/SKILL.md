@@ -1,13 +1,13 @@
 ---
-name: design
-description: Settle an approach and produce a codebase-verified, build-ready implementation specification. Use when asked to design a change, flesh out a plan, finalize the design, or make it ready for implementation. Stops at the specification; does not automatically build or deliver.
+name: plan
+description: Settle an approach and produce a codebase-verified, build-ready implementation plan. Use when asked to plan or design a software change, settle a technical approach, or make it ready for implementation. Stops at the specification; does not automatically build or deliver.
 ---
 
-# Design
+# Plan
 
-Decide what to build and write a specification a smaller model can implement in a fresh session. Resolve the architecture, product choices and core behavior rather than leaving the builder to guess. Use detail to remove ambiguity, not add speculative scope. Stop before implementation.
+Decide what to build and write an implementation plan a smaller model can implement in a fresh session. Resolve the architecture, product choices and core behavior rather than leaving the builder to guess. Use detail to remove ambiguity, not add speculative scope. Stop before implementation.
 
-Start from research, a direct request or settled conversation context; no earlier workflow or document is required. Preserve settled decisions. Delegate bounded research or specification work when useful, but own the final design. Do not automatically start another session.
+Start from research, a direct request or settled conversation context; no earlier workflow or document is required. Preserve settled decisions. Delegate bounded research or specification work when useful, but own the final plan. Do not automatically start another session.
 
 ## 1. Agree the direction
 
@@ -71,7 +71,7 @@ When writing the Test plan, read the [shared testing policy](../build/references
 - **Consolidation:** name redundant specs and retained or replacement coverage before proposing merges or deletions.
 - **Commands and gaps:** state commands, environmental prerequisites and remaining manual checks separately.
 
-## 6. Return the spec and stop
+## 6. Return the plan and stop
 
 Scale detail to the task, but keep what the builder needs to implement it. Include relevant risks, prerequisites and unresolved decisions. An acceptance checklist can help; the sections above are not a mandatory document template.
 
@@ -81,4 +81,4 @@ An unanswered flow question blocks only if its answer changes the core design. O
 
 Present the spec in conversation unless the user or workflow names another destination. Under delegation, return the spec body and relevant context for the parent to curate. When delegated through deliver, use its default final-answer report policy without a duplicate report file.
 
-The standalone owner or parent preserves reusable design in one authoritative home; inline presentation alone is not preservation. Stop after the spec; do not automatically invoke `/skill:build`.
+The standalone owner or parent preserves the reusable implementation plan in one authoritative home; inline presentation alone is not preservation. Stop after the spec; do not automatically invoke `/skill:build`.

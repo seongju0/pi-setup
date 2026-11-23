@@ -7,7 +7,7 @@ description: Implement and verify an approved specification or sufficiently expl
 
 Implement the approved change and verify the result. Preserve settled product and design decisions; do not silently redesign the work.
 
-Start from a specification, an explicit request or sufficiently settled conversation context. No earlier workflow or separate design ceremony is required for straightforward work. A spec marked ready for build is not user approval. Do not automatically start another session.
+Start from a specification, an explicit request or sufficiently settled conversation context. No earlier workflow or separate planning stage is required for straightforward work. A spec marked ready for build is not user approval. Do not automatically start another session.
 
 ## 1. Check the scope and real flow
 

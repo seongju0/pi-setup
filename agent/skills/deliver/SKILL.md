@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: "Deliver an approved specification or sufficiently explicit change end to end. Use when the user asks to deliver a change, deliver a finalized design, or take it through implementation, independent review and a draft PR. Honor requested worktree instructions and report completion or blockers. An explicit delivery request authorizes scoped implementation, commit, push and draft-PR creation, subject to repository rules and user restrictions; not merge, deploy or flag enablement."
+description: "Deliver an approved specification or sufficiently explicit change end to end. Use when the user asks to deliver a change, deliver a finalized implementation plan, or take it through implementation, independent review and a draft PR. Honor requested worktree instructions and report completion or blockers. An explicit delivery request authorizes scoped implementation, commit, push and draft-PR creation, subject to repository rules and user restrictions; not merge, deploy or flag enablement."
 ---
 
 # Deliver
@@ -13,13 +13,13 @@ Own the delivery loop for a specification, rough plan or sufficiently explicit r
 deliver parent — owns decisions, integration and verification
 │
 ├─ 1. Accept scope and approach
-│     └─ design child, only if the specification needs refinement
+│     └─ plan child, only if the specification needs refinement
 ├─ 2. build child → parent verifies implementation and checks
 ├─ 3. review child → parent assesses the report and coverage
 ├─ 4. Parent resolves findings
 │     └─ fresh build child, only if fixes are accepted
 │           └─ rerun checks; focused review for material changes
-├─ 5. open-pr child → parent audits the published draft PR
+├─ 5. draft-pr child → parent audits the published draft PR
 └─ 6. Parent reports the outcome and stops
 ```
 
@@ -41,12 +41,12 @@ These preferences apply only to children launched by deliver—not the parent se
 
 | Delegated stage | Default physical model |
 | --- | --- |
-| Design | `anthropic/claude-opus-5-5` |
+| Plan | `anthropic/claude-opus-5-5` |
 | Build and remediation | `openai/gpt-6.1-sol` |
 | Review, including focused re-review | `anthropic/claude-opus-5-5` |
-| Open-pr, including publication corrections | Inherit the parent's current physical model |
+| Draft-pr, including publication corrections | Inherit the parent's current physical model |
 
-Honor explicit user model overrides first. Otherwise resolve the table's model and pass its exact `provider/model` in the subagent spawn's `model` field. For open-pr inheritance, explicitly pass the parent's current physical model rather than omitting `model`, so `--subagent-model` does not override that inheritance. Do not pass virtual-router aliases.
+Honor explicit user model overrides first. Otherwise resolve the table's model and pass its exact `provider/model` in the subagent spawn's `model` field. For draft-pr inheritance, explicitly pass the parent's current physical model rather than omitting `model`, so `--subagent-model` does not override that inheritance. Do not pass virtual-router aliases.
 
 If the selected model is unavailable, report the affected launch as blocked rather than silently substituting another model. Model unavailability is not subagent-tool unavailability and does not trigger the parent-only fallback above.
 
@@ -54,18 +54,18 @@ If the selected model is unavailable, report the affected launch as blocked rath
 
 Follow global AGENTS.md delegation policy. In each assignment, distinguish authoritative context (Context project ID and canonical design artifact/document) and evidence/report paths from transient execution scope (worktree, exact base/revision and task-owned files, permissions and stop condition). Carry the accepted flow, caller contracts, owners/effects, decisions, exclusions and consequential unsaved deltas. Require relevant full reads; supply bounded material when project-memory tool access is unavailable. Put task context in `message` and task-specific boundaries/quality gates in `instructions`.
 
-## 1. Parent: accept the approach — [design](../design/SKILL.md) if needed
+## 1. Parent: accept the approach — [plan](../plan/SKILL.md) if needed
 
 ### Scope, permissions and workspace
 
 - Read the request, specification, repository instructions and relevant code/tests. Establish the outcome, supported flow, exclusions, accepted trade-offs, checks, branch/worktree, dependencies and permissions. Preserve settled product decisions; ask only about material ambiguity or unsafe prerequisites.
-- An explicit user request to run the delivery workflow—including a natural-language request such as “deliver this design”—authorizes scoped implementation, review/remediation, commits, push and a draft PR. Merely loading or mentioning this skill does not grant publication permission. More restrictive instructions still apply. Do not stage unrelated work, force-push, merge, deploy, enable flags or alter external trackers without separate authorization. Preserve credentials, data and other owners' work.
+- An explicit user request to run the delivery workflow—including a natural-language request such as “deliver this plan”—authorizes scoped implementation, review/remediation, commits, push and a draft PR. Merely loading or mentioning this skill does not grant publication permission. More restrictive instructions still apply. Do not stage unrelated work, force-push, merge, deploy, enable flags or alter external trackers without separate authorization. Preserve credentials, data and other owners' work.
 - Stay in the current session/worktree unless requested otherwise. For a requested new worktree, follow repository guidance, refresh/verify the base and use an unoccupied branch/path. Never reset or steal another owner's checkout.
 - For stacked work, read [Stack foundations](../build/references/stack-foundations.md) and the upstream `gh-stack` skill during preparation. Establish helper tracking and worktree ownership before implementation; include the verified stack/base/owners in stage assignments and serialize stack mutations across the clone.
 
 ### Approach and readiness
 
-- For rough input, delegate design for its direction checkpoint and build-ready spec. **Before accepting either a supplied spec or the design report**, trace the ordinary operation through live code from entry to outcome, identifying actual variation and rule owners. Confirm behavior, implementation locations, non-requirements and checks are settled before build.
+- For rough input, delegate to plan for its direction checkpoint and build-ready spec. **Before accepting either a supplied spec or the plan report**, trace the ordinary operation through live code from entry to outcome, identifying actual variation and rule owners. Confirm behavior, implementation locations, non-requirements and checks are settled before build.
 - Check necessity as well as readiness: challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.
 - For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md) when accepting the approach. Carry the accepted caller contract, responsibility owners, consequential effects and relevant trade-offs into stage assignments; verify they survive build and review without mandating extra architecture work or reopening settled decisions.
 - Apply global AGENTS.md task-memory policy as the delivery parent, including owner resolution and tracking opt-out. Establish the [grounding described below](#grounding-and-handoffs) before launching children.
@@ -113,17 +113,17 @@ Record the report and disposition, then delegate accepted fixes to a fresh remed
 - Do not silently publish with a known correctness/security defect or failed required check. Resolve it or ask whether an explicitly disclosed incomplete draft is wanted. State optional/unavailable checks honestly; a PR does not certify CI.
 - Stop cycling when a finding needs a product decision or remains unresolved after remediation. Explain the blocker rather than churning edits.
 
-## 5. [Open-pr](../open-pr/SKILL.md) child: publish — parent audits
+## 5. [Draft-pr](../draft-pr/SKILL.md) child: publish — parent audits
 
 ### Assignment
 
-After parent verification, give a fresh PR child the final diff scope, intended base, verification receipts, review disposition and scoped commit/push/draft-PR permission. Require [open-pr](../open-pr/SKILL.md) and repository commit/PR instructions, required stack tooling and confirmation of task-only changes before staging. No implementation changes or mutations to another owner's stack.
+After parent verification, give a fresh PR child the final diff scope, intended base, verification receipts, review disposition and scoped commit/push/draft-PR permission. Require [draft-pr](../draft-pr/SKILL.md) and repository commit/PR instructions, required stack tooling and confirmation of task-only changes before staging. No implementation changes or mutations to another owner's stack.
 
-Use open-pr's existing-PR, metadata/state preservation and saved-result verification rules. After a failed or lost publication response, inspect remote state before retrying.
+Use draft-pr's existing-PR, metadata/state preservation and saved-result verification rules. After a failed or lost publication response, inspect remote state before retrying.
 
 ### Parent publication audit
 
-Require the PR URL, base/head IDs, final title/body and publication receipts. Read the diff first, then audit the actual saved PR against open-pr's **Final check**, repository requirements, intended base/state and verification claims—not just the child's summary or saved-body equality. Surface unresolved nonblocking risks and distinguish tests run from suggested manual checks. For corrections, record the issue, use a fresh narrowly scoped PR child and recheck.
+Require the PR URL, base/head IDs, final title/body and publication receipts. Read the diff first, then audit the actual saved PR against draft-pr's **Final check**, repository requirements, intended base/state and verification claims—not just the child's summary or saved-body equality. Surface unresolved nonblocking risks and distinguish tests run from suggested manual checks. For corrections, record the issue, use a fresh narrowly scoped PR child and recheck.
 
 ## 6. Parent: report the outcome and stop
 
