@@ -140,11 +140,11 @@ export function knowledgeOperation(root: string, input: unknown, authority?: Kno
     const accepted = acceptOperation(db, authority, input.key, digest, () => {
       const now = new Date().toISOString();
       let entry: KnowledgeEntry;
+      if (authority.session_project_id !== undefined) {
+        requireId(authority.session_project_id);
+        if (!db.prepare("SELECT id FROM owners WHERE id=?").get(authority.session_project_id)) throw new Error("Session project not found");
+      }
       if (input.action === "create") {
-        if (authority.session_project_id !== undefined) {
-          requireId(authority.session_project_id);
-          if (!db.prepare("SELECT id FROM owners WHERE id=?").get(authority.session_project_id)) throw new Error("Session project not found");
-        }
         if (input.origin) validateOrigin(db, input.origin);
         entry = { version: 1, id: randomUUID(), revision: 1, created_at: now, updated_at: now, lifecycle: "current", payload: { ...input.fields, limits: input.fields.limits ?? "", sources: (input.fields.sources ?? []).map(s => ({ ...s, id: randomUUID() })) }, provenance: { session_id: authority.session_id, ...(authority.session_project_id ? { session_project_id: authority.session_project_id } : {}), ...(authority.approval_evidence ? { approval_evidence: authority.approval_evidence } : {}), ...(input.origin ? { origin: { ...input.origin } } : {}) }, change_note: "Created" };
         db.prepare("INSERT INTO knowledge_entries(id,current_revision) VALUES(?,?)").run(entry.id, 1);
@@ -172,7 +172,7 @@ export function knowledgeOperation(root: string, input: unknown, authority?: Kno
         }
         entry.revision++; entry.updated_at = now;
         // Provenance describes this accepted revision, while preserving original extraction context.
-        entry.provenance = { ...entry.provenance, session_id: authority.session_id, ...(authority.approval_evidence ? { approval_evidence: authority.approval_evidence } : { approval_evidence: undefined }) };
+        entry.provenance = { ...entry.provenance, session_id: authority.session_id, session_project_id: authority.session_project_id, ...(authority.approval_evidence ? { approval_evidence: authority.approval_evidence } : { approval_evidence: undefined }) };
       }
       db.prepare("INSERT INTO knowledge_revisions(entry_id,revision,document) VALUES(?,?,?)").run(entry.id, entry.revision, JSON.stringify(entry));
       db.prepare("UPDATE knowledge_entries SET current_revision=? WHERE id=?").run(entry.revision, entry.id);

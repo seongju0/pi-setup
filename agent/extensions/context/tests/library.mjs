@@ -77,17 +77,25 @@ try {
   assert.throws(() => read(root, { id: first.id, section: "summary", offset: 0 }), /paging/);
   assert.throws(() => read(root, { id: first.id, section: "content", offset: 1 }), /expected_version/);
 
-  // K2: scalar/source/targeted corrections preserve unread tails, IDs, review assertions and history.
+  // K2: corrections preserve unread tails/IDs/history; each revision records its current attachment.
+  const maintenanceProject = await create(root, "project", "Maintenance project", "Later knowledge maintenance");
+  const maintenance = { ...authority, session_project_id: maintenanceProject.todo.id };
+  const originalProvenance = structuredClone(document(first.id).provenance);
   const [sourceA, sourceB] = document(first.id).payload.sources;
   const updateInput = { action: "update", id: first.id, expected_revision: 1, fields: { summary: "Corrected summary" }, sources: { update: [{ id: sourceA.id, citation: "Corrected source A" }], remove: [sourceB.id], add: [{ citation: "New source C", verified_at: "2026-02-01T00:00:00Z" }] }, explanation_edits: [{ old_text: "Original correction spot", new_text: "Corrected spot" }], change_note: "Partial correction only", key: "replay-update" };
-  const updated = kb(root, updateInput, authority);
+  for (const session_project_id of ["invalid-project", randomUUID()]) {
+    unchanged(() => kb(root, updateInput, { ...authority, session_project_id }), /Invalid todo\/record ID|Session project not found/);
+  }
+  const updated = kb(root, updateInput, maintenance);
   const after = document(first.id);
   assert.equal(updated.accepted_revision, 2);
+  assert.equal(read(root, { id: first.id }).provenance.session_project_id, maintenanceProject.todo.id, "New revision uses current attachment, not creation attachment");
   assert.equal(after.payload.explanation, long.replace("Original correction spot", "Corrected spot"));
   assert.equal(after.payload.sources[0].id, sourceA.id);
   assert.deepEqual(after.payload.sources[0], { id: sourceA.id, citation: "Corrected source A" }, "Source update is complete replacement; optional fields clear");
   assert(!after.payload.sources.some(s => s.id === sourceB.id)); assert.notEqual(after.payload.sources[1].id, sourceB.id);
   write({ action: "review", id: first.id, expected_revision: 2, checked: "Synthetic review of scope and source assertions" });
+  assert(!("session_project_id" in read(root, { id: first.id }).provenance), "Unattached maintenance omits prior affiliation");
   const reviewed = document(first.id).last_reviewed;
   write({ action: "update", id: first.id, expected_revision: 3, fields: { limits: "Synthetic limit" }, change_note: "Wording only" });
   assert.deepEqual(document(first.id).last_reviewed, reviewed);
@@ -97,6 +105,8 @@ try {
   assert.deepEqual(kb(root, createInput, attached), { ...first, current_revision: 4 });
   assert.deepEqual(kb(root, createInput, authority), { ...first, current_revision: 4 }, "Attachment is transient metadata, not part of retry digest");
   assert.deepEqual(kb(root, updateInput, authority), { ...updated, current_revision: 4 });
+  assert.deepEqual(kb(root, updateInput, { ...authority, session_project_id: "invalid-now" }), { ...updated, current_revision: 4 }, "Accepted replay precedes validation of changed attachment");
+  assert(!("session_project_id" in document(first.id).provenance), "Replay does not reattribute current revision");
   assert.deepEqual(counts(), beforeReplay);
   assert.equal(preflightOperation(root, updateInput.action, updateInput, authority, updateInput.key).id, first.id, "Adapter preflight and write digest agree");
   unchanged(() => kb(root, { ...createInput, fields: fields("changed") }, attached), /key reused/);
@@ -122,6 +132,10 @@ try {
   assert.deepEqual(history.items.map(i => i.revision), [4, 3]);
   const older = kb(root, { action: "history", id: first.id, limit: 2, cursor: history.next_cursor });
   assert.deepEqual(older.items.map(i => i.revision), [2, 1]);
+  assert.equal(older.items[0].provenance.session_project_id, maintenanceProject.todo.id);
+  assert.deepEqual(older.items[1].provenance, originalProvenance, "Creation provenance remains immutable");
+  assert.deepEqual(read(root, { id: first.id, revision: 1 }).provenance, originalProvenance);
+  assert(history.items.every(item => !("session_project_id" in item.provenance)), "Unattached revisions omit affiliation in history too");
   assert.equal(readTarget(older.items[1].read).version, `knowledge/${first.id}/1/core`);
   assert.equal(allContent({ id: first.id, revision: 1 }).text.includes(long), true);
 
@@ -141,7 +155,11 @@ try {
   const linked = writeLink(root, linkInput, authority);
   assert.throws(() => readTarget(beforeLinks.read), /changed.*restart/);
   const beforeNeighbor = read(root, { id: first.id, section: "content", limit: 90 });
-  write({ action: "update", id: origin.id, expected_revision: 1, fields: { title: "Renamed neighbor" }, change_note: "Rename" });
+  const extractionProvenance = structuredClone(document(origin.id).provenance);
+  kb(root, { action: "update", id: origin.id, expected_revision: 1, fields: { title: "Renamed neighbor" }, change_note: "Rename", key: "rename-origin" }, maintenance);
+  assert.deepEqual(document(origin.id).provenance.origin, extractionProvenance.origin, "Current affiliation does not replace explicit origin");
+  assert.equal(document(origin.id).provenance.session_project_id, maintenanceProject.todo.id);
+  assert.deepEqual(read(root, { id: origin.id, revision: 1 }).provenance, extractionProvenance);
   assert.throws(() => readTarget(beforeNeighbor.read), /changed.*restart/);
   const beforeReason = read(root, { id: first.id, section: "content", limit: 90 });
   writeLink(root, { action: "update_reason", id: linked.id, expected_revision: 1, reason: "Updated reason", key: "reason-edit" }, authority);
