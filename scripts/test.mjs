@@ -45,6 +45,7 @@ try {
   assert.equal(basename(dirname(context[0].path)), "context");
   assert.ok(context[0].tools.has("task"));
   assert.ok(!loaded.extensions.some(extension => ["task", "todo"].includes(basename(dirname(extension.path)))));
+  assert.ok(!loaded.extensions.some(extension => extension.commands.has("skills")), "Copied catalog does not register the retired skill-updater command");
   console.log(`PASS: all ${extensions.length} copied extension entry points load through Pi discovery; support files are not extensions.`);
 
   const { loadSkills } = await import(pathToFileURL(join(piRoot, "dist/core/skills.js")));

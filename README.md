@@ -34,7 +34,6 @@ To try one from this checkout, use `pi -e ./agent/extensions/context/index.ts`.
 | [reply-visuals](agent/extensions/reply-visuals/README.md) | Chat emphasis and status chips |
 | [Context](agent/extensions/context/README.md) | Durable work context, artifacts and integrated session-local tasks |
 | [session-history](agent/extensions/session-history/README.md) | Search saved conversation history and read exact references |
-| [update-skills](agent/extensions/update-skills/README.md) | Inspect skill ownership and use owner-native updates |
 | [usage](agent/extensions/usage/README.md) | Local token usage and cost estimates |
 | [view](agent/extensions/view/README.md) | Open paths in your editor; defaults to Zed |
 | [web-search](agent/extensions/web-search/README.md) | Native Anthropic/OpenAI public search |
@@ -67,12 +66,18 @@ Subagents require sibling web-search source unless callers explicitly use
 
 Compare with newer source and merge the changes you want. Preserve local
 `move/config.json`, `statusline/loader.json`, settings and runtime data.
+External skills, packages and tool-generated guidance use their owner's update
+mechanism; this catalog does not provide a skill-updater command.
 
 For older linked setups, update the checkout through Git, not `pi-setup update`:
 the retired updater can pull successfully, then fail on the removed setup script.
 The old `~/.local/bin/pi-setup` launcher becomes dangling; retire it manually.
-Context replaces the old source `task/` and `todo/` entries; its runtime data paths are unchanged. Other resource paths are unchanged. Keep any checkout still used by links or restore
-hooks, Pi sessions/tasks/TODOs/subagent records, and
+Context replaces the old source `task/` and `todo/` entries; its runtime data paths
+are unchanged. The custom `update-skills` extension and `/skills` updater were
+retired. Remove an older `extensions/update-skills/` entry explicitly if you no
+longer want that command; copying new source does not remove the old copy.
+Other resource paths are unchanged. Keep any checkout still used by links or
+restore hooks, Pi sessions/tasks/TODOs/subagent records, and
 `~/.local/state/pi-setup/{herdr-sessions,backups}/`.
 
 ## Development
