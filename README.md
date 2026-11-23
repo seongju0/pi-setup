@@ -48,7 +48,7 @@ Subagents require sibling web-search source unless callers explicitly use
 
 | Skill | Purpose |
 | --- | --- |
-| [authed-browser](agent/skills/authed-browser/SKILL.md) | Use an existing signed-in Ardia account or tab |
+| [authed-browser](agent/skills/authed-browser/SKILL.md) | Guide existing signed-in browsing through Search MCP |
 | [build](agent/skills/build/SKILL.md) | Implement and verify a settled change |
 | [checkout](agent/skills/checkout/SKILL.md) | Cache and refresh repositories for inspection |
 | [codebase-design](agent/skills/codebase-design/SKILL.md) | Define boundaries, ownership and caller contracts |
@@ -61,6 +61,55 @@ Subagents require sibling web-search source unless callers explicitly use
 | [review](agent/skills/review/SKILL.md) | Review correctness, regressions and tests |
 | [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly |
 | [writing-skills](agent/skills/writing-skills/SKILL.md) | Author focused skills |
+
+`authed-browser` requires the external [Search browser and upstream `search-mcp`](https://github.com/driceroland/Search#testing-it-without-closing-it),
+Python 3, and coding-agent control enabled in Search. Obtain the bridge from its
+upstream repository, keep it outside this catalog, and register it with Pi using
+`pi mcp add search -- /absolute/path/to/search-mcp`. Allow at least 120 seconds
+for Search's connection prompt (for example, set the server's `timeout` to `180`
+in your user-level MCP configuration). Load the configuration in a new session
+or deliberately reload when idle. No browser build is needed for the running-app
+bridge. Existing user tabs are optional read-only; agents act in their own tabs.
+Copy the skill directory and selectively merge the Browser routing section of
+`agent/AGENTS.md`; MCP configuration stays with the user's MCP client, not here.
+
+### Obtain or update the Search MCP bridge manually
+
+The bridge is a standalone Python script; do not copy it into `pi-setup`. This
+example pins the upstream revision used for the initial setup. Download to a
+staging directory first, then inspect the script and license before installing:
+
+```sh
+revision=4dbc44ec9c64e454493a7fe66730c3b5d08d67c1
+staging="$(mktemp -d)"
+curl --fail --location "https://raw.githubusercontent.com/driceroland/Search/$revision/search-mcp" -o "$staging/search-mcp"
+curl --fail --location "https://raw.githubusercontent.com/driceroland/Search/$revision/LICENSE" -o "$staging/LICENSE"
+printf 'Review the downloads in %s before continuing.\n' "$staging"
+```
+
+After reviewing, in the same shell (stop if either download failed):
+
+```sh
+destination="$HOME/.local/share/search-mcp"
+mkdir -p "$destination"
+# For an update, preserve the previous bridge before replacing it.
+if [ -f "$destination/search-mcp" ]; then
+  cp -p "$destination/search-mcp" "$destination/search-mcp.previous"
+fi
+install -m 755 "$staging/search-mcp" "$destination/search-mcp"
+install -m 644 "$staging/LICENSE" "$destination/LICENSE"
+printf 'https://github.com/driceroland/Search\nCommit: %s\n' "$revision" > "$destination/UPSTREAM.txt"
+```
+
+For first-time setup, register that path with
+`pi mcp add search -- "$HOME/.local/share/search-mcp/search-mcp"`, then set the
+server timeout as described above. Do not rerun registration merely to update
+the script: it can replace an existing server entry and its custom settings.
+For an update, choose an explicit newer upstream commit, review its changes and
+repeat the download/review/replacement steps while no browser task is active.
+Use a new Pi session or deliberately reload when idle to load the new bridge;
+its first browser operation remains subject to Search's consent rules. These are
+manual instructions, not an installer or an automatic update mechanism.
 
 ## Updates
 

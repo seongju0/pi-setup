@@ -45,7 +45,7 @@ Search must actually run, native source URLs must be present, and the response m
 
 Public research only. Never send PHI, credentials, private code, or sensitive records. Only the query, optional purpose, and fixed research instructions go to the helper—not the current transcript. Provider policies/retention still apply.
 
-Use `web_search` for public web research through provider-native search—not the agent-browser CLI. Use browser automation only when the task needs page navigation, interaction, or rendered-UI inspection; it is not a required follow-up to every search. Use `agent-browser` for public/headless browsing and isolated QA, or the `authed-browser` skill (`ardia browse`) for the user's existing login or current Ardia tab. Never send private browser context to public search or silently switch browsers/accounts when Ardia is unavailable.
+Use `web_search` for public web research through provider-native search—not the agent-browser CLI. Use browser automation only when the task needs page navigation, interaction, or rendered-UI inspection; it is not a required follow-up to every search. Use `agent-browser` for public/headless browsing and isolated QA, or the `authed-browser` skill (Search MCP) for the user's existing signed-in browser account or a requested Search tab. Search acts only in agent-owned tabs; existing user tabs are optional read-only. Never send private browser context to public search or silently switch browsers/accounts when Search MCP is unavailable.
 
 This extension deliberately has no arbitrary URL fetching, PDF/video extraction, browser automation, result cache, source-check tool, curator UI, provider registry, or automatic provider fallback.
 

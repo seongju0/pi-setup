@@ -10,13 +10,14 @@ Make the smallest complete change using existing conventions. Preserve agreed sc
 
 ## Browser routing
 
-Use the `authed-browser` skill and `ardia browse` for the user's existing signed-in
-account or current Ardia tab. Use the upstream `agent-browser` skill for public,
-headless browsing and isolated development/QA, including explicit test logins.
-Do not launch Ghostty or copy Chrome profiles for authenticated browsing. If Ardia
-is unavailable or the account is wrong, resolve that prerequisite with the user;
-never silently switch browsers or accounts. Browser access does not expand the
-user's authorization or relax privacy rules.
+Use the `authed-browser` skill and Search MCP for the user's existing signed-in
+browser account or a requested Search tab. Search permits interaction only in
+agent-owned tabs; existing user tabs are optional read-only. Use the upstream
+`agent-browser` skill for public/headless browsing and isolated development/QA,
+including explicit test logins. If Search MCP is unavailable or the account is
+wrong, resolve that prerequisite with the user; never silently switch browsers,
+copy profiles or bypass Search's control restrictions. Browser access does not
+expand the user's authorization or relax privacy rules.
 
 ## Communication
 

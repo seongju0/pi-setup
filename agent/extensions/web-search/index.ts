@@ -16,8 +16,8 @@ function currentProvider(ctx: ExtensionContext): Provider {
 const tool = defineTool({
   name: "web_search",
   label: "Web Search",
-  description: "Search the public web using a separate Anthropic or Codex model and return a concise answer with native source URLs. Defaults to the current model's provider family. Does not fetch arbitrary pages or verify every claim; inspect public sources with agent-browser, or use authed-browser/ardia browse for an authorized existing signed-in browser context. Never send credentials, PHI, private code, or sensitive records to search.",
-  promptSnippet: "Use web_search for public current or external information. It returns a search-backed answer and source links; use agent-browser for public/headless page inspection, and the authed-browser skill (ardia browse) when the task needs the user's existing login or current Ardia tab.",
+  description: "Search the public web using a separate Anthropic or Codex model and return a concise answer with native source URLs. Defaults to the current model's provider family. Does not fetch arbitrary pages or verify every claim; inspect public sources with agent-browser, or use the authed-browser skill with Search MCP for an authorized existing signed-in browser context. Never send credentials, PHI, private code, or sensitive records to search.",
+  promptSnippet: "Use web_search for public current or external information. It returns a search-backed answer and source links; use agent-browser for public/headless page inspection, and the authed-browser skill (Search MCP) when the task needs the user's existing signed-in browser account or a requested Search tab.",
   parameters: Type.Object({
     query: Type.String({ minLength: 1, description: "Research question or search query. Public information only." }),
     purpose: Type.Optional(Type.String({ description: "Why the information is needed; helps focus the answer." })),
