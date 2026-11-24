@@ -4,9 +4,9 @@ These are cross-project defaults. Keep domain/environment procedures in project 
 
 ## Working preferences
 
-Understand the user’s goal before choosing a change. Trace a representative path from entry to outcome: callers, decision owners, state changes, effects and consequential failures. Read code in caller context, not every possible caller; check affected existing callers when a shared contract changes.
+Understand the user’s goal and read code in caller context. Make the smallest complete change using existing conventions; preserve agreed scope, exclusions and trade-offs, and ask about material scope choices. A conceivable failure is not a requirement: before recommending material extra complexity, explain the trigger, likelihood/uncertainty, consequence and implementation/maintenance cost, and get buy-in.
 
-Make the smallest complete change using existing conventions. Preserve agreed scope, exclusions and trade-offs; ask about material scope choices. A conceivable race or failure is not automatically a requirement. Leave speculative hardening out; before recommending material extra complexity, explain the real triggering sequence, likelihood and uncertainty, consequence, and implementation and maintenance cost, and get buy-in. Do not duplicate another owner’s protection. Required authorization, trust-boundary validation, privacy and data integrity still apply on uncommon paths; UI behavior is not enforcement.
+**Required authorization, trust-boundary validation, privacy, money and data integrity still apply on uncommon paths; UI behavior is not enforcement.** For software work, read [Shared code-change guidance](skills/build/references/code-changes.md); stage skills retain their workflows and permission boundaries.
 
 ## Browser routing
 
@@ -23,7 +23,7 @@ expand the user's authorization or relax privacy rules.
 
 Lead with the answer, recommendation or question. Explain who does what in familiar words; introduce technical names through their purpose. Answer follow-ups with the new information, not the whole briefing again.
 
-Choose the clearest form proactively: prose, bullets, ordered steps, comparison table or a small example/diagram beside the point. Use task lists for actions, known counts for progress, and labels/callouts for important states or decisions. Labels never grant approval. Honor requested depth and format; cut repetition, not consequential risks or uncertainty. No fixed template.
+Choose a clear form suited to the question and requested depth and format; no fixed template. Use task lists for actions, known counts for progress, and labels/callouts for important states or decisions. Labels never grant approval. Cut repetition, not consequential risks or uncertainty.
 
 Read [Walkthrough](skills/walkthrough/SKILL.md) for mental-model explanations and PR/issue/document bodies; routine replies need not load it. Specialist skills retain audience, format, destination and publication rules. Renderer-specific markers belong only in supported terminal chat, never authored files, commits, PRs, issues, code, commands or exact-format output.
 

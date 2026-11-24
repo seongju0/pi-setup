@@ -9,6 +9,8 @@ Decide what to build and write an implementation plan a smaller model can implem
 
 Start from research, a direct request or settled conversation context; no earlier workflow or document is required. Preserve settled decisions. Delegate bounded research or specification work when useful, but own the final plan. Do not automatically start another session.
 
+Before step 1, read [Shared code-change guidance](../build/references/code-changes.md). Apply it to the proposed approach; this skill owns direction, specification and readiness.
+
 ## 1. Agree the direction
 
 Read research reports and their primary sources, not just summaries. Separate verified facts from assumptions. Then give a short direction checkpoint:
@@ -23,23 +25,15 @@ Reuse existing behavior. Compare alternatives only for a real unresolved trade-o
 
 ## 2. Check the code and its callers
 
-Read project instructions and the affected code and tests. Follow the actual entry points, shared functions and callers through inputs, decisions, permissions, persistence and effects. Verify research assumptions against live code; a report is a starting point, not a substitute for inspection.
-
-When adding a writer, actor, client type, version or other variant, check how existing code consumes what it produces and what actions follow. A prescribed mechanism or an exclusion does not by itself approve changing an existing invariant. Raise that conflict unless the consequence was explicitly accepted.
-
-Keep the exclusions and trade-offs agreed at the checkpoint, in conversation or in task memory. Do not silently restore excluded behavior. Choose the smallest complete change; prefer existing helpers, standard libraries, platform features and installed dependencies. Follow the project's domain model and conventions; avoid unrelated cleanup and a parallel architecture.
+Read project instructions and the affected code and tests. Verify research assumptions, caller/consumer contracts and proposed locations against live code; a report is a starting point, not a substitute for inspection. Carry the agreed exclusions and trade-offs into the spec. Prefer existing helpers, standard libraries, platform features and installed dependencies.
 
 Read these guides when they apply:
 - [Codebase Design](../codebase-design/SKILL.md) for consequential structural choices. Settle the caller contract, responsibility owners and important effects; carry the decision into the spec.
 - `../vercel-react-best-practices/SKILL.md` for React work, plus `../vercel-composition-patterns/SKILL.md` for component APIs or architecture.
 
-## 3. Keep only the mechanisms the change needs
+## 3. Record what stays out
 
-For each proposed mechanism, explain the supported caller sequence, its consequence and why the existing owner is insufficient. A code citation, existing pattern or spec instruction is not enough. Recheck this when revising from research or review. Reusing behavior does not mean copying its defensive machinery; if a mechanism creates more edge cases, reconsider it before adding exceptions.
-
-Do not add handling just for a hypothetical caller or artificial test state. Add race recovery, stale-state recovery, upstream re-checks or security hardening only for a real supported need, not an imagined failure. Raise recommended material hardening as a flow question and get agreement before including it.
-
-Record notable exclusions as **considered-but-omitted**, so build does not add them. Keep entries brief; do not create an inventory of imagined failures or questions. Preserve approved requirements and surface conflicts.
+Apply the shared guidance's necessity test to each proposed mechanism, including revisions from research or review. Record notable exclusions as **considered-but-omitted**, so build does not add them. Keep entries brief; do not create an inventory of imagined failures or questions. Raise recommended material hardening as a flow question and get agreement before including it.
 
 **This does not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement.
 

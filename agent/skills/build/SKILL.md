@@ -9,15 +9,17 @@ Implement the approved change and verify the result. Preserve settled product an
 
 Start from a specification, an explicit request or sufficiently settled conversation context. No earlier workflow or separate planning stage is required for straightforward work. A spec marked ready for build is not user approval. Do not automatically start another session.
 
+Before step 1, read [Shared code-change guidance](references/code-changes.md). Apply it to implementation decisions; this skill owns gap escalation, checks and the build report.
+
 ## 1. Check the scope and real flow
 
-Read project instructions, the supplied context and relevant code/tests. Establish the repository/worktree, intended behavior, constraints, permissions, checks and stop condition. Before editing, trace the actual flow through live callers from entry to outcome.
+Read project instructions, the supplied context and relevant code/tests. Establish the repository/worktree, intended behavior, constraints, permissions, checks and stop condition; verify the accepted approach against the live flow before editing.
 
 For stacked work, read [Stack foundations](references/stack-foundations.md) and the upstream `gh-stack` skill before changing layers or history. Establish tracking and worktree ownership first.
 
 ## 2. Implement within the agreed scope
 
-Follow the spec's order and file-level guidance. Use local conventions for minor details. Keep the smallest complete change; avoid speculative abstractions and unrelated cleanup.
+Follow the spec's order and file-level guidance; choose routine local implementation details without reopening settled semantics.
 
 **Pause and report a specific gap when:**
 - The spec conflicts with live code or leaves an implementation-critical decision open.
@@ -25,13 +27,9 @@ Follow the spec's order and file-level guidance. Use local conventions for minor
 - A specified write breaks an existing consumer's invariant, or a changed shared-helper contract breaks a caller.
 - A mechanism contradicts settled non-requirements or exists only to support another apparently unnecessary mechanism. Flag this before implementing that portion.
 
-Do not silently remove approved behavior or add scaffolding just because the spec names it. Describe gaps using their supported caller sequence, not an inventory of hypothetical failures.
-
-Behavior-preserving clarity improvements and confirmed fixes to specified behavior belong at the existing owner and are in scope. New guarantees, policies, recovery behavior, storage or architectural contracts need a scope decision; they are not routine corrections.
+Pause the affected portion and describe the specific gap using its supported caller sequence; do not turn it into an inventory of hypothetical failures. Behavior-preserving clarity improvements and confirmed fixes to specified behavior belong at the existing owner and are in scope; new guarantees and behavior follow the shared guidance's scope-decision boundary.
 
 For consequential structural changes, read [Codebase Design](../codebase-design/SKILL.md). Keep the accepted caller contract and ownership; report material discoveries rather than redesigning silently.
-
-Before adding a mechanism, establish the real caller sequence, consequence and why the existing owner is insufficient. If a fix creates another edge case, reconsider it before adding exceptions. Do not add handling for hypothetical callers, artificial test states, race/staleness recovery, upstream re-checks or security hardening merely because a failure can be imagined.
 
 **These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. Preserve these protections and escalate conflicts with approved scope or accepted trade-offs; a security label grants no extra authority.
 
@@ -41,7 +39,7 @@ Read the [shared testing policy](references/testing.md) before adding, changing,
 
 Follow the agreed test plan. If implementation reveals a concrete coverage gap, surface the regression and smallest correction before expanding the plan. No new test is a valid outcome when retained coverage protects the change.
 
-Read the implementation diff for clarity: main path, names, nesting, data reshaping, duplicate rules and unnecessary indirection. Recheck mechanisms in the diff against the need established in section 2. Improve the touched path without changing behavior or expanding scope. Apply the same standard to delegated code; no extra report template is required.
+Read the implementation diff for clarity: main path, names, nesting, data reshaping, duplicate rules and unnecessary indirection. Recheck mechanisms in the diff against the shared guidance's necessity test. Improve the touched path without changing behavior or expanding scope. Apply the same standard to delegated code; no extra report template is required.
 
 Audit every changed test for its named behavior and unique regression signal. Consolidate duplicate coverage and repair stubs that bypass the behavior. Keep a short test delta: files/scenarios added or removed, and internal stubs left with reasons—not a per-scenario inventory.
 

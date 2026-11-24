@@ -7,6 +7,8 @@ description: "Deliver an approved specification or sufficiently explicit change 
 
 Own the delivery loop for a specification, rough plan or sufficiently explicit request. The parent integrates and verifies; fresh subagents perform each applicable stage. This skill orchestrates, not replaces, the stage skills.
 
+Before stage 1, read [Shared code-change guidance](../build/references/code-changes.md). Apply it when accepting the approach, checking integration and resolving findings; this skill owns stage gates and publication authority.
+
 ## Workflow at a glance
 
 ```text
@@ -65,8 +67,7 @@ Follow global AGENTS.md delegation policy. In each assignment, distinguish autho
 
 ### Approach and readiness
 
-- For rough input, delegate to plan for its direction checkpoint and build-ready spec. **Before accepting either a supplied spec or the plan report**, trace the ordinary operation through live code from entry to outcome, identifying actual variation and rule owners. Confirm behavior, implementation locations, non-requirements and checks are settled before build.
-- Check necessity as well as readiness: challenge mechanisms that add unrequested guarantees or only support unnecessary machinery; being specified is not sufficient justification. Surface conflicts without silently removing approved requirements. Resolve material direction/flow questions with the user; otherwise retain stated defaults and leave extras out.
+- For rough input, delegate to plan for its direction checkpoint and build-ready spec. **Before accepting either a supplied spec or the plan report**, independently check the live flow and proposed mechanisms against the shared guidance. Confirm behavior, implementation locations, non-requirements and checks are settled before build; resolve material direction/flow questions with the user rather than accepting worker confidence as readiness. Otherwise retain stated defaults and leave extras out.
 - For consequential structural choices, read [Codebase Design](../codebase-design/SKILL.md) when accepting the approach. Carry the accepted caller contract, responsibility owners, consequential effects and relevant trade-offs into stage assignments; verify they survive build and review without mandating extra architecture work or reopening settled decisions.
 - Apply global AGENTS.md task-memory policy as the delivery parent, including owner resolution and tracking opt-out. Establish the [grounding described below](#grounding-and-handoffs) before launching children.
 
@@ -101,7 +102,7 @@ Before treating accumulated clean reports as integrated approval, confirm the wh
 
 - Check every finding against code, supported behavior and existing protection. Accept confirmed fixes to specified behavior at the existing owner and behavior-preserving clarity corrections; record concise evidence-backed reasons for declines. No accepted fixes is valid. Resolve consequential flow questions from code where practical; otherwise record explicit limits on the verdict. A confirmed defect remains a finding even when its correction needs a product or scope decision.
 - Apply review's distinction between defects and speculative extras, and its test-review bar for consolidation, stub repairs and added coverage. Preserve distinct regression protection and settled non-requirements.
-- **New behavior still needs a scope decision.** New guarantees, policies, recovery behavior, storage or architectural contracts are not routine corrections. Ask about a material trade-off only when recommending it. A security label does not expand permissions: preserve required trust-boundary protections and escalate changes that materially alter approved behavior or conflict with an accepted trade-off.
+- **New behavior still needs a scope decision.** Apply the shared guidance's scope-decision boundary for new guarantees, policies and behavior, distinct from routine corrections. Ask about a material trade-off only when recommending it; preserve required trust-boundary protections and escalate conflicts with accepted scope.
 
 ### Remediation, only if fixes are accepted
 

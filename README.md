@@ -63,8 +63,17 @@ Subagents require sibling web-search source unless callers explicitly use
 | [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly, with shared illustrations and PR walkthrough guidance |
 | [writing-skills](agent/skills/writing-skills/SKILL.md) | Author focused skills |
 
+`plan`, `build`, `review` and `deliver` read the shared
+[`code-changes.md`](agent/skills/build/references/code-changes.md) reference for
+caller/consumer reasoning, scope, necessity and practical use of engineering
+principles. Copy the whole sibling `build/` directory, which also owns the shared
+[`testing.md`](agent/skills/build/references/testing.md) policy. Reading either
+reference does not start Build; stage workflows and permissions remain separate.
+The optional `agent/AGENTS.md` sections link to this guidance too; adapt those
+links when merging, rather than replacing existing instructions.
+
 `peer-review` requires sibling `review`, `codebase-design`, `walkthrough` and
-`build/references/testing.md`, plus PR/source access. Reports explain practical
+`build/` (including both shared references), plus PR/source access. Reports explain practical
 findings and draft `[fix]`/`[nit]` review comments without posting them.
 Temporary source-only review worktrees and scoped local execution use the external
 `qa-toolkit` skill plus project-native guidance; runtime setup is not bundled.

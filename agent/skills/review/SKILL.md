@@ -7,13 +7,13 @@ description: Review code changes for correctness, regressions, conventions, main
 
 Review the requested change without editing files. If no scope is given, review staged and unstaged changes against `HEAD`.
 
+Before step 1, read [Shared code-change guidance](../build/references/code-changes.md). Apply it independently to the actual change; this skill owns findings, severity, questions and the test audit.
+
 ## 1. Establish intent and scope
 
 Read the diff, surrounding code, supplied plan/spec and primary references. Find repository guidance along the changed files' directory ancestry; follow relevant references, not unrelated documentation.
 
-Establish supported behavior, exclusions and accepted trade-offs before judging. Trace affected callers through to their outcomes. A spec describes intent; it does not prove a mechanism is needed or the outcome is correct.
-
-For a new writer or newly admitted actor, client or variant, check the existing readers and effects that consume its output. A prescribed mechanism or exclusion does not approve changing an existing invariant. If it conflicts with a business contract, escalate rather than silently reopening or fixing it.
+Establish supported behavior, exclusions and accepted trade-offs before judging. Verify them against the affected caller/consumer flow, not merely spec conformance.
 
 For React/Next changes, apply `/skill:vercel-react-best-practices`; also read `/skill:vercel-composition-patterns` for component APIs or composition design.
 
@@ -34,7 +34,7 @@ For consequential structural changes, read [Codebase Design](../codebase-design/
 
 ## 3. Separate defects from speculative extras
 
-Challenge unnecessary mechanisms even when the spec prescribes them. Guards, locks, re-checks, recovery paths and abstractions must serve a supported flow, not duplicate another owner's protection. Preserve approved outcomes; surface conflicts without redefining requirements or demanding an unrelated redesign. If a fix creates more edge cases, reconsider it before adding exceptions.
+Apply the shared guidance's necessity and scope rules even when a mechanism is specified. Judge whether the implemented behavior warrants a finding, not just whether another implementation is conceivable.
 
 Connect each potential finding to the practical flow before reporting it:
 - **Reachability:** name the triggering caller sequence—normal action, stale page, retry, supported alternate caller or deliberately modified request—and its plausibility and uncertainty. Distinguish a demonstrated normal-flow failure from a bypass or hypothetical sequence.
@@ -44,9 +44,7 @@ Connect each potential finding to the practical flow before reporting it:
 
 Use these connections to explain the judgment, not as mandatory report headings. A missing-guard concern needs the same evidence; proving a bypass exists does not by itself establish normal-flow breakage or a required fix.
 
-A constructible race, failure or attack is not by itself a required fix. Decline speculative extras instead of making them findings or questions. If material hardening is worth recommending, explain its implementation and maintenance cost and distinguish it from a confirmed defect in required behavior.
-
-Do not revive accepted non-requirements without a concrete conflict. A supported actor, version or existing consumer reached by the change is a real path, not speculation.
+Decline speculative extras instead of making them findings or questions. Distinguish recommended material hardening from confirmed defects in required behavior; do not revive accepted non-requirements without a concrete conflict.
 
 **These defaults do not waive authorization, malformed-input rejection at a trust boundary, privacy/PHI, money or data integrity on a real path, however uncommon.** UI behavior is not enforcement. A security label grants no extra scope or permissions; surface material conflicts with accepted behavior or trade-offs.
 

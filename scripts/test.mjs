@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -64,6 +64,23 @@ try {
   assert.equal(authed[0].disableModelInvocation, false);
   assert.equal(authed[0].filePath, join(env.PI_CODING_AGENT_DIR, "skills/authed-browser/SKILL.md"));
   console.log(`PASS: all ${skills.skills.length} copied skills load; authed-browser is discoverable for model selection.`);
+
+  // Shared guidance must survive whole-directory adoption, not resolve only
+  // against files left in the development checkout. This checks local file
+  // targets, not prose behavior, URL availability or Markdown anchors.
+  for (const relative of [
+    ...["plan", "build", "review", "deliver", "peer-review"].map(name => `${name}/SKILL.md`),
+    "peer-review/README.md", "build/references/code-changes.md", "build/references/testing.md",
+  ]) {
+    const file = join(env.PI_CODING_AGENT_DIR, "skills", relative);
+    const body = await readFile(file, "utf8");
+    for (const [, target] of body.matchAll(/\[[^\]]+\]\(([^\s)]+)\)/g)) {
+      if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("#")) continue;
+      const local = target.split("#")[0];
+      await assert.doesNotReject(access(resolve(dirname(file), local)), `${relative}: missing copied reference ${target}`);
+    }
+  }
+  console.log("PASS: shared code-change guidance and stage references resolve in copied skill directories.");
 
   let suites = 0;
   for (const path of extensions) {

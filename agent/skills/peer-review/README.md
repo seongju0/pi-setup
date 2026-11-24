@@ -1,10 +1,10 @@
 # peer-review
 
-A small PR-facing entry point for evaluation. It reuses `review` for correctness, compatibility, effects, test quality and findings, and `codebase-design` for pragmatic design reasoning. SOLID, KISS, DRY and YAGNI are aids—not compliance scores.
+A small PR-facing entry point for evaluation. It reuses `review` for correctness, compatibility, effects, test quality and findings, and `codebase-design` for pragmatic design reasoning. Shared `build/references/code-changes.md` owns cross-stage necessity and principles guidance.
 
 ## Adopt and use
 
-Copy this directory with sibling `review/`, `codebase-design/`, `walkthrough/` and `build/` (Review requires `build/references/testing.md`). Walkthrough guides the explanation of findings; Review owns practical-flow actionability and severity. Preserve existing files and local changes when updating.
+Copy this directory with sibling `review/`, `codebase-design/`, `walkthrough/` and `build/` (Review requires `build/references/code-changes.md` and `build/references/testing.md`). Walkthrough guides the explanation of findings; Review owns practical-flow actionability and severity. Preserve existing files and local changes when updating.
 
 ```text
 /skill:peer-review https://github.com/OWNER/REPO/pull/123

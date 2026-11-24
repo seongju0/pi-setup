@@ -26,7 +26,7 @@ Keep source inspection separate from executing the PR:
 
 ## Evaluate
 
-Trace the supported action through decisions, state/effects and downstream consumers. Apply Review's correctness, trust-boundary, compatibility, failure and test checks, and Codebase Design's ownership/caller-contract guidance. SOLID, KISS, DRY and YAGNI are reasoning aids: identify a concrete responsibility, duplication or unnecessary-complexity problem and its consequence, not a principle violation alone. Preserve accepted scope and trade-offs.
+Apply Review's correctness, trust-boundary, compatibility, failure and test checks, and Codebase Design's ownership/caller-contract guidance. Use the [shared code-change guidance](../build/references/code-changes.md) required by Review for necessity and principle-based reasoning; do not maintain a separate PR rubric.
 
 Keep small PRs single-agent. Delegate a coherent flow or specialist concern only when it saves work or adds scrutiny, following the host's delegation rules. Supply pinned scope, intent, exclusions and required skill paths; workers remain read-only. The parent verifies and deduplicates their evidence before reporting. No fixed panel or per-file fan-out.
 
