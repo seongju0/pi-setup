@@ -15,6 +15,7 @@ import { normalizeLegacy } from "../sqlite-upgrade.ts";
 import { writeReference } from "../links.ts";
 import { readArtifact, saveArtifact } from "../artifacts.ts";
 import { tighten } from "../tightening.ts";
+import { prepareArtifactDelegation, readDelegatedArtifactPage, validateArtifactDelegation } from "../delegation.ts";
 import { restoreSelection, resumeBundle, selectionEntry, checkpointMessage } from "../session.ts";
 import { compactionEntry, acknowledgementEntry, pendingReconciliation, preservationType, preservationState } from "../compaction.ts";
 
@@ -99,6 +100,67 @@ try {
   assert.equal(configuredRoot(), join(homedir(), ".pi", "agent", "todos"));
   process.env.PI_TODO_PATH = root;
   assert.equal(configuredRoot(), root);
+  // Real loader + reader + SQLite: only fixed artifact targets, no full Context registration.
+  {
+    const root = join(scratch, "reader-store"); process.env.PI_TODO_PATH = root;
+    const readerOwner = await create(root, "project", "Reader owner", "Synthetic assigned sources");
+    const readerOther = await create(root, "project", "Reader other", "Unrelated source");
+    const readerMetadata = { title: "untrusted-reader-title", kind: "design", description: "untrusted-reader-description", lifecycle: "current", required: false, applies_to: [] };
+    let assigned = await saveArtifact(root, readerOwner.todo.id, 1, { ...readerMetadata, body: "assigned-page-".repeat(2000) });
+    assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, lifecycle: "reference", body: "retained historical supporting body" });
+    assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, body: "UNRELATED-SAME-OWNER" });
+    const otherDoc = await saveArtifact(root, readerOther.todo.id, 1, { ...readerMetadata, body: "UNRELATED-CROSS-OWNER" });
+    const targets = assigned.todo.artifacts.slice(0, 2).map(a => ({ id: readerOwner.todo.id, artifact_id: a.id, expected_version: a.path }));
+    const delegation = prepareArtifactDelegation(targets);
+    assert.throws(() => prepareArtifactDelegation([]), /nonempty/);
+    assert.throws(() => prepareArtifactDelegation([...targets, targets[0]]), /Duplicate/);
+    assert.throws(() => prepareArtifactDelegation([{ ...targets[0], expected_version: "../bad" }]), /expected_version/);
+    assert.throws(() => prepareArtifactDelegation([{ ...targets[0], id: targets[0].id.slice(0, 8) }]), /UUID/);
+    assert.throws(() => prepareArtifactDelegation([{ ...targets[0], expected_version: `artifacts/${"a".repeat(2000)}-1.md` }]), /expected_version/);
+    assert.throws(() => prepareArtifactDelegation([{ ...targets[0], id: "00000000-0000-0000-0000-000000000000" }]), /unavailable/);
+    const retainedBytes = bodyBytes(readerOwner, targets[1].expected_version);
+    removeBody(readerOwner, targets[1].expected_version);
+    assert.throws(() => prepareArtifactDelegation([targets[1]]), /Missing current artifact body/);
+    restoreBody(readerOwner, targets[1].expected_version, retainedBytes);
+    const readerWrapper = join(scratch, "reader.ts");
+    await writeFile(readerWrapper, `import { scopedArtifactReader } from ${JSON.stringify(join(directory, "reader.ts"))}; export default scopedArtifactReader(${JSON.stringify(delegation)});`);
+    const readerRuntime = createExtensionRuntime();
+    const readerLoaded = await loadExtensions([readerWrapper], scratch, undefined, readerRuntime);
+    assert.deepEqual(readerLoaded.errors, []);
+    const readerExtension = readerLoaded.extensions[0];
+    assert.deepEqual([...readerExtension.tools.keys()], ["context_project_artifact"]);
+    assert.equal(readerExtension.handlers.size, 0); assert.equal(readerExtension.commands.size, 0);
+    const readerTool = readerExtension.tools.get("context_project_artifact").definition;
+    const readerCall = async input => readerTool.execute("reader", validateToolArguments(readerTool, { id: "reader", name: readerTool.name, arguments: { action: "read", ...input } }), undefined, undefined, {});
+    for (const bad of [{ action: "upsert", ...targets[0] }, { id: targets[0].id, artifact_id: targets[0].artifact_id }, { ...targets[0], root }]) {
+      await assert.rejects(readerCall(bad));
+    }
+    const logicalReaderState = () => withRead(root, db => JSON.stringify([db.prepare("SELECT * FROM owners ORDER BY id").all(), db.prepare("SELECT owner_id,version,hex(body) body FROM artifact_revisions ORDER BY owner_id,version").all(), db.prepare("SELECT * FROM context_operations").all()]));
+    const beforeReader = logicalReaderState();
+    let assembled = "", readerOffset = 0;
+    do {
+      const result = await readerCall({ ...targets[0], offset: readerOffset });
+      const page = result.structuredContent;
+      assert.equal(result.content[0].text.split("\n\n").slice(1).join("\n\n"), page.body);
+      assert.deepEqual(result.details, page); assert(page.body.length <= 12000);
+      assembled += page.body; readerOffset = page.next_offset;
+    } while (readerOffset !== null);
+    assert.equal(assembled, "assigned-page-".repeat(2000) + "\n");
+    assert.equal((await readerCall(targets[1])).structuredContent.body, "retained historical supporting body\n");
+    for (const denied of [{ ...targets[0], artifact_id: assigned.todo.artifacts[2].id }, { ...targets[0], id: readerOther.todo.id, artifact_id: otherDoc.todo.artifacts[0].id }, { ...targets[0], expected_version: targets[1].expected_version }]) {
+      await assert.rejects(readerCall(denied), /outside the assigned scope/);
+      assert.throws(() => readDelegatedArtifactPage(delegation, denied), /outside the assigned scope/);
+    }
+    assert.equal(logicalReaderState(), beforeReader);
+    await checkpoint(root, readerOther.todo.id, otherDoc.todo.revision, { title: "unrelated update" }, "reader-other", "reader-session");
+    assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, id: targets[0].artifact_id, title: "Metadata only" });
+    assert.equal((await readerCall(targets[0])).structuredContent.body, assembled.slice(0, 12000));
+    assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, id: targets[0].artifact_id, body: "NEW-BYTES-MUST-NOT-LEAK" });
+    for (const offset of [0, 12000]) await assert.rejects(readerCall({ ...targets[0], offset }), /changed.*parent/);
+    assert.throws(() => prepareArtifactDelegation(targets), /changed/);
+    assert.deepEqual(validateArtifactDelegation(delegation), delegation, "registration/reopen validation is pure, not a freshness check");
+  }
+  process.env.PI_TODO_PATH = root;
   const project = await create(root, "project", "Rollout", "Complete the rollout");
   assert.deepEqual(project.todo.current_state, { evidence: [] });
   assert.equal("next_actions" in project.todo, false);

@@ -42,7 +42,13 @@ To try one from this checkout, use `pi -e ./agent/extensions/context/index.ts`.
 
 Context is self-contained: copy its whole directory, with Node.js 26+ and a supported Pi installation. It provides `context_project` / `context_project_*` tools for independent project memory, `context_knowledge` for explicitly maintained reusable knowledge and unchanged `task` / `/task` session-local task JSON. `/context` is the only project command; old `todo*` tool aliases, `/todo` and the retired move tool are not registered. Existing SQLite schema1 project stores need the separate explicit schema2 upgrade; legacy JSON import remains a different supported CLI. Copying source does not migrate data. Session-history is optional enhanced journal retrieval, not a Context source dependency. Before adopting Context, manually retire both old task and todo extension entries; preserve all runtime task/project/session data. See the [Context adoption steps](agent/extensions/context/README.md#adoption).
 Subagents require sibling web-search source unless callers explicitly use
-`web: false`. See the linked READMEs for required shared files and external tools.
+`web: false`. Optional `contextArtifacts` additionally requires the whole adjacent
+`context/` source directory and Node.js 26+/supported Pi 1.6.0; omitted grants have
+no Context dependency. The adapter exposes only assigned version-pinned artifact
+reads, not full Context or inherited permissions. Without it, hand off complete
+pinned snapshots/inline material or accessible external files. Source copying does
+not activate an older installed launcher; adoption/reload stay operator-controlled.
+See the linked READMEs for required shared files and external tools.
 
 ## Skills
 

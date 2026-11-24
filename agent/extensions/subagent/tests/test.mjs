@@ -1,7 +1,7 @@
 // Run: node agent/extensions/subagent/tests/test.mjs
 // Real Pi extension loader and real child processes; fake RPC CLI, no providers or user settings.
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, stat, cp, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -25,11 +25,11 @@ async function until(check, message = 'condition') {
   throw new Error(`Timed out waiting for ${message}`);
 }
 async function logs() { return (await readFile(process.env.TEST_SUBAGENT_LOG, 'utf8')).split('\n').filter(Boolean).map(JSON.parse); }
-async function instance({ id = `parent-${instances.length}`, branch = [], flag, mode = 'tui' } = {}) {
+async function instance({ id = `parent-${instances.length}`, branch = [], flag, mode = 'tui', entry = join(directory, '../index.ts') } = {}) {
   const runtime = createExtensionRuntime();
   const state = { id, branch: structuredClone(branch), reports: [], queue: [], busy: false, warnings: [], widgets: new Map([['task', 'untouched task'], ['todo', 'untouched todo'], ['physical-model-usage', 'untouched model usage']]), widgetUpdates: 0, renderRequests: 0, customCalls: 0 };
   runtime.appendEntry = (customType, data) => state.branch.push({ type: 'custom', id: `entry-${++entryId}`, customType, data: structuredClone(data) });
-  const loaded = await loadExtensions([join(directory, '../index.ts')], scratch, undefined, runtime);
+  const loaded = await loadExtensions([entry], scratch, undefined, runtime);
   assert.deepEqual(loaded.errors, []);
   const extension = loaded.extensions[0];
   if (flag) runtime.flagValues.set('subagent-model', flag);
@@ -254,6 +254,103 @@ try {
   assert.match(view(flagged), /physical · gpt-6\.1-sol · ctx (?:\?|\d+%) · ~\$/);
   assert.doesNotMatch(view(flagged), /openai\//);
   await stopAll(flagged);
+
+  // Optional Context: actual launch configuration, generated wrapper, real SDK reader and SQLite.
+  const { create } = await import('../../context/storage.ts');
+  const { saveArtifact } = await import('../../context/artifacts.ts');
+  const contextStore = join(scratch, 'assigned-context');
+  process.env.PI_TODO_PATH = contextStore;
+  const source = await create(contextStore, 'project', 'Synthetic source', 'Scoped source fixtures');
+  const docMetadata = { title: 'UNTRUSTED-CATALOG-TITLE', kind: 'design', description: 'UNTRUSTED-CATALOG-DESCRIPTION', lifecycle: 'current', required: false, applies_to: [] };
+  let sourceDocs = await saveArtifact(contextStore, source.todo.id, 1, { ...docMetadata, body: 'First assigned body' });
+  sourceDocs = await saveArtifact(contextStore, source.todo.id, sourceDocs.todo.revision, { ...docMetadata, body: 'Second independent body' });
+  const assignedTargets = sourceDocs.todo.artifacts.map(a => ({ id: source.todo.id, artifact_id: a.id, expected_version: a.path }));
+  const scoped = await instance();
+  const scopedChildren = [];
+  for (const [index, target] of assignedTargets.entries()) {
+    const receipt = await scoped.call({ action: 'spawn', name: `scoped-${index}`, message: 'normal', web: false, cwd: scratch, contextArtifacts: [target] });
+    assert.equal(receipt.details.accepted, true);
+    scopedChildren.push(receipt.details);
+  }
+  await until(() => scoped.state.reports.length === 2);
+  async function loadedReader(child) {
+    const args = (await logs()).filter(line => line.type === 'launch' && line.child === child.id).at(-1).args;
+    assert(args[args.indexOf('--tools') + 1].split(',').includes('context_project_artifact'));
+    const path = args.flatMap((arg, index) => arg === '--extension' ? [args[index + 1]] : []).find(path => path.endsWith('context-reader.ts'));
+    assert(path, 'actual launch explicitly includes scoped wrapper');
+    clearExtensionCache();
+    const loaded = await loadExtensions([path], scratch, undefined, createExtensionRuntime());
+    assert.deepEqual(loaded.errors, []);
+    assert.equal(loaded.extensions.length, 1);
+    assert.deepEqual([...loaded.extensions[0].tools.keys()], ['context_project_artifact']);
+    const definition = loaded.extensions[0].tools.get('context_project_artifact').definition;
+    return { path, read: input => definition.execute('scoped-read', { action: 'read', ...input }, undefined, undefined, scoped.ctx) };
+  }
+  for (const [index, child] of scopedChildren.entries()) {
+    const reader = await loadedReader(child);
+    assert.equal((await reader.read(assignedTargets[index])).structuredContent.body, index ? 'Second independent body\n' : 'First assigned body\n');
+    await assert.rejects(reader.read(assignedTargets[1 - index]), /outside the assigned scope/);
+    const instructions = await readFile(join(child.directory, 'instructions.md'), 'utf8');
+    assert(instructions.includes(JSON.stringify(assignedTargets[index])));
+    assert.doesNotMatch(instructions, /UNTRUSTED-CATALOG/);
+  }
+  const fixed = scopedChildren[0];
+  for (const action of ['send', 'status', 'stop']) await assert.rejects(scoped.call({ action, id: fixed.id, message: 'normal', contextArtifacts: [assignedTargets[1]] }), /spawn-only/);
+  await scoped.call({ action: 'send', id: fixed.id, message: 'normal idle continuation' });
+  await until(() => scoped.state.reports.length === 3);
+  assert.deepEqual((await snapshot(scoped, fixed.id)).contextRead, fixed.contextRead);
+  await stopAll(scoped);
+  sourceDocs = await saveArtifact(contextStore, source.todo.id, sourceDocs.todo.revision, { ...docMetadata, id: assignedTargets[0].artifact_id, body: 'NEW BODY NOT AUTHORIZED' });
+  const launchesBeforeStale = (await logs()).filter(row => row.type === 'launch').length;
+  await assert.rejects(scoped.call({ action: 'spawn', name: 'stale-at-spawn', message: 'normal', web: false, contextArtifacts: [assignedTargets[0]] }), /changed/);
+  assert.equal((await logs()).filter(row => row.type === 'launch').length, launchesBeforeStale);
+  process.env.PI_TODO_PATH = join(scratch, 'changed-parent-environment');
+  scoped.ctx.cwd = join(scratch, 'different-cwd'); await mkdir(scoped.ctx.cwd);
+  const firstWrapper = join(fixed.directory, 'context-reader.ts');
+  await writeFile(firstWrapper, 'throw new Error("RETAINED WRAPPER MUST NOT RUN");');
+  const staleReopen = await scoped.call({ action: 'send', id: fixed.id, message: 'normal explicit pinned parent snapshot fallback' });
+  assert.equal(staleReopen.details.accepted, true);
+  await until(() => scoped.state.reports.length === 4);
+  assert.deepEqual((await snapshot(scoped, fixed.id)).contextRead, fixed.contextRead);
+  const staleReader = await loadedReader(fixed);
+  await assert.rejects(staleReader.read(assignedTargets[0]), /changed.*parent/);
+  assert.doesNotMatch(await readFile(firstWrapper, 'utf8'), /RETAINED WRAPPER/);
+  await stopAll(scoped);
+  await rename(contextStore, `${contextStore}-unavailable`);
+  const restoredScoped = await instance({ id: scoped.state.id, branch: scoped.state.branch });
+  const missingReopen = await restoredScoped.call({ action: 'send', id: fixed.id, message: 'normal accessible parent file fallback' });
+  assert.equal(missingReopen.details.accepted, true, 'restore/reopen does not touch unavailable store');
+  await until(() => restoredScoped.state.reports.length === 1);
+  const unavailableReader = await loadedReader(fixed); // Factory registration remains store-independent.
+  await assert.rejects(unavailableReader.read(assignedTargets[0]), /ENOENT/);
+  assert.deepEqual((await snapshot(restoredScoped, fixed.id)).contextRead, fixed.contextRead);
+  await stopAll(restoredScoped);
+  const malformedBranch = structuredClone(scoped.state.branch);
+  for (const row of malformedBranch) if (row.customType === 'subagent-state' && row.data.id === fixed.id) row.data.contextRead.protocol = 'unsupported-v99';
+  const malformed = await instance({ id: scoped.state.id, branch: malformedBranch });
+  const malformedResult = await malformed.call({ action: 'send', id: fixed.id, message: 'normal' });
+  assert.equal(malformedResult.isError, true); assert.match(malformedResult.details.error, /Unsupported.*protocol/);
+  // Real wrapper load errors are fatal at the host boundary; fake CLI deliberately does not emulate loading.
+  await writeFile(firstWrapper, `import { scopedArtifactReader } from ${JSON.stringify(join(directory, '../../context/reader.ts'))}; export default scopedArtifactReader({protocol:'unsupported'});`);
+  clearExtensionCache();
+  const failedReader = await loadExtensions([firstWrapper], scratch, undefined, createExtensionRuntime());
+  assert.equal(failedReader.errors.length, 1); assert.equal(failedReader.extensions.length, 0);
+  const copiedExtensions = join(scratch, 'copied-extensions'); await mkdir(copiedExtensions);
+  await cp(join(directory, '..'), join(copiedExtensions, 'subagent'), { recursive: true });
+  await cp(join(directory, '../../lib'), join(copiedExtensions, 'lib'), { recursive: true });
+  const optional = await instance({ entry: join(copiedExtensions, 'subagent/index.ts') });
+  const noContext = await optional.call({ action: 'spawn', name: 'without-context', message: 'normal', web: false });
+  assert.equal(noContext.details.accepted, true);
+  await until(() => optional.state.reports.length === 1); await stopAll(optional);
+  await assert.rejects(optional.call({ action: 'spawn', name: 'missing-adjacent-context', message: 'normal', web: false, contextArtifacts: [assignedTargets[0]] }), /adjacent Context directory/);
+  await cp(join(directory, '../../context'), join(copiedExtensions, 'context'), { recursive: true });
+  await rename(`${contextStore}-unavailable`, contextStore); process.env.PI_TODO_PATH = contextStore;
+  const copied = await optional.call({ action: 'spawn', name: 'copied-with-context', message: 'normal', web: false, contextArtifacts: [assignedTargets[1]] });
+  assert.equal(copied.details.accepted, true);
+  await until(() => optional.state.reports.length === 2);
+  const copiedReader = await loadedReader(copied.details);
+  assert.equal((await copiedReader.read(assignedTargets[1])).structuredContent.body, 'Second independent body\n');
+  await stopAll(optional);
 
   // Real selected-server MCP connection and resource paths, with no user configs/providers.
   const mcpLog = join(scratch, 'mcp-connections.txt');
@@ -708,7 +805,7 @@ export default async function (pi: ExtensionAPI) {
   assert.equal(guarded.extension.tools.size, 0, 'child cannot register delegation tool');
   delete process.env.PI_SUBAGENT;
   assert.equal(parent.state.warnings.length, 0);
-  console.log('subagent checks passed: physical/inherited models, web loading and capability persistence, selected MCP connection/tools/resources and personal-only policy (optional, blocked calls, fail-closed loading), parallel limits, context reuse, reporting/retries, failures, approvals, Unicode, no assignment deadline, ownership, cleanup, widget isolation, read-only /subagents picker/live streaming, scroll/follow/expansion, saved pre-compaction branch history, and transcript lifecycle/error isolation');
+  console.log('subagent checks passed: physical/inherited models, web loading and capability persistence, scoped Context real-wrapper/SQLite reads and fixed grants/root/pure restore/optional copy boundary, selected MCP connection/tools/resources and personal-only policy (optional, blocked calls, fail-closed loading), parallel limits, context reuse, reporting/retries, failures, approvals, Unicode, no assignment deadline, ownership, cleanup, widget isolation, read-only /subagents picker/live streaming, scroll/follow/expansion, saved pre-compaction branch history, and transcript lifecycle/error isolation');
 } finally {
   for (const item of instances) await item.emit({ type: 'session_shutdown', reason: 'quit' });
   const launches = await logs();

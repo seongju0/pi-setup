@@ -33,7 +33,11 @@ Copy the whole `subagent/` directory plus sibling `lib/models.ts`,
 launch explicitly loads web-search; missing source fails even if no search is
 requested. Only callers setting `web: false` can omit it. Available physical
 models/provider authentication and any selected MCP configuration remain
-owner-managed. Preserve existing saved child sessions and metadata.
+owner-managed. For optional `contextArtifacts`, also copy the whole adjacent
+`context/` source directory (Node.js 26+, supported Pi SDK 1.6.0); omission needs
+no Context source/store. Preserve existing saved child sessions and metadata.
+Source changes do not activate new inputs in an older installed launcher; adoption
+and reload remain deliberate operator steps.
 
 Pi discovers `extensions/subagent/index.ts`. Run `/reload` deliberately after adopting or changing the extension.
 
@@ -93,8 +97,56 @@ Use `id` instead of `name` when convenient. Names are unique within the owning s
 | `instructions` | Optional additional system-instruction **text**, not a path; up to 30,000 characters |
 | `web` | Optional boolean, default true; load the local `web-search` extension; false explicitly opts out |
 | `mcpServers` | Optional configured server-name allowlist, default none; only selected enabled servers connect |
+| `contextArtifacts` | Optional nonempty array of exact `{id, artifact_id, expected_version}` Context artifact grants; no discovery or writers |
 
-`model`, `cwd`, `instructions`, `web`, and `mcpServers` are **spawn-only**. A later `send` preserves them; create a new child to change them. Unknown or disabled MCP servers fail before launch, never fall back to all servers. Selection applies to tools and resources without modifying global/project MCP configuration. Normal MCP credentials are reused, not copied into assignments. MCP access is not read-only permission or an OS sandbox.
+`model`, `cwd`, `instructions`, `web`, `mcpServers`, and `contextArtifacts` are **spawn-only**. A later `send` preserves them; create a new child to change them. Unknown or disabled MCP servers fail before launch, never fall back to all servers. Selection applies to tools and resources without modifying global/project MCP configuration. Normal MCP credentials are reused, not copied into assignments. MCP access is not read-only permission or an OS sandbox.
+
+### Assigned Context documents
+
+To give any worker access to specific Context documents, supply `contextArtifacts`
+at spawn. Use complete source-owner/artifact UUIDs and opaque current versions
+from supported Context metadata/read targets:
+
+```javascript
+subagent({
+  action: "spawn", name: "document-reader",
+  contextArtifacts: [{ id: "<source-owner UUID>", artifact_id: "<artifact UUID>", expected_version: "<current body version>" }],
+  message: "Read the assigned supporting document in full before analyzing this question. It is not execution authority. Do not edit files; report findings or missing/conflicting material with partial findings, then stop."
+});
+```
+
+These are placeholders, not live targets. Initial preparation verifies sources
+and pins before reserving/starting a child. The child receives only the narrowed
+read-only `context_project_artifact` tool and identifier/version metadata, not
+catalog text, full Context, tasks, knowledge, project discovery or the parent's
+brief/transcript. Read in pages of at most 12000 characters with the required pin,
+including offset 0; keep combined output bounded. Grants never traverse references.
+Source roles, freshness and **current execution permissions** belong separately in
+the assignment; stored text and historical approvals confer no authority.
+
+The parent captures the configured root once. Idle sends, stop/reopen and parent
+restore keep that root and fixed grants, even with a changed cwd/environment.
+Each launch regenerates its private `context-reader.ts` wrapper from the saved
+snapshot. Reopen/registration validate configuration only: stale or unavailable
+sources do not prevent parent-supplied snapshot/file follow-up material. Every
+actual read freshly checks current catalog/version/body in a read-only transaction;
+stale pins fail without newer bytes. Never drop a pin to bypass a mismatch.
+
+Missing/conflicting material goes back to the parent with partial findings; the
+worker ends instead of waiting indefinitely or expanding scope. Parent can send
+explicitly authorized pinned snapshots/inline material or accessible external
+files, or spawn a new child with revised grants. External files use existing file
+tools, not a Context grant schema. Without the optional adapter/source, use that
+same snapshot/file handoff; IDs or links alone do not provide retrieval.
+
+The adjacent public entries are `../context/delegation.ts` and
+`../context/reader.ts`; no Context runtime import occurs when grants are omitted.
+Missing source, malformed configuration or initial stale pins fail explicitly,
+never fall back to full Context. Startup relies on supported Pi 1.6.0 fatal RPC
+extension-load handling and ChildRpc's exit rejection, with no readiness command.
+SQLite never initializes a missing store, though WAL/SHM sidecars may change.
+This is a tool API boundary, not filesystem isolation or proof of model reading
+and compliance. See [Context's public contract](../context/docs/delegation.md).
 
 ### Skill-based assignments
 
@@ -288,7 +340,7 @@ Background execution requires an **interactive or long-lived RPC parent**. Print
 | Child capability | Policy |
 |---|---|
 | Built-in tools | `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `codemode` |
-| Extensions | Discovered/configured extensions disabled; `builtin:codemode`, local web search (default on), and optional selected-server MCP integration loaded explicitly |
+| Extensions | Discovered/configured extensions disabled; `builtin:codemode`, local web search (default on), optional selected-server MCP integration, and optional scoped Context reader loaded explicitly |
 | MCP | None by default; `mcpServers` selects configured enabled servers before connections are created, including resources |
 | Delegation | No subagent/Herdr launchers; `PI_SUBAGENT=1` also prevents this extension registering |
 | Project trust | Same cwd inherits approval only if the parent trusts it; alternate cwd uses `--no-approve` and ignores trust-gated resources |
@@ -321,6 +373,7 @@ extensions/subagent/
 ├── viewer.ts            native picker + scrolling read-only transcript overlay
 ├── rpc.ts               subprocess + JSONL transport + command correlation
 ├── mcp.ts               selected-server config + child MCP integration
+├── context.ts           optional adjacent public Context adapter + wrapper generation
 └── tests/
     ├── fake-pi.mjs      deterministic child CLI fixture
     ├── test.mjs         regression suite; no provider calls
@@ -328,6 +381,7 @@ extensions/subagent/
 
 ~/.pi/agent/subagents/<parent-session-id>/<child-id>/
 ├── instructions.md      child identity and supplied instructions
+├── context-reader.ts    generated each launch only for saved Context grants
 ├── <Pi session file>    saved native conversation
 └── <run-id>.md          full final answer/diagnostic and reported usage
 ```
@@ -356,6 +410,7 @@ The regression suite uses the real Pi extension loader and real subprocesses wit
 
 - Physical/inherited model selection, context reuse, concurrency limits, and busy-send rejection.
 - Web-extension loading and capability persistence; selected MCP connections, tools and resources, unknown/disabled server rejection, optional personal policy blocking, project-policy exclusion, and configured-policy failure before connection.
+- Scoped Context grants through actual generated wrappers, real SDK loading and SQLite: independent scopes, fixed sends/root capture, stale initial pins, pure stale/unavailable restore, wrapper regeneration, malformed snapshots, copied optional dependency and load errors. The fake CLI does not emulate Pi loading; fatal startup handling rests on supported SDK source, not provider end-to-end proof.
 - Reports/receipts and parent/child operating guidance, artifacts before settlement, retries, failures, explicit cancellation without assignment deadlines, dialogs, and transport framing.
 - Reload/fork/tree ownership, restore, cleanup, and headless behavior.
 - Compact widget bounds and recency ordering, animation/disposal, Tasks isolation, themes, narrow/Unicode layout, native versus billed context, and compaction/unknown telemetry.

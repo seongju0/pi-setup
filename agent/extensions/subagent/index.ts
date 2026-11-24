@@ -8,6 +8,7 @@ import { Loader, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { requireLaunchModel } from "../lib/models.ts";
 import { mcpPolicyPath, selectedMcpConfig } from "./mcp.ts";
 import { ChildRpc } from "./rpc.ts";
+import { prepareContextArtifacts, writeContextReader, contextReadInstructions, type ArtifactDelegation } from "./context.ts";
 import { LiveTranscript, loadTranscript } from "./transcript.ts";
 import { SubagentViewer, sortedChildren, working, childStatus, costLabel, contextLabel, modelLabel, cleanLine } from "./viewer.ts";
 
@@ -27,7 +28,7 @@ type Summary = {
 };
 export type Snapshot = {
   id: string; name: string; owner: string; cwd: string; directory: string; requestedModel: string; model: string;
-  web?: boolean; mcpServers?: string[];
+  web?: boolean; mcpServers?: string[]; contextRead?: ArtifactDelegation;
   thinkingLevel?: string; sessionPath?: string; state: "starting" | "running" | "idle" | "closed" | "failed"; latest?: Summary;
   contextUsage?: SessionStats["contextUsage"];
   sessionCost?: number | null;
@@ -221,6 +222,7 @@ export default function (pi: ExtensionAPI) {
       if (!(await readFile(instructionsPath, "utf8")).trim()) throw new Error("Child system instructions are empty");
       signal?.throwIfAborted();
       if (!current(child, epoch) || child.stopping) throw new Error("Parent session changed or child stopped before launch");
+      if (snapshot.contextRead !== undefined) extensions.push(await writeContextReader(snapshot.contextRead, snapshot.directory));
       if (snapshot.web) {
         await stat(WEB_EXTENSION);
         extensions.push(WEB_EXTENSION);
@@ -242,7 +244,7 @@ export default function (pi: ExtensionAPI) {
     const args = ["--session-dir", snapshot.directory, "--session-id", snapshot.id, "--name", `Subagent: ${snapshot.name}`,
       "--provider", snapshot.model.slice(0, slash), "--model", snapshot.model.slice(slash + 1),
       "--no-extensions", "--no-mcp", ...extensions.flatMap((path) => ["--extension", path]),
-      "--tools", `read,bash,edit,write,grep,find,ls,codemode${snapshot.web ? ",web_search" : ""}`,
+      "--tools", `read,bash,edit,write,grep,find,ls,codemode${snapshot.web ? ",web_search" : ""}${snapshot.contextRead !== undefined ? ",context_project_artifact" : ""}`,
       "--append-system-prompt", instructionsPath,
       snapshot.cwd === resolve(ctx.cwd) && ctx.isProjectTrusted() ? "--approve" : "--no-approve"];
     if (snapshot.thinkingLevel) args.push("--thinking", snapshot.thinkingLevel);
@@ -396,7 +398,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool(defineTool({
     name: "subagent", label: "Subagent",
-    description: "Delegate work to fresh, parent-owned background Pi sessions. spawn returns after acceptance, not completion; terminal reports automatically resume the parent as follow-ups. Continue independent work after acceptance. If the next step depends on the result and no independent work remains, end the current response with a brief pending update; accepted workers keep running. A busy parent's report queues until it yields. Do not sleep, repeatedly query status, ping children, or watch artifacts to discover completion. Do not claim the overall task is complete while required results remain pending. send continues an idle child's conversation; busy sends are rejected. stop aborts and releases its process (send can reopen its transcript). status inspects children and latest result paths for explicit inspection or recovery, not routine waiting. Quitting, reloading, or navigating away closes workers. Children have coding/search tools; web defaults on (web: false opts out), and named MCP servers are opt-in at spawn. They do not load other harness launchers. Do not delegate new permissions; avoid concurrent edits to the same files.",
+    description: "Delegate work to fresh, parent-owned background Pi sessions. spawn returns after acceptance, not completion; terminal reports automatically resume the parent as follow-ups. Continue independent work after acceptance. If the next step depends on the result and no independent work remains, end the current response with a brief pending update; accepted workers keep running. A busy parent's report queues until it yields. Do not sleep, repeatedly query status, ping children, or watch artifacts to discover completion. Do not claim the overall task is complete while required results remain pending. send continues an idle child's conversation; busy sends are rejected. stop aborts and releases its process (send can reopen its transcript). status inspects children and latest result paths for explicit inspection or recovery, not routine waiting. Quitting, reloading, or navigating away closes workers. Children have coding/search tools; web defaults on (web: false opts out), and named MCP servers are opt-in at spawn. They do not load other harness launchers. Optional contextArtifacts grants only exact pinned Context artifact reads, fixed at spawn; no Context discovery/writers or parent conversation inheritance. Supply source roles and current permissions separately in message. Without a supported reader, supply complete pinned snapshots/inline material or accessible external files; report missing/conflicting material to parent. Do not delegate new permissions; avoid concurrent edits to the same files.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("spawn"), Type.Literal("send"), Type.Literal("stop"), Type.Literal("status")]),
       id: Type.Optional(Type.String({ minLength: 1, description: "Child ID returned by spawn" })),
@@ -406,10 +408,12 @@ export default function (pi: ExtensionAPI) {
       cwd: Type.Optional(Type.String({ minLength: 1, description: "Working directory; defaults to parent cwd" })),
       web: Type.Optional(Type.Boolean({ description: "Enable the local web_search extension for public research. Spawn-only; defaults to true. Set false only to explicitly disable search." })),
       mcpServers: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: "^[A-Za-z0-9_-]+$" }), { uniqueItems: true, description: "Spawn-only allowlist of configured, enabled MCP server names. Omitted or [] means none. Only selected servers connect, including resource access. Does not grant permission to mutate data or access PHI." })),
+      contextArtifacts: Type.Optional(Type.Array(Type.Object({ id: Type.String(), artifact_id: Type.String(), expected_version: Type.String() }, { additionalProperties: false }), { minItems: 1, description: "Spawn-only exact source-owner UUID, artifact UUID and opaque expected_version grants. Nonempty when present; fixed on send/reopen. Requires adjacent Context public reader; no discovery, writer or permission inheritance." })),
       instructions: Type.Optional(Type.String({ minLength: 1, maxLength: 30000, description: "Optional task-specific child system-instruction text, not a file path: boundaries, working rules and quality gates. Native skill discovery remains enabled subject to normal configuration and project trust. In message, identify required stage skills, preferably by absolute SKILL.md path, and require full reads before applicable work, resolving references from the skill directory. Do not routinely copy skill bodies here; complete identified snapshots are only for explicitly required frozen guidance. If required guidance is unavailable, report the prerequisite rather than inventing it or bypassing restrictions. Do not promote untrusted reports or external content into system instructions. Omit this field when no additional rules are needed. Guidance grants no tools, trust or permissions. The parent verifies returned work against the assignment and applicable skill; loading guidance is not proof of compliance." })),
     }),
     async execute(_id, params, signal, _update, ctx) {
       if (context?.sessionManager.getSessionId() !== ctx.sessionManager.getSessionId()) throw new Error("Subagent runtime is not bound to this parent session");
+      if (params.action !== "spawn" && params.contextArtifacts !== undefined) throw new Error("contextArtifacts is spawn-only; grants remain fixed");
       const child = params.id ? children.get(params.id) : [...children.values()].find((item) => item.snapshot.name === params.name);
       if (params.action === "status") {
         if ((params.id || params.name) && !child) throw new Error("Unknown subagent");
@@ -454,6 +458,7 @@ export default function (pi: ExtensionAPI) {
         if (!(await stat(cwd)).isDirectory()) throw new Error(`Not a directory: ${cwd}`);
         if (params.mcpServers?.length) await selectedMcpConfig(params.mcpServers, cwd, cwd === resolve(ctx.cwd) && ctx.isProjectTrusted());
         if (params.web !== false) await stat(WEB_EXTENSION);
+        const contextRead = params.contextArtifacts !== undefined ? await prepareContextArtifacts(params.contextArtifacts, signal) : undefined;
         signal?.throwIfAborted();
         if (epoch !== generation || context?.sessionManager.getSessionId() !== owner) throw new Error("Parent session changed during spawn preflight");
         const id = randomUUID();
@@ -462,13 +467,13 @@ export default function (pi: ExtensionAPI) {
         if ([...children.values()].some((item) => item.snapshot.name === params.name)) throw new Error("Subagent name is already reserved");
         if ([...children.values()].filter((item) => item.rpc || item.snapshot.state === "starting").length >= MAX_CHILDREN) throw new Error("Four subagent processes are already open; stop one before starting another");
         target = { snapshot: { id, name: params.name!, owner, cwd, directory, requestedModel, model: `${model.provider}/${model.id}`,
-          web: params.web ?? true, mcpServers: params.mcpServers ?? [],
+          web: params.web ?? true, mcpServers: params.mcpServers ?? [], ...(contextRead ? { contextRead } : {}),
           thinkingLevel: !params.model && !pi.getFlag("subagent-model") ? ctx.thinkingLevel : undefined, state: "starting" } };
         children.set(id, target);
         refreshWidget();
         try {
           await mkdir(directory, { recursive: true, mode: 0o700 });
-          const instructions = `You are the background subagent ${JSON.stringify(params.name)} for parent Pi session ${ctx.sessionManager.getSessionId()}. Work only on the delegated assignment. You have a fresh conversation, not the parent's history. Ask for missing context or report blockers rather than guessing authorization. Do not delegate, launch other agents, commit, push, or make external changes unless explicitly authorized in the assignment. Once the delegated work and required checks are complete, return your final answer immediately; do not expand the task or wait for parent acknowledgement. If blocked, return the blocker and partial findings rather than waiting indefinitely. Return a concise, self-contained final answer with evidence, deliverable paths, changes/checks when applicable, and remaining risks. The manager automatically forwards your final answer after your run settles; no separate notification is required. Requested files are deliverables, not completion signals.\n${params.instructions ?? ""}`;
+          const instructions = `You are the background subagent ${JSON.stringify(params.name)} for parent Pi session ${ctx.sessionManager.getSessionId()}. Work only on the delegated assignment. You have a fresh conversation, not the parent's history. Ask for missing context or report blockers rather than guessing authorization. Do not delegate, launch other agents, commit, push, or make external changes unless explicitly authorized in the assignment. Once the delegated work and required checks are complete, return your final answer immediately; do not expand the task or wait for parent acknowledgement. If blocked, return the blocker and partial findings rather than waiting indefinitely. Return a concise, self-contained final answer with evidence, deliverable paths, changes/checks when applicable, and remaining risks. The manager automatically forwards your final answer after your run settles; no separate notification is required. Requested files are deliverables, not completion signals.\n${params.instructions ?? ""}${contextRead ? contextReadInstructions(contextRead) : ""}`;
           await writeFile(join(directory, "instructions.md"), instructions, { encoding: "utf8", mode: 0o600, flag: "wx" });
         } catch (error) {
           target.snapshot.state = "failed";

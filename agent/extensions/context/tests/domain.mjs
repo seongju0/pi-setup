@@ -1,7 +1,7 @@
 // Actual domain + child-Node CLI proof. All state is synthetic and private before any source import.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, statSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, statSync, existsSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,6 +58,38 @@ function fixture(name) {
 function definitions(db) { return db.prepare("SELECT name,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY name").all(); }
 function snapshot(db) { return upgrade.logicalFingerprint(db); }
 try {
+  // Existing-only reads never initialize a root/schema and SQLite enforces read-only access.
+  const missingRoot = join(scratch, "reader-missing");
+  assert.throws(() => database.withExistingRead(missingRoot, () => {}), /ENOENT/);
+  assert(!existsSync(missingRoot));
+  const readerRoot = join(scratch, "reader-existing"); mkdirSync(readerRoot);
+  assert.throws(() => database.withExistingRead(readerRoot, () => {}), /ENOENT/);
+  assert(!existsSync(join(readerRoot, "todo.sqlite")));
+  const empty = new DatabaseSync(join(readerRoot, "todo.sqlite")); empty.close();
+  assert.throws(() => database.withExistingRead(readerRoot, () => {}), /Unsupported/);
+  const unchangedEmpty = new DatabaseSync(join(readerRoot, "todo.sqlite"));
+  assert.deepEqual(definitions(unchangedEmpty), []); unchangedEmpty.exec("PRAGMA user_version=99"); unchangedEmpty.close();
+  assert.throws(() => database.withExistingRead(readerRoot, () => {}), /Unsupported/);
+  rmSync(join(readerRoot, "todo.sqlite"));
+  mkdirSync(join(readerRoot, "todo.sqlite"));
+  assert.throws(() => database.withExistingRead(readerRoot, () => {}), /Unsafe/);
+  rmSync(join(readerRoot, "todo.sqlite"), { recursive: true });
+  const initialized = join(scratch, "reader-initialized");
+  database.withRead(initialized, db => database.validateDatabase(db)); // Ordinary full Context still initializes.
+  symlinkSync(join(initialized, "todo.sqlite"), join(readerRoot, "todo.sqlite"));
+  assert.throws(() => database.withExistingRead(readerRoot, () => {}), /Unsafe/);
+  const wal = new DatabaseSync(join(initialized, "todo.sqlite"));
+  const beforeRead = snapshot(wal);
+  assert.throws(() => database.withExistingRead(initialized, db => db.exec("DELETE FROM store_metadata")), /readonly|read-only/i);
+  assert.equal(snapshot(wal), beforeRead);
+  assert.throws(() => database.withExistingRead(initialized, () => { throw new Error("callback failure"); }), /callback failure/);
+  assert.throws(() => database.withExistingRead(initialized, () => Promise.resolve()), /synchronous/);
+  const walSource = await storage.create(initialized, "project", "Before WAL update", "Synthetic existing-store read");
+  wal.prepare("UPDATE owners SET document=json_set(document,'$.title',?) WHERE id=?").run("Committed WAL source update", walSource.todo.id);
+  assert.equal(database.withExistingRead(initialized, (db, root) => database.decodeOwner(root, db.prepare("SELECT id,document FROM owners WHERE id=?").get(walSource.todo.id)).todo.title), "Committed WAL source update");
+  database.withExistingRead(initialized, db => database.validateDatabase(db));
+  assert.throws(() => database.withExistingRead(initialized, () => {}, AbortSignal.abort()), /abort/i);
+  wal.close();
   const f = fixture("legacy");
   const original = snapshot(f.db);
   await assert.rejects(storage.list(f.root), /explicit sqlite-upgrade/);

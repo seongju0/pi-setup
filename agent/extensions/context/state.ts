@@ -45,6 +45,7 @@ export type Changes = Partial<Pick<Todo, "title" | "outcome" | "status" | "depen
   linear?: { url: string; coverage: "whole" | "partial" };
   approval_evidence?: string;
 };
+export const artifactPathPattern = /^artifacts\/[a-f0-9-]+-\d+\.md$/;
 export const idPattern = /^[a-f0-9]{8}-[a-f0-9-]{27}$/;
 export function requireId(id: unknown): asserts id is string {
   if (typeof id !== "string" || !idPattern.test(id)) throw new Error("Invalid todo/record ID");
@@ -109,7 +110,7 @@ export function validate(source: Todo): Todo {
   for (const q of todo.open_questions) { keys(q, ["id", "text", "resolution"]); requireId(q.id); text(q.text); if (q.resolution !== undefined) text(q.resolution); }
   for (const a of todo.artifacts) {
     keys(a, ["id", "title", "kind", "path", "description", "lifecycle", "required", "applies_to"]); requireId(a.id); text(a.title, 300); text(a.kind, 60); text(a.description, 1000);
-    if (!/^artifacts\/[a-f0-9-]+-\d+\.md$/.test(a.path) || !["current", "reference", "superseded"].includes(a.lifecycle) || typeof a.required !== "boolean") throw new Error("Invalid artifact metadata");
+    if (!artifactPathPattern.test(a.path) || !["current", "reference", "superseded"].includes(a.lifecycle) || typeof a.required !== "boolean") throw new Error("Invalid artifact metadata");
     strings(a.applies_to, 100); a.applies_to.forEach(requireId);
     if (a.lifecycle !== "current" && a.required) throw new Error("Only current artifacts can be required");
   }

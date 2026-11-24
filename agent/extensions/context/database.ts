@@ -90,6 +90,31 @@ function transaction<T>(root: string, write: boolean, operation: (db: DatabaseSy
     throw error;
   } finally { db?.close(); }
 }
+/** Existing-store-only reads. SQLite may manage WAL/SHM sidecars; no domain initialization. */
+export function withExistingRead<T>(root: string, operation: (db: DatabaseSync, root: string) => T, signal?: AbortSignal): T {
+  let db: DatabaseSync | undefined;
+  try {
+    signal?.throwIfAborted();
+    root = realpathSync(resolve(root));
+    if (!lstatSync(root).isDirectory()) throw new Error("Existing project root must be a directory");
+    const file = join(root, "todo.sqlite");
+    const info = lstatSync(file);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Unsafe project database: ${file}`);
+    db = new DatabaseSync(file, { readOnly: true, timeout: 1000 });
+    db.exec("BEGIN");
+    try {
+      validateDatabase(db);
+      const result = synchronous(operation(db, root));
+      signal?.throwIfAborted();
+      db.exec("COMMIT");
+      return result;
+    } catch (error) { if (db.isTransaction) db.exec("ROLLBACK"); throw error; }
+  } catch (error) {
+    const sqliteCode = Number((error as Error & { errcode?: number }).errcode) & 0xff;
+    if (sqliteCode === 5 || sqliteCode === 6) throw new Error("Project store is busy; retry", { cause: error });
+    throw error;
+  } finally { db?.close(); }
+}
 export function withRead<T>(root: string, operation: (db: DatabaseSync, root: string) => T): T { return transaction(root, false, operation); }
 export function withWrite<T>(root: string, operation: (db: DatabaseSync, root: string) => T, signal?: AbortSignal): T { return transaction(root, true, operation, signal); }
 export function locator(root: string, id: string, parent?: string): string {

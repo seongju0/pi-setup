@@ -65,6 +65,12 @@ Knowledge summary reads omit the explanation. Content pages contain at most 1200
 
 Project record reads require `expected_revision` on every page. Artifact reads use their **source owner** plus artifact ID and opaque expected version. Required documents load as metadata/read targets, never eager bodies; read relevant bodies before relying on them. A grounding reference alone does not enroll source artifacts; an artifact reference alone does not enroll source records. Own artifacts also enter the brief only through explicit references. New artifact creation atomically adds its owner reference; removing it leaves catalog/history readable. Imported `applies_to` is immutable provenance, not live inheritance.
 
+### Supply context to workers
+
+Subprocesses do not inherit the parent's Context tools, brief or conversation from IDs alone. Supply exact scoped artifact read grants when supported, or complete pinned snapshots/inline material or accessible external file paths through the existing handoff. State source roles, versions/freshness and current execution permissions separately; report missing/conflicting material to the parent rather than expanding scope.
+
+The optional public `delegation.ts` / `reader.ts` integration exposes only fixed, version-pinned `context_project_artifact` reads, not discovery, writers or tasks. It uses existing-store-only read-only SQLite transactions; ordinary full Context initialization is unchanged. SQLite WAL/SHM sidecars may change. The native subagent adapter is optional and must be separately adopted; Context itself has no sibling dependency or worker orchestration. See [assigned artifact reads](docs/delegation.md) for the public API, paging, restore/fallback and authority boundaries.
+
 ### Write safely
 
 `context_project_artifact` upsert requires `id`, `revision` and the complete catalog metadata on every create/update: `title`, `kind`, `description`, `lifecycle`, `required`, `applies_to`. `required:false` and `applies_to:[]` are valid; `body` is optional for metadata-only updates. Read current metadata before updating; omitted fields are not copied or defaulted.
