@@ -89,6 +89,7 @@ export function blockers(state: State, task: Task): string[] {
 
 export function apply(state: State, input: Input): { state: State; tasks: Task[]; changed: boolean } {
   if (input.action === "list") return { state, tasks: state.tasks, changed: false };
+  if ((input.action === "get" || input.action === "update") && input.id === undefined) throw new Error("Task get/update requires id; use result.tasks[0].id from create");
   if (input.action === "get") {
     const task = state.tasks.find(task => task.id === input.id);
     if (!task) throw new Error(`Task #${input.id ?? "?"} does not exist`);

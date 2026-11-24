@@ -24,6 +24,8 @@ function limit(value: unknown, max: number) { if (value !== undefined && (!Numbe
 /** Shared public facade validation, including adapter-owned session actions. No reads or UI. */
 export function validateContextInput(input: unknown): asserts input is ContextInput {
   object(input, ["action", "kind", "include_closed", "limit", "cursor", "query", "scope_project_id", "view", "selector", "id", "section", "revision", "offset", "expected_version"]);
+  if (input.action === "read" && !["project", "knowledge"].includes(input.kind)) throw new Error('Read requires kind: "project" with selector, or kind: "knowledge" with id');
+  if (input.action === "read" && input.kind === "project" && Object.hasOwn(input, "id")) throw new Error('Project read requires kind: "project" and selector; id is forbidden (use selector instead)');
   const actions: Record<string, string[]> = { status: [], list: ["kind", "include_closed", "limit", "cursor"], search: ["query", "kind", "scope_project_id", "view", "limit", "cursor"], read: input.kind === "project" ? ["kind", "selector", "view"] : ["kind", "id", "section", "revision", "offset", "limit", "expected_version"], attach: ["selector"], refresh: [], detach: [] };
   if (!actions[input.action]) throw new Error("Invalid context action");
   object(input, ["action", ...actions[input.action]]);
@@ -37,7 +39,6 @@ export function validateContextInput(input: unknown): asserts input is ContextIn
   if (input.view !== undefined && !["active", "full"].includes(input.view)) throw new Error("Invalid view");
   if (input.action === "attach" || input.action === "read" && input.kind === "project") text(input.selector, 2000, "selector");
   if (input.action === "read") {
-    if (!["project", "knowledge"].includes(input.kind)) throw new Error("Read requires kind project or knowledge");
     if (input.kind === "knowledge") validateKnowledgeRead(input);
   }
 }

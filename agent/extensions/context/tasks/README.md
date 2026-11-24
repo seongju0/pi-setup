@@ -12,6 +12,13 @@ The `task` tool supports:
 { action: "update", id: "2", dependsOn: ["1"] }
 ```
 
+Codemode returns `{ tasks, storage }`. Create, get and update return the affected task in `tasks[0]`; list returns all tasks. There is no root `result.id`. Native text displays the single affected task for create/get/update, not the codemode envelope. Get and update require an explicit `id`.
+
+```ts
+const result = await tools.task({ action: "create", subject: "Fix authentication", description: "Acceptance criteria…" });
+await tools.task({ action: "update", id: result.tasks[0].id, status: "in_progress" });
+```
+
 Statuses: `pending`, `in_progress`, `completed`, `failed`, `cancelled`.
 Only completed dependencies unblock a task. Setting `dependsOn` replaces the complete dependency list; `[]` clears it. Missing references, self-dependencies, and cycles are rejected. Tasks cannot start or complete while blocked.
 

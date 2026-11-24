@@ -76,7 +76,7 @@ export function rejectRetiredCurrentState(input: unknown) {
 }
 function validateEvidence(rows: unknown): asserts rows is Evidence[] {
   if (!Array.isArray(rows)) throw new Error("Expected evidence records");
-  if (rows.length > 30) throw new Error(`Evidence holds at most 30 records; this change leaves ${rows.length}. Remove or consolidate entries by ID in the same change.`);
+  if (rows.length > 30) throw new Error(`Evidence holds at most 30 records; this change leaves ${rows.length}. Update an existing changed finding by ID instead of adding a correction (record count unchanged); if new understanding needs room, remove or consolidate entries by ID in the same change.`);
   for (const row of rows) { keys(row, ["id", "text"]); requireId(row.id); text(row.text); }
   if (new Set(rows.map(row => row.id)).size !== rows.length) throw new Error("Duplicate evidence IDs");
 }

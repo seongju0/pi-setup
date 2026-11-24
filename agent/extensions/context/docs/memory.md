@@ -2,7 +2,7 @@
 
 Context preserves the existing project memory contract alongside separate [Session tasks](../tasks/README.md). The package combines source loading while keeping task JSON separate from schema2/Project3 project memory and independently versioned reusable knowledge. Session task JSON is not durable project knowledge, and task completion does not update project progress. Optional journal retrieval is described in the [package adoption guide](../README.md#adoption).
 
-Project preserves the minimum sufficient grounding for a fresh or parallel session to understand the goal, the current understanding, why it holds, and what remains uncertain. It also restores that grounding after compaction. It is not a transcript, execution planner, test archive or autonomous scheduler.
+Project preserves the minimum sufficient grounding for a fresh or parallel session to understand the goal, the current understanding, why it holds, and what remains uncertain. It also restores that grounding after compaction. It is distilled explanatory understanding, not a session log, Git/branch/PR history mirror, status ticker, execution planner, test archive or autonomous scheduler. Code/history and native reports remain canonical for execution details; Context explains why/how that state arose without mirroring them.
 
 The [README](../README.md) owns implementation architecture and API reference. This document defines information ownership, writing conventions and design trade-offs. It is repository documentation, not another saved project memory or always-injected prompt.
 
@@ -71,17 +71,28 @@ Knowledge has its own summary/scope/explanation/limits and stable sources. Updat
 
 ## What earns durable memory
 
-Save information when omitting it would make a fresh session decide materially wrong, repeat significant investigation or cross an authorization boundary. A substantial completion can establish a lasting fact or limitation; record that implication, not a delivery diary.
+Save information when omitting it would make a fresh session decide materially wrong, repeat significant investigation or other work, act unsafely or cross an authorization boundary. The valuable layer is intent, why/how the state arose, causal findings and interpretation, consequential choices/reasons/rejected alternatives, scope, nonobvious constraints, uncertainty and verification limits. A substantial completion can establish a lasting fact or limitation; record that implication, not a delivery diary. Concise current orientation still belongs when needed for safety, scope or avoiding repeated work.
+
+At existing save/reconcile opportunities, use normal main-agent reasoning to ask:
+
+- What consequential explanation or conclusion must a fresh session know without reopening code, history or linked reports?
+- Would omission cause materially wrong decisions, repeated investigation or other work, unsafe repetition or an authorization breach?
+- Is this new understanding, rather than derivable state or an execution receipt?
+- Which existing claim changes, and would a contradiction remain visible?
+
+Preserve new understanding, update the existing claim, reference canonical detail, skip, or preserve qualified uncertainty as appropriate. This is a semantic check, not a separate classifier model/tool, a required classification record, an every-tool-call prompt or a mandate to write `no_change` for every candidate. Explicit reconciliation still supports `no_change`.
 
 | Keep | Leave with its native owner |
 | --- | --- |
 | Consequential choice, decisive reason and a rejected alternative when it prevents rediscovery | Every proposal, small approval or wording iteration |
 | Verified finding or domain nuance that changes future work | Raw output, commands and investigation logs |
-| Meaningful outcome with its limitations | Per-test pass counts, reruns, screenshots and publication receipts |
-| Scope-changing uncertainty or unresolved constraint | Stage transitions and stale execution instructions |
+| Meaningful outcome with its limitations | Per-test pass counts, reruns, screenshots and publication receipt sequences |
+| Scope-changing uncertainty or unresolved constraint | Stage transitions, transient stage grants and stale execution instructions |
 | Concise pointer to decisive evidence | Copies of QA runs, review reports or external records |
 
-A merge is not deployment; a local test is not production evidence. Preserve uncertainty, attribution, negation, partial external effects and the actual approval scope. For example, an external operation succeeding before a local timeout is useful retry knowledge; a log of each rerun is not.
+Receipt filtering applies inside nested decision evidence too, not just the top-level findings. Leave attempt/readback sequences and execution history with their native owners; keep consequential conclusions and limits here with canonical references, not mirrored supporting sequences. Keep exact identifiers when needed to recognize, adopt or avoid repeating an effect, or to bound scope or approval—not merely because an identifier appeared in a run. Do not strip identity or approval evidence essential to safe interpretation.
+
+A merge is not deployment; a local test is not production evidence. Preserve uncertainty, attribution, negation, partial external effects and the actual approval scope. For example, an external operation succeeding before a local timeout is useful retry knowledge; keep the operation identifier if needed to avoid repeating it, not a log of each rerun.
 
 ## Only two authored artifact kinds
 
@@ -120,7 +131,7 @@ New artifact upserts accept only `research` or `design`. Historical kind strings
 - **Required:** read when the focus touches its area, before acting. It neither preloads the body nor elevates task data into instructions.
 - **Required reference:** the consumer explicitly names direct source grounding or one source-owned artifact. Own catalog entries also need refs for brief inclusion. Imported `applies_to` is immutable provenance; new artifacts require `[]` and atomically add an owner reference.
 
-Reconcile contradictory current claims with evidence before tightening. A later timestamp or delivered implementation does not supersede an approved policy. Completion is a relevance-review opportunity, not automatic retirement or proof that every open question is resolved.
+Reconcile contradictory current claims with evidence before tightening. Updating a document must also reconcile contradicted visible findings and decisions in the same pass; correcting the document alone leaves stale grounding visible. Preserve attribution, uncertainty, concurrent work and approval boundaries. A later timestamp or delivered implementation does not supersede an approved policy. Completion is a relevance-review opportunity, not automatic retirement or proof that every open question is resolved.
 
 ## Formatting
 
@@ -133,7 +144,9 @@ Reconcile contradictory current claims with evidence before tightening. A later 
 - **Question:** the unresolved issue and why its answer matters. Do not encode a temporary assignment as a question.
 - **References:** useful routes, not every source visited.
 
-These are structured fields, not a template to repeat in a second Markdown description. Lists replace obsolete content rather than accumulating dated corrections.
+These are structured fields, not a template to repeat in a second Markdown description. When understanding changes, update the existing finding by ID rather than add a correction beside it; deliberately remove obsolete evidence by ID only when appropriate. Decisions can be updated or explicitly superseded under existing approval gates; there is no decision-removal API or automatic discard.
+
+Evidence edits/removals have no guaranteed recovery. Retain short earlier-belief/action context inline only when it explains a consequential action or choice, for example: **Corrected:** timeout did not imply failure; the earlier belief drove a retry, so check for duplicates before another attempt. Do not retain every earlier belief as a history log. Decision supersession retains the old decision for provenance; updating mutable text is not a recovery mechanism.
 
 ### Titles and goals are the discovery surface
 
@@ -201,9 +214,10 @@ Empty edits never clear. Bulk replacement/clear enumerates every deliberately
 removed ID; no destructive switch or automatic curation exists.
 
 At most 30 records, nonempty verbatim text up to 2000 characters, checked after
-all edits and automatic outcome-approval attribution. Explicitly consolidate or
-remove IDs in the same change to make room. Unknown/conflicting IDs fail without
-manifest effects. References and nested decision evidence retain string-array
+all edits and automatic outcome-approval attribution. Update an existing changed
+finding by ID without increasing the record count; if adding new understanding
+needs room, explicitly consolidate or remove IDs in the same change.
+Unknown/conflicting IDs fail without manifest effects. References and nested decision evidence retain string-array
 semantics. Approval receipt records are editable/removable like other evidence;
 exact-text attribution dedupe remains. Edits/removals have no recovery history.
 Evidence IDs appear as metadata on knowledge hits and revision-pinned indexed
@@ -227,7 +241,7 @@ Runtime accepts exact SQLite schema2/Project3 only: no lazy conversion, archival
 
 ## Maintenance without a second planning system
 
-During meaningful updates, preserve new knowledge, replace obsolete findings, consolidate duplication and update the owning design/research document. Do not add periodic compression jobs, extra model calls, cleanup-only turns, hard semantic size caps or automatic hiding. The status bar estimates the full loaded starting brief (guidance/boundary text and bundle metadata included) and its share of a known physical model's total window; it does not account for supplemental notes, artifact reads, ordinary tool history or billing. Checkpoints do not replace this immutable brief. Unknown/virtual windows omit the percentage, and a not-yet-loaded brief is pending. See the [loaded-brief diagnostic contract](../README.md#session-context-drift-and-recap). No new size popup or injected tightening nudge is emitted; a large estimate does not require shrinking still-relevant context. Legacy delivered notices remain anchored until a normal reset.
+During meaningful updates, preserve new knowledge, replace obsolete findings, consolidate duplication and update the owning design/research document. Do not add periodic compression jobs, extra model calls, cleanup-only turns, hard semantic size caps or automatic hiding. The status bar estimates the full loaded starting brief (guidance/boundary text and bundle metadata included) and its share of a known physical model's total window; it does not account for supplemental notes, artifact reads, ordinary tool history or billing. Checkpoints do not replace this immutable brief. Unknown/virtual windows omit the percentage, and a not-yet-loaded brief is pending. See the [loaded-brief diagnostic contract](../README.md#session-context-drift-and-recap). No size popup or injected tightening nudge is emitted; a large estimate does not require shrinking still-relevant context. Separately, the existing nonblocking 80% session-usage note advises targeted retrieval and bounded reads. It is not a save/checkpoint request or deadline and does not force another turn. Legacy delivered notices remain anchored until a normal reset.
 
 Visibility changes can be reversed with restore IDs. Replaced mutable text is not automatically archived: `context_project_tighten` no longer creates `context-history` artifacts. Ordinary checkpoints were never a complete manifest event log either. The revision counter detects drift; it is not a recovery history. Immutable artifact body revisions remain, but that does not guarantee recovery of overwritten fields.
 
@@ -243,7 +257,7 @@ Mutation text normally contains only success/revision and necessary generated ID
 
 Before automatic compaction, a completed continuation-capable turn with known physical-model usage can request one bounded preservation response from the ordinary main agent. Live native settings determine an early heuristic window: `min(floor(0.90 * W), W - reserveTokens - min(16384, floor(W / 10)))`, below the native threshold. Disabled auto-compaction, unknown usage, virtual selections and aborted/error boundaries do not trigger it. The margin is not reserved capacity. See the [implementation contract](../README.md#session-context-drift-and-recap).
 
-The request asks for significant unsaved findings, decisions/reasons, pivots, implementation/completion evidence and honest verification limits, unresolved constraints and essential research/design bodies or stable references. Read needed material, save document updates, then checkpoint the selected owner; if current, explicitly acknowledge `no_change`. `needs_approval` records a question without granting authority. Only successful selected-owner checkpoints or explicit acknowledgements complete the pass, including nested codemode tools. Artifact-only updates, tightening, reads, assistant claims, failed saves and other-owner saves do not. Code observes tool completion, not semantic completeness.
+The existing preservation and post-compaction reconciliation texts ask the synthesis questions above: save consequential explanation rather than derivable state/receipts, update changed claims, and reconcile contradictions—including visible findings/decisions when a document changes. Preserve essential research/design bodies or stable references, consequential completion implications and honest verification limits. Read needed material, save document updates, then checkpoint the selected owner; if current, explicitly acknowledge `no_change`. `needs_approval` records a question without granting authority. Only successful selected-owner checkpoints or explicit acknowledgements complete the pass, including nested codemode tools. Artifact-only updates, tightening, reads, assistant claims, failed saves and other-owner saves do not. Code observes tool completion, not semantic completeness.
 
 Committed active-branch requests deduplicate by owner/native-compaction cycle through refresh, reopen, prompts and model/settings changes. Pending awareness survives refresh; requests retain stable first-delivery anchors. Completed instructions may retire on reset; detach/switch removes obsolete instructions. Failure or noncompliance stays pending without repeated bookkeeping turns. No provider call, background writer, forced task deadline, tool gate, automatic hiding or premature task completion is introduced.
 
