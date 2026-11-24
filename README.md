@@ -63,10 +63,13 @@ Subagents require sibling web-search source unless callers explicitly use
 | [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly, with shared illustrations and PR walkthrough guidance |
 | [writing-skills](agent/skills/writing-skills/SKILL.md) | Author focused skills |
 
-`peer-review` requires sibling `review`, `codebase-design` and
-`build/references/testing.md`, plus PR/source access. Copy `walkthrough/` too for
-combined explanation and evaluation; its `references/pr-walkthrough.md` guides
-chat-first PR explanations without requiring a review. Copy whole directories
+`peer-review` requires sibling `review`, `codebase-design`, `walkthrough` and
+`build/references/testing.md`, plus PR/source access. Reports explain practical
+findings and draft `[fix]`/`[nit]` review comments without posting them.
+Temporary source-only review worktrees and scoped local execution use the external
+`qa-toolkit` skill plus project-native guidance; runtime setup is not bundled.
+Walkthrough's `references/pr-walkthrough.md` guides chat-first PR explanations
+without requiring a review. Copy whole directories
 and preserve local changes. Neither requires `summarize-pr` or HTML tooling;
 see the peer-review README for adoption and validation boundaries.
 `draft-pr` also requires the sibling `walkthrough/` directory, including its PR

@@ -36,11 +36,13 @@ For consequential structural changes, read [Codebase Design](../codebase-design/
 
 Challenge unnecessary mechanisms even when the spec prescribes them. Guards, locks, re-checks, recovery paths and abstractions must serve a supported flow, not duplicate another owner's protection. Preserve approved outcomes; surface conflicts without redefining requirements or demanding an unrelated redesign. If a fix creates more edge cases, reconsider it before adding exceptions.
 
-A missing-guard concern must name:
-- The triggering caller sequence.
-- Its plausibility and uncertainty.
-- The consequence.
-- Why existing validation, policy ownership or retained coverage is insufficient.
+Connect each potential finding to the practical flow before reporting it:
+- **Reachability:** name the triggering caller sequence—normal action, stale page, retry, supported alternate caller or deliberately modified request—and its plausibility and uncertainty. Distinguish a demonstrated normal-flow failure from a bypass or hypothetical sequence.
+- **Consequence:** explain what goes wrong for the user or downstream consumer.
+- **Why actionable:** identify the required behavior or invariant violated, and why existing validation, policy ownership or retained coverage is insufficient. Distinguish a contract violation from an accepted trade-off or merely possible hardening.
+- **Recommendation:** choose a justified fix, useful optional improvement, unresolved flow question or no action. Resolve consequential questions from code where practical; uncertainty alone does not make a finding.
+
+Use these connections to explain the judgment, not as mandatory report headings. A missing-guard concern needs the same evidence; proving a bypass exists does not by itself establish normal-flow breakage or a required fix.
 
 A constructible race, failure or attack is not by itself a required fix. Decline speculative extras instead of making them findings or questions. If material hardening is worth recommending, explain its implementation and maintenance cost and distinguish it from a confirmed defect in required behavior.
 
