@@ -1,6 +1,6 @@
-# PR illustration examples
+# Illustration examples
 
-These are illustrative mechanics, not application facts or ready-made PR text.
+These are illustrative mechanics, not application facts or ready-made output.
 Choose and adapt only the views that explain the actual change; do not include
 this whole catalogue or copy its behavior without verifying it.
 
@@ -85,6 +85,20 @@ Use aligned rows when the reader needs to scan how several actions differ.
 | Clear | On | Reset to defaults |
 
 A lone rule such as “missing identity rejects the request” needs no table.
+
+### Record lifecycle: what does each state mean?
+
+Separate state meanings from the rules that enforce them. For a hypothetical
+export request:
+
+| State | Meaning | Recorded time |
+| --- | --- | --- |
+| `queued` | Accepted, waiting for processing | `queued_at` |
+| `canceled` | Canceled before processing | `canceled_at` |
+| `completed` | Processing finished; does not establish delivery to a recipient | `completed_at` |
+
+Put independent rules, such as one queued request per account, below the table.
+Verify the actual transitions, time fields and enforcement before using this shape.
 
 ### Delivery boundary: what is connected now versus merely available?
 
