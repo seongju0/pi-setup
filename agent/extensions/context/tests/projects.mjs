@@ -201,6 +201,7 @@ try {
   assert.equal(restoreSelection(pi.stored), child.todo.id);
   const [context] = await pi.emit("context", { messages: [] });
   assert.match(context.messages.at(-1).content, /Converter tested/);
+  assert.match(context.messages.at(-1).content, /Is this new understanding rather than derivable state or a receipt\?/); // Semantic save check reaches the main agent through the real brief loader, not proof of adherence.
   assert.doesNotMatch(context.messages.at(-1).content, /Observe.*current_state/);
   // A malformed unrelated owner must not prevent an attached session from watching its own scope.
   const siblingJSON = savedJSON(sibling);
