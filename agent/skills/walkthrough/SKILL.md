@@ -7,12 +7,15 @@ description: Explain how something works or will change (behavior, architecture,
 
 Make the topic easy to understand, not merely shorter or more decorated. Use this method for substantive explanations and authored writing; routine replies can stay brief.
 
+When explaining a PR or its changes, also read [PR walkthroughs](references/pr-walkthrough.md). Evaluation requests retain the review skill's rubric; explaining a change is not a completed review.
+
 ## Approach
 
 - Start with the central idea and a concrete user situation. Explain purpose and behavior before implementation names; name who does what and define unfamiliar terms when needed.
 - Answer the current question. A follow-up usually needs the missing distinction or new information, not another complete overview. Match requested depth; omit incidental plumbing, file inventories and repeated summaries.
 - When multiple parts interact, follow one representative action from entry to outcome. Connect the important callers, decisions, state changes, effects and failure boundaries. Use code names where they help navigation; a localized change may need only a sentence.
 - Ground explanations in the conversation and relevant sources. Distinguish implemented behavior, proposed changes and unverified concerns. Keep consequential constraints and uncertainty beside the step they affect. Explain a risk’s practical trigger and consequence before promoting it as a reason for more work.
+- Keep prose short, plain and concrete—even when the whole answer fits in a paragraph. Use a small illustration to carry a relationship, sequence or contrast rather than compressing it into dense prose. Prose explains purpose and significance; the illustration carries the connections.
 - Use familiar, precise words rather than compressed internal shorthand. “I saved a note and read it back” is clearer than “write/readback verification passed.”
 
 ## Illustrations

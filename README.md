@@ -56,11 +56,19 @@ Subagents require sibling web-search source unless callers explicitly use
 | [draft-pr](agent/skills/draft-pr/SKILL.md) | Create draft PRs and refine existing titles and descriptions |
 | [handoff](agent/skills/handoff/SKILL.md) | Transfer work to an independent session |
 | [linear-issues](agent/skills/linear-issues/SKILL.md) | Write and organize issues and milestones |
+| [peer-review](agent/skills/peer-review/README.md) | Evaluate a PR using the shared review and pragmatic design standards |
 | [plan](agent/skills/plan/SKILL.md) | Produce a codebase-verified, build-ready implementation plan |
 | [research](agent/skills/research/SKILL.md) | Coordinate read-only Herdr research |
 | [review](agent/skills/review/SKILL.md) | Review correctness, regressions and tests |
-| [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly |
+| [walkthrough](agent/skills/walkthrough/SKILL.md) | Explain behavior and architecture clearly, with conditional PR walkthrough guidance |
 | [writing-skills](agent/skills/writing-skills/SKILL.md) | Author focused skills |
+
+`peer-review` requires sibling `review`, `codebase-design` and
+`build/references/testing.md`, plus PR/source access. Copy `walkthrough/` too for
+combined explanation and evaluation; its `references/pr-walkthrough.md` guides
+chat-first PR explanations without requiring a review. Copy whole directories
+and preserve local changes. Neither requires `summarize-pr` or HTML tooling;
+see the peer-review README for adoption and validation boundaries.
 
 `authed-browser` requires the external [Search browser and upstream `search-mcp`](https://github.com/driceroland/Search#testing-it-without-closing-it),
 Python 3, and coding-agent control enabled in Search. Obtain the bridge from its

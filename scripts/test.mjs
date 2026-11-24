@@ -52,7 +52,7 @@ try {
   const skills = loadSkills({ cwd: scratch, agentDir: env.PI_CODING_AGENT_DIR, skillPaths: [join(env.PI_CODING_AGENT_DIR, "skills")], includeDefaults: false });
   assert.deepEqual(skills.diagnostics, []);
   assert.equal(skills.skills.length, skillDirs.length);
-  for (const name of ["plan", "draft-pr"]) {
+  for (const name of ["plan", "draft-pr", "peer-review"]) {
     const renamed = skills.skills.filter(skill => skill.name === name);
     assert.equal(renamed.length, 1, `Copied catalog exposes exactly one ${name} skill`);
     assert.equal(renamed[0].filePath, join(env.PI_CODING_AGENT_DIR, "skills", name, "SKILL.md"));
