@@ -21,6 +21,8 @@ When explaining a PR or its changes, also read [PR walkthroughs](references/pr-w
 
 Use visuals proactively when they make the relationship easier to follow; do not wait for an explicit request. Choose the smallest useful view and put it beside the explanation. When the best view is unclear, read [Illustration examples](references/illustration-examples.md); adapt the pattern, not its hypothetical behavior.
 
+For processes, decisions and interacting rules, prefer a compact illustration as the main explanation when it makes the logic easier to follow. Let it carry the mechanics; use brief prose for purpose and important limits rather than retelling the view. Use prose alone when clearer.
+
 | Reader needs to follow | Useful form |
 |---|---|
 | A simple point | A sentence or short paragraph |
