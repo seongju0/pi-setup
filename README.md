@@ -87,8 +87,15 @@ Walkthrough's `references/pr-walkthrough.md` guides chat-first PR explanations
 without requiring a review. Copy whole directories
 and preserve local changes. Neither requires `summarize-pr` or HTML tooling;
 see the peer-review README for adoption and validation boundaries.
-`draft-pr` also requires the sibling `walkthrough/` directory, including its PR
-walkthrough guidance and shared `references/illustration-examples.md` catalogue.
+`draft-pr` separates its PR workflow from shared
+[`references/title-and-description.md`](agent/skills/draft-pr/references/title-and-description.md)
+writing guidance. Copy the whole directory and the sibling `walkthrough/`, including
+its PR reference and illustration catalogue. A project-owned `draft-pr/SKILL.md`
+can retain local preview, testing and publication procedures while reading the
+same shared writing reference; remove competing prose rules rather than fork it.
+Walkthrough stays a top-level skill for use beyond PR authoring. Entry points link
+directly to the task's required guides; title-only work skips explanation guides,
+and the illustration catalogue is conditional.
 
 `authed-browser` requires the external [Search browser and upstream `search-mcp`](https://github.com/driceroland/Search#testing-it-without-closing-it),
 Python 3, and coding-agent control enabled in Search. Obtain the bridge from its

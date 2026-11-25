@@ -71,6 +71,9 @@ try {
   for (const relative of [
     ...["plan", "build", "review", "deliver", "peer-review"].map(name => `${name}/SKILL.md`),
     "peer-review/README.md", "build/references/code-changes.md", "build/references/testing.md",
+    "draft-pr/SKILL.md", "draft-pr/references/title-and-description.md",
+    "walkthrough/SKILL.md", "walkthrough/references/pr-walkthrough.md",
+    "walkthrough/references/illustration-examples.md",
   ]) {
     const file = join(env.PI_CODING_AGENT_DIR, "skills", relative);
     const body = await readFile(file, "utf8");

@@ -1,6 +1,6 @@
 # PR walkthroughs
 
-Explain how the requested change fits into the real workflow, not just what its diff contains. Use the main Walkthrough guidance for concise language, illustrations and destination. A walkthrough explains; it does not imply a correctness review or runtime verification.
+Explain how the change fits into the real workflow using Walkthrough's method. This is explanation, not a correctness review or runtime verification.
 
 ## Ground the explanation
 
@@ -18,6 +18,4 @@ Lead with the change's purpose in plain words: “The previous layer built the b
 - **Contracts and behavior:** explain changed inputs, results, state transitions and failures at the step they affect. Moving code is not automatically behavior-neutral; a new helper is not automatically wired into the live flow.
 - **Bottom line:** state the practical change and its relationship to adjacent work. Keep material uncertainty beside the claim it limits.
 
-Use short prose to explain why; let a small flow, comparison, table or focused example carry the connections. Link important claims to code without turning the walkthrough into a file inventory. Include known findings only where they help explain the behavior; distinguish established issues from questions and do not launch a separate review unless requested.
-
-On follow-up, answer the missing distinction, not the whole PR again. For example, “the builder enforces the restriction; the lifecycle owns the transition; the shared booker orders their calls” plus a small flow may be enough. Scale detail to what the reader needs, not diff size, a section quota or an arbitrary word budget.
+Link important claims to code without a file inventory. Include known findings only where they explain behavior, separating established issues from questions. Do not launch a separate review unless requested; scale detail to the reader's need, not diff size or a section quota.

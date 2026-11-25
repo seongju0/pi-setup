@@ -1,12 +1,10 @@
 # Illustration examples
 
-These are illustrative mechanics, not application facts or ready-made output.
-Choose and adapt only the views that explain the actual change; do not include
-this whole catalogue or copy its behavior without verifying it.
+These are hypothetical patterns, not application facts or ready-made output. Choose only the views that answer the reader's question; verify behavior against the actual sources.
 
-### Responsibility split: what moved, and what stayed?
+## Ownership: what moved, and what stayed?
 
-One component no longer owns both delivery mechanics and workflow effects.
+Use a small before/after when the important change is responsibility:
 
 ```text
 BEFORE                         AFTER
@@ -15,81 +13,46 @@ Sender                         Sender
 └─ workflow completion         └─ completion → WorkflowLifecycle
 ```
 
-### User journey: where does the person enter and return?
+Distinguish a connected user path from an API-only capability; a new owner is not proof that callers use it.
 
-After completing one item, return to the same list rather than ending the journey.
+## Partial success: what remains when a later step fails?
 
-```text
-Request list → select item → complete action → Done → same list
-                                                     ├─ items remain → continue
-                                                     └─ none remain  → finished
-```
-
-### Routing and convergence: what selects the owner?
-
-Explicit request type chooses the policy; both paths retain one response contract.
-
-```text
-Verified request + explicit type
-              ├─ Standard → StandardResolver ─┐
-              └─ Partner  → PartnerResolver ─┴→ Context → API response
-```
-
-### Failure and recovery: what survives, and what repeats?
-
-Persist the accepted handoff before delivery so a transport retry does not create
-another request.
-
-```text
-Accept request → save receipt → deliver receipt ID
-                                 ├─ succeeds → handed off
-                                 └─ fails    → retry same ID
-                                               saved receipt remains
-```
-
-Include the failure branch when it explains a consequential contract—not every
-possible exception. A larger decision pipeline may be clearer in Mermaid:
+Use a sequence when message order between actors matters. For one action's outcomes, a short indented tree may be clearer:
 
 ```mermaid
-flowchart LR
-  A[Qualified results] --> B[Apply user filters]
-  B --> C{Priority enabled?}
-  C -->|Yes| D[Move preferred matches first]
-  C -->|No| E[Keep filtered order]
-  D --> F[Paginate]
-  E --> F
+sequenceDiagram
+    participant W as Worker
+    participant E as External service
+    participant F as Follow-up
+    W->>E: Perform action
+    E-->>W: Action saved
+    W->>F: Signal completion
+    alt Recorded
+        F-->>W: Acknowledge
+    else Follow-up unavailable
+        F-->>W: Failure
+        Note over W,E: Saved action remains
+    end
 ```
 
-### Concrete input/output: what does the algorithm actually do?
+An overall failure does not mean nothing happened. Explain what remains and how retries handle it; don't imply rollback, automatic repair or exactly-once behavior without source evidence.
 
-Priority changes ordering, not membership or eligibility.
+## Input/output: what does the algorithm change?
+
+Concrete values can show that priority changes order, not membership:
 
 ```text
 Filtered order:           [A, B, Preferred, C]
-Priority ON, first 2:      [Preferred, A]       total = 4
-Priority OFF, first 2:     [A, B]               total = 4
-Filter removes Preferred: [A, B, C]            priority cannot add it back
+Priority ON, first 2:     [Preferred, A]       total = 4
+Priority OFF, first 2:    [A, B]               total = 4
+Filter removes Preferred: priority cannot add it back
 ```
 
-This can complement a pipeline diagram: the diagram locates the operation;
-the example demonstrates its effect.
+Use a decision flowchart instead when the reader needs to locate branches or loops; don't add both views unless they answer different questions.
 
-### Action/outcome table: which differences should readers compare?
+## State meanings: what is recorded, and what does it prove?
 
-Use aligned rows when the reader needs to scan how several actions differ.
-
-| Action | Priority | Filters |
-| --- | --- | --- |
-| Open default view | On | Defaults |
-| Edit a filter | Off | User selection |
-| Clear | On | Reset to defaults |
-
-A lone rule such as “missing identity rejects the request” needs no table.
-
-### Record lifecycle: what does each state mean?
-
-Separate state meanings from the rules that enforce them. For a hypothetical
-export request:
+For a hypothetical export request:
 
 | State | Meaning | Recorded time |
 | --- | --- | --- |
@@ -97,19 +60,20 @@ export request:
 | `canceled` | Canceled before processing | `canceled_at` |
 | `completed` | Processing finished; does not establish delivery to a recipient | `completed_at` |
 
-Put independent rules, such as one queued request per account, below the table.
-Verify the actual transitions, time fields and enforcement before using this shape.
+Keep independent rules, such as one queued request per account, beside the table. Use a state diagram when transitions—not state meanings—are the question.
 
-### Delivery boundary: what is connected now versus merely available?
+## Time boundaries: what happens at the cutoff?
 
-Show new capability separately from the existing user path so reviewers do not
-mistake an API addition for a launched feature.
+For a hypothetical UTC window that includes its start and excludes its end:
 
 ```text
-CONNECTED: Existing screen → new command → existing workflow
-API ONLY:  New client type → new command → new lifecycle
-                            No screen or entry link yet
+10:00                         10:15
+start (included) ------------ end (excluded)
+
+09:59:59 → outside
+10:00:00 → inside
+10:14:59 → inside
+10:15:00 → outside
 ```
 
-Use a screenshot or recording instead when the important difference is visual
-layout or interaction; label what it demonstrates and any unverified effects.
+Show equality explicitly when it matters; verify the actual timezone, precision and inclusion rules rather than assuming this example's window semantics.
