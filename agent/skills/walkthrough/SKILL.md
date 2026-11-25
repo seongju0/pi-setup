@@ -36,7 +36,7 @@ Use visuals proactively when they make the relationship easier to follow; do not
 | Visible layout or interaction | A screenshot or recording, labelled with what it demonstrates |
 | Actionable work, progress, risk or a decision | Task list, known count, status label or callout |
 
-Use another view only when it answers a different important question. Do not force a visual, diagram type, number of sections or reply template.
+Treat these examples as inspiration, not an exhaustive menu or required format. Adapt, combine, or invent a simpler view for the information at hand. When a diagram explains the general rule, a small worked example can show its consequences; include both only when they answer different reader questions. Do not force a visual, diagram type, number of sections or reply template.
 
 Keep labels short, connections source-grounded and diagrams readable at the destination’s width. Split a dense diagram rather than shrinking it. Prose explains purpose and limits; the visual carries connections.
 
