@@ -19,3 +19,13 @@ Follow the repository's PR procedures. Read applicable guidance fully:
 4. **Verify.** Read back the saved title/body and metadata, checking accuracy and explanatory quality. Return the PR link and a brief result. After a failed or uncertain write, inspect remote state before retrying.
 
 Commit/push preparation must stay within the active request or workflow; do not change implementation merely to improve a description.
+
+## Media
+
+When including screenshots or recordings, label what each shows:
+
+- For before/after screenshots of the same view, prefer a side-by-side table if both remain readable; otherwise stack them at full width.
+- Show new-only views as new rather than inventing a before.
+- Use short recordings for interaction paths, with a caption explaining the action and result. For recorded comparisons, prefer separate labeled Before and After clips rather than forcing them into a screenshot table.
+
+This does not require media or a media section for every PR, or authorize new capture/testing work.
