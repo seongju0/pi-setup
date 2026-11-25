@@ -144,7 +144,7 @@ Reconcile contradictory current claims with evidence before tightening. Updating
 - **Question:** the unresolved issue and why its answer matters. Do not encode a temporary assignment as a question.
 - **References:** useful routes, not every source visited.
 
-These are structured fields, not a template to repeat in a second Markdown description. When understanding changes, update the existing finding by ID rather than add a correction beside it; deliberately remove obsolete evidence by ID only when appropriate. Decisions can be updated or explicitly superseded under existing approval gates; there is no decision-removal API or automatic discard.
+These are structured fields, not a template to repeat in a second Markdown description. When understanding changes, update the existing finding by ID rather than add a correction beside it; deliberately remove obsolete evidence by ID only when appropriate. Decisions upsert by stable ID: omitted `supersedes` preserves the stored link; an explicit target retargets under whole-graph validation. Required summary/rationale/approval/evidence are replacements, not deep merges. Approval gates cover the submitted/existing decision and effective/prior supersession targets, so editing a draft successor or retargeting away from an approved predecessor still requires sign-off. Stored approval is not current authority. There is no unlink or decision-removal API or automatic discard.
 
 Evidence edits/removals have no guaranteed recovery. Retain short earlier-belief/action context inline only when it explains a consequential action or choice, for example: **Corrected:** timeout did not imply failure; the earlier belief drove a retry, so check for duplicates before another attempt. Do not retain every earlier belief as a history log. Decision supersession retains the old decision for provenance; updating mutable text is not a recovery mechanism.
 
@@ -216,7 +216,10 @@ removed ID; no destructive switch or automatic curation exists.
 At most 30 records, nonempty verbatim text up to 2000 characters, checked after
 all edits and automatic outcome-approval attribution. Update an existing changed
 finding by ID without increasing the record count; if adding new understanding
-needs room, explicitly consolidate or remove IDs in the same change.
+needs room, explicitly consolidate or remove IDs in the same change. Automatic
+outcome-approval provenance consumes a record even with no evidence additions;
+at capacity, consolidate or explicitly remove a chosen existing ID in that same
+change to retain the essential receipt. Failure is atomic; nothing is auto-deleted.
 Unknown/conflicting IDs fail without manifest effects. References and nested decision evidence retain string-array
 semantics. Approval receipt records are editable/removable like other evidence;
 exact-text attribution dedupe remains. Edits/removals have no recovery history.

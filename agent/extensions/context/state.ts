@@ -180,7 +180,10 @@ export function applyChanges(todo: Todo, changes: Changes): Todo {
     const evidence = [...patch.evidence];
     const receipt = changes.approval_evidence ? `User approval: ${changes.approval_evidence}` : undefined;
     if (receipt && !evidence.includes(receipt)) evidence.push(receipt);
-    const decision = { ...patch, id, evidence }; if (index < 0) next.decisions.push(decision); else next.decisions[index] = decision;
+    const decision = { ...patch, id, evidence };
+    // Inherit only the optional link; required fields must still validate as replacements.
+    if (decision.supersedes === undefined && next.decisions[index]?.supersedes !== undefined) decision.supersedes = next.decisions[index].supersedes;
+    if (index < 0) next.decisions.push(decision); else next.decisions[index] = decision;
     if (next.context_policy) next.context_policy.consult_on_demand_decisions = next.context_policy.consult_on_demand_decisions.filter(hidden => hidden !== id);
   }
   for (const patch of changes.questions ?? []) {
@@ -190,7 +193,10 @@ export function applyChanges(todo: Todo, changes: Changes): Todo {
   }
   if (changes.approval_evidence) {
     const receipt = `User approval: ${changes.approval_evidence}`;
-    if (changes.outcome !== undefined && changes.outcome !== todo.outcome && !next.current_state.evidence.some(row => row.text === receipt)) next.current_state.evidence.push({ id: derivedId(todo.id, "approval-receipt", todo.revision), text: receipt });
+    if (changes.outcome !== undefined && changes.outcome !== todo.outcome && !next.current_state.evidence.some(row => row.text === receipt)) {
+      if (next.current_state.evidence.length >= 30) throw new Error(`Evidence holds at most 30 records; automatic outcome-approval provenance consumes one record even with no evidence additions, leaving ${next.current_state.evidence.length + 1}. Consolidate evidence or explicitly remove a chosen existing ID in the same change to make room for the approval receipt.`);
+      next.current_state.evidence.push({ id: derivedId(todo.id, "approval-receipt", todo.revision), text: receipt });
+    }
   }
   return validate(next);
 }
@@ -199,7 +205,8 @@ export function needsApproval(todo: Todo, changes: Changes): boolean {
   if (changes.approval_evidence?.trim()) return false;
   return (changes.outcome !== undefined && changes.outcome !== todo.outcome) || (changes.decisions ?? []).some(d => {
     const existing = todo.decisions.find(row => row.id === d.id);
-    const superseded = todo.decisions.find(row => row.id === d.supersedes);
-    return d.approval === "approved" || existing?.approval === "approved" || superseded?.approval === "approved";
+    const superseded = todo.decisions.find(row => row.id === (d.supersedes ?? existing?.supersedes));
+    const priorTarget = todo.decisions.find(row => row.id === existing?.supersedes);
+    return d.approval === "approved" || existing?.approval === "approved" || superseded?.approval === "approved" || priorTarget?.approval === "approved";
   });
 }

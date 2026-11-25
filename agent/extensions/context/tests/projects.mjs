@@ -184,6 +184,10 @@ try {
   assert.ok(needsApproval(updated.todo, { outcome: "Different outcome" }));
   assert.ok(needsApproval(approved, { decisions: [{ summary: "New direction", rationale: "Changed evidence", approval: "draft", evidence: [], supersedes: approved.decisions[0].id }] }));
   assert.throws(() => applyChanges(updated.todo, { surprise: true }), /unknown/);
+  // Optional-link inheritance must not turn required decision fields into partial updates.
+  const beforeIncompleteDecision = savedJSON(updated);
+  await assert.rejects(checkpoint(root, child.todo.id, updated.todo.revision, { decisions: [{ id: updated.todo.decisions[0].id, evidence: [] }] }, "missing-decision-fields", "test-session"));
+  assert.equal(savedJSON(updated), beforeIncompleteDecision);
 
   const metadata = { title: "Migration design", kind: "design", description: "Conversion contracts", lifecycle: "current", required: true, applies_to: [], body: "# Migration\n\nPreserve IDs." };
   await checkpoint(root, project.todo.id, 1, {}, "project-empty", "test-session");
@@ -1145,6 +1149,34 @@ try {
   const supersedingActive = await auto.call("context_project", { action: "get", selector: autonomousTodo.todo.id, view: "active" });
   assert.deepEqual(supersedingActive.todo.decisions, [superseding.todo.decisions.at(-1)]);
   assert.equal((await auto.call("context_project", { action: "get", selector: autonomousTodo.todo.id })).todo.decisions.length, 2);
+  // Literal by-ID rebuilds retain relationships and still require current sign-off.
+  const predecessorId = autoSaved.todo.decisions[0].id;
+  const successorId = superseding.todo.decisions.at(-1).id;
+  const literalEdit = { decisions: [{ id: successorId, summary: "Investigate scoped ownership", rationale: "Keep the replacement boundary while clarifying wording", approval: "draft", evidence: ["Updated research qualification"] }] };
+  const beforeLiteral = savedJSON(superseding);
+  await assert.rejects(auto.call("context_project_checkpoint", { id: autonomousTodo.todo.id, revision: superseding.todo.revision, key: "literal-edit", changes: literalEdit }), /sign-off/);
+  assert.equal(savedJSON(superseding), beforeLiteral);
+  const literalSaved = await auto.call("context_project_checkpoint", { id: autonomousTodo.todo.id, revision: superseding.todo.revision, key: "literal-edit", changes: { ...literalEdit, approval_evidence: "User: clarify this successor while retaining its replacement boundary" } });
+  const literalFull = await auto.call("context_project", { action: "get", selector: autonomousTodo.todo.id, view: "full" });
+  assert.equal(literalFull.todo.decisions.find(d => d.id === successorId).supersedes, predecessorId);
+  assert.equal(literalFull.todo.decisions.find(d => d.id === successorId).summary, literalEdit.decisions[0].summary);
+  assert.deepEqual(literalFull.todo.decisions.find(d => d.id === successorId).evidence, ["Updated research qualification", "User approval: User: clarify this successor while retaining its replacement boundary"]);
+  assert.deepEqual((await auto.call("context_project", { action: "get", selector: autonomousTodo.todo.id, view: "active" })).todo.decisions.map(d => d.id), [successorId]);
+  await assert.rejects(auto.call("context_project_record", { id: autonomousTodo.todo.id, expected_revision: literalSaved.todo.revision, source_kind: "decision", record_id: predecessorId, view: "active" }), /not in active context/);
+
+  // Retargeting away from an approved predecessor must not bypass sign-off via a draft target.
+  const third = await auto.call("context_project_checkpoint", { id: autonomousTodo.todo.id, revision: literalSaved.todo.revision, key: "third-rule", changes: { decisions: [{ summary: "Alternative draft boundary", rationale: "A distinct investigation option", approval: "draft", evidence: [] }] } });
+  const thirdId = third.todo.decisions.at(-1).id;
+  const retargetEdit = { decisions: [{ ...literalEdit.decisions[0], supersedes: thirdId }] };
+  const beforeRetarget = savedJSON(third);
+  await assert.rejects(auto.call("context_project_checkpoint", { id: autonomousTodo.todo.id, revision: third.todo.revision, key: "retarget-rule", changes: retargetEdit }), /sign-off/);
+  assert.equal(savedJSON(third), beforeRetarget);
+  const retargeted = await auto.call("context_project_checkpoint", { id: autonomousTodo.todo.id, revision: third.todo.revision, key: "retarget-rule", changes: { ...retargetEdit, approval_evidence: "User: retarget the draft to the alternative and reactivate the earlier approved boundary" } });
+  assert.equal(retargeted.todo.decisions.find(d => d.id === successorId).supersedes, thirdId);
+  assert.deepEqual((await auto.call("context_project", { action: "get", selector: autonomousTodo.todo.id, view: "active" })).todo.decisions.map(d => d.id), [predecessorId, successorId]);
+  const beforeCompeting = savedJSON(retargeted);
+  await assert.rejects(auto.call("context_project_checkpoint", { id: autonomousTodo.todo.id, revision: retargeted.todo.revision, key: "competing-rule", changes: { decisions: [{ summary: "Competing replacement", rationale: "Must not replace an already superseded target", approval: "draft", evidence: [], supersedes: thirdId }] } }), /already superseded/);
+  assert.equal(savedJSON(retargeted), beforeCompeting);
   await auto.extension.commands.get("context").handler("tighten", auto.ctx);
   assert.equal(auto.stored.at(-1).type, "user_request");
 
@@ -1696,8 +1728,19 @@ try {
   assert.deepEqual(await manifestBytes(), beforeRejectedEvidence);
   // Final capacity includes automatically attributed approval, with no partial parent update.
   const approvedAtCap = { outcome: "Approved revised goal", approval_evidence: "User: use this exact revised goal" };
-  await assert.rejects(curator.call("context_project_checkpoint", { id: legacy.id, revision: 1, key: "approval-cap", changes: approvedAtCap }), /30 records.*31/);
+  await assert.rejects(curator.call("context_project_checkpoint", { id: legacy.id, revision: 1, key: "approval-cap", changes: approvedAtCap }), /automatic outcome-approval provenance.*even with no evidence additions.*31.*remove a chosen existing ID/);
   assert.deepEqual(await manifestBytes(), beforeRejectedEvidence);
+  // Actual-capacity recovery keeps the essential automatic receipt, removing only the chosen ID.
+  const capacityOwner = await create(legacyRoot, "project", "Approval capacity", "Original capacity goal");
+  const capacityFull = await curator.call("context_project_checkpoint", { id: capacityOwner.todo.id, revision: 1, key: "fill-capacity", changes: { evidence: { add: Array.from({ length: 30 }, (_, i) => `Distinct capacity finding ${i}`) } } });
+  const removedId = capacityFull.todo.current_state.evidence[0].id;
+  const capacityRecovered = await curator.call("context_project_checkpoint", { id: capacityOwner.todo.id, revision: capacityFull.todo.revision, key: "capacity-outcome", changes: { ...approvedAtCap, evidence: { remove: [removedId] } } });
+  assert.equal(capacityRecovered.todo.revision, capacityFull.todo.revision + 1);
+  assert.equal(capacityRecovered.todo.outcome, approvedAtCap.outcome);
+  assert.equal(capacityRecovered.todo.current_state.evidence.length, 30);
+  assert.deepEqual(capacityRecovered.todo.current_state.evidence.slice(0, -1), capacityFull.todo.current_state.evidence.slice(1));
+  assert.equal(capacityRecovered.todo.current_state.evidence.at(-1).text, `User approval: ${approvedAtCap.approval_evidence}`);
+  assert.equal((await curator.call("context_project", { action: "get", selector: capacityOwner.todo.id, view: "full" })).todo.current_state.evidence.at(-1).text, `User approval: ${approvedAtCap.approval_evidence}`);
   const targetedRaw = await curator.callRaw("context_project_checkpoint", { id: legacy.id, revision: 1, key: "legacy-target", changes: { evidence: { update: [{ id: legacyRecords[2].id, text: "Targeted qualification: launch remains unverified" }] } } });
   const targeted = targetedRaw.structuredContent;
   assert.deepEqual(targeted.todo.current_state.evidence.filter(row => row.id !== legacyRecords[2].id), legacyRecords.filter(row => row.id !== legacyRecords[2].id));
