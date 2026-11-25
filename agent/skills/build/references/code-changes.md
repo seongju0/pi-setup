@@ -8,6 +8,8 @@ Understand the user’s goal before choosing a mechanism. Follow a representativ
 
 When adding a writer, actor, client type, version or other variant, inspect existing readers and effects that consume its output. A new operation succeeding is insufficient if a consumer then makes the wrong decision. A supported uncommon path is real, not speculative.
 
+Check how changed rules compose, not just each step in isolation. Follow meaningful alternate outcomes through the resulting state and later consumer decisions, checking that locally correct behavior still produces the required end-to-end outcome.
+
 ## Make mechanisms earn their place
 
 Choose the smallest complete change. Extend existing domain models and owners; avoid unrelated cleanup and parallel architectures. Before adding or recommending a guard, lock, re-check, recovery path, storage mechanism or abstraction, establish the triggering caller sequence, its plausibility and uncertainty, the consequence, and why the existing owner’s protection is insufficient. Do not duplicate another owner’s rule or machinery merely because it exists elsewhere.
