@@ -8,7 +8,7 @@ export function textPage(text: string, offset = 0, limit = PAGE_CHARS) {
 }
 
 /** Pages are plain text, not JSON-escaped and then truncated; structured callers see the same page. */
-export function pageResult<T extends { offset: number; next_offset: number | null; total_chars: number; complete: boolean }>(data: T, text: string) {
+export function pageResult<T extends object>(data: T, text: string) {
   const metadata = { ...data } as Record<string, unknown>;
   delete metadata.body; delete metadata.text;
   return { content: [{ type: "text" as const, text: `${JSON.stringify(metadata)}\n\n${text}` }], details: data, structuredContent: data };

@@ -1,5 +1,6 @@
 // Run from the repository root: npm test. Direct: node agent/extensions/context/tests/test.mjs
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, mkdir, symlink, writeFile, stat, readdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import { applyChanges, evidenceId, needsApproval, validate } from "../state.ts";
 import { createTodo, validate as validateLegacy } from "../legacy-state.ts";
 import { normalizeLegacy } from "../sqlite-upgrade.ts";
 import { writeReference } from "../links.ts";
-import { readArtifact, saveArtifact } from "../artifacts.ts";
+import { readArtifact, readArtifactLines, saveArtifact } from "../artifacts.ts";
 import { tighten } from "../tightening.ts";
 import { prepareArtifactDelegation, readDelegatedArtifactPage, validateArtifactDelegation } from "../delegation.ts";
 import { restoreSelection, resumeBundle, selectionEntry, checkpointMessage } from "../session.ts";
@@ -132,9 +133,10 @@ try {
     assert.equal(readerExtension.handlers.size, 0); assert.equal(readerExtension.commands.size, 0);
     const readerTool = readerExtension.tools.get("context_project_artifact").definition;
     const readerCall = async input => readerTool.execute("reader", validateToolArguments(readerTool, { id: "reader", name: readerTool.name, arguments: { action: "read", ...input } }), undefined, undefined, {});
-    for (const bad of [{ action: "upsert", ...targets[0] }, { id: targets[0].id, artifact_id: targets[0].artifact_id }, { ...targets[0], root }]) {
+    for (const bad of [{ action: "upsert", ...targets[0] }, { id: targets[0].id, artifact_id: targets[0].artifact_id }, { ...targets[0], root }, { ...targets[0], start_line: 1, end_line: 2 }, { ...targets[0], body_edits: [] }]) {
       await assert.rejects(readerCall(bad));
     }
+    for (const fields of [{ start_line: 1, end_line: 2 }, { body_edits: [] }]) assert.throws(() => readDelegatedArtifactPage(delegation, { ...targets[0], ...fields }), /fields/);
     const logicalReaderState = () => withRead(root, db => JSON.stringify([db.prepare("SELECT * FROM owners ORDER BY id").all(), db.prepare("SELECT owner_id,version,hex(body) body FROM artifact_revisions ORDER BY owner_id,version").all(), db.prepare("SELECT * FROM context_operations").all()]));
     const beforeReader = logicalReaderState();
     let assembled = "", readerOffset = 0;
@@ -155,10 +157,127 @@ try {
     await checkpoint(root, readerOther.todo.id, otherDoc.todo.revision, { title: "unrelated update" }, "reader-other", "reader-session");
     assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, id: targets[0].artifact_id, title: "Metadata only" });
     assert.equal((await readerCall(targets[0])).structuredContent.body, assembled.slice(0, 12000));
-    assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, id: targets[0].artifact_id, body: "NEW-BYTES-MUST-NOT-LEAK" });
+    const firstAnchor = `1:${createHash("sha256").update(assembled).digest("hex").slice(0, 16)}`;
+    assigned = await saveArtifact(root, readerOwner.todo.id, assigned.todo.revision, { ...readerMetadata, id: targets[0].artifact_id, expected_version: targets[0].expected_version, body_edits: [{ start: firstAnchor, new_text: "NEW-BYTES-MUST-NOT-LEAK" }] });
     for (const offset of [0, 12000]) await assert.rejects(readerCall({ ...targets[0], offset }), /changed.*parent/);
     assert.throws(() => prepareArtifactDelegation(targets), /changed/);
     assert.deepEqual(validateArtifactDelegation(delegation), delegation, "registration/reopen validation is pure, not a freshness check");
+  }
+  // Ordinary SDK caller -> pinned lines -> anchored transaction -> fresh readers/search.
+  {
+    const lineRoot = join(scratch, "line-store"); process.env.PI_TODO_PATH = lineRoot;
+    const pi = await instance();
+    const metadata = { title: "Local currentness", kind: "design", description: "Synthetic changed direction", lifecycle: "current", required: true, applies_to: [] };
+    const owner = await create(lineRoot, "project", "Line maintenance", "Reconcile claims");
+    let item = await saveArtifact(lineRoot, owner.todo.id, 1, { ...metadata, body: "Current: legacy\r\n\r\nrepeat\r\nrepeat\r\nTarget: café 🦊\nHistory: retained" });
+    const artifactId = item.todo.artifacts[0].id, originalVersion = item.todo.artifacts[0].path;
+    const original = bodyBytes(item, originalVersion);
+    const read = (extra = {}) => pi.callRaw("context_project_artifact", { action: "read", id: owner.todo.id, artifact_id: artifactId, expected_version: item.todo.artifacts[0].path, start_line: 1, end_line: 99, ...extra });
+    const upsert = extra => pi.callRaw("context_project_artifact", { action: "upsert", id: owner.todo.id, artifact_id: artifactId, revision: item.todo.revision, ...metadata, expected_version: item.todo.artifacts[0].path, ...extra });
+    const anchors = page => page.body.trimEnd().split("\n").map(line => line.split("|")[0]);
+    const found = await pi.call("context_project_search", { query: "café", selector: owner.todo.id });
+    assert.equal(found.results[0].match_line, 5);
+    assert.equal(found.results[0].match_offset, original.toString().indexOf("café"));
+    assert.equal(found.results[0].read.offset, Math.max(0, found.results[0].match_offset - 80));
+    assert.equal((await pi.call("context_project_search", { query: metadata.description })).results[0].match_line, undefined);
+    const raw = await read(), page = raw.structuredContent, a = anchors(page);
+    assert.deepEqual(raw.details, page);
+    assert.equal(raw.content[0].text.split("\n\n").slice(1).join("\n\n"), page.body);
+    assert.equal(page.total_lines, 6); assert.equal(page.end_line, 6); assert.equal(page.next_line, null);
+    assert.equal(page.offset, undefined); assert.equal(page.complete, undefined);
+    assert.equal(a[2].split(":")[1], a[3].split(":")[1]);
+    assert.equal(a[0], `1:${createHash("sha256").update("Current: legacy\r\n").digest("hex").slice(0, 16)}`);
+    assert.equal((await read({ start_line: 3, end_line: 3 })).structuredContent.next_line, null);
+    for (const bad of [{ expected_version: undefined }, { start_line: 0 }, { end_line: undefined }, { end_line: 0 }, { start_line: 7 }, { offset: 0 }, { limit: 10 }, { body_edits: [] }]) await assert.rejects(read(bad));
+    await assert.rejects(upsert({ start_line: 1 }));
+    await assert.rejects(readArtifactLines(lineRoot, item, artifactId, { start_line: 1.5, end_line: 2, expected_version: originalVersion }));
+    await assert.rejects(readArtifactLines(lineRoot, item, artifactId, { start_line: 1, end_line: Number.MAX_SAFE_INTEGER + 1, expected_version: originalVersion }));
+    const logicalState = () => withRead(lineRoot, db => JSON.stringify([db.prepare("SELECT document FROM owners ORDER BY id").all(), db.prepare("SELECT owner_id,version,hex(body) body FROM artifact_revisions ORDER BY owner_id,version").all()]));
+    const before = logicalState();
+    const good = { start: a[2], new_text: "Updated repeat" };
+    for (const extra of [
+      { revision: 1, body_edits: [good] }, { expected_version: "stale", body_edits: [good] },
+      { body_edits: [good, { start: `${a[3].split(":")[0]}:0000000000000000`, new_text: "bad" }] },
+      { body_edits: [{ start: a[3], end: a[2], new_text: "bad" }] },
+      { body_edits: [good, good] }, { body_edits: [{ start: a[1], end: a[3], new_text: "nested" }, good] },
+      { body: "conflict", body_edits: [good] }, { title: undefined, body_edits: [good] },
+    ]) { await assert.rejects(upsert(extra)); assert.equal(logicalState(), before); }
+    for (const body_edits of [[], Array(21).fill(good), null, {}, [{ ...good, surprise: true }], [{ ...good, new_text: 1 }], [{ ...good, new_text: "x".repeat(100001) }], [{ start: "9007199254740992:123456789abcdef0", new_text: "x" }], [{ start: "1:ABCDEF0123456789", new_text: "x" }]]) {
+      await assert.rejects(saveArtifact(lineRoot, owner.todo.id, item.todo.revision, { ...metadata, id: artifactId, expected_version: originalVersion, body_edits }));
+      assert.equal(logicalState(), before);
+    }
+    for (const missing of ["id", "expected_version", "title", "kind", "description", "lifecycle", "required", "applies_to"]) {
+      await assert.rejects(saveArtifact(lineRoot, owner.todo.id, item.todo.revision, { ...metadata, id: artifactId, expected_version: originalVersion, body_edits: [good], [missing]: undefined }));
+      assert.equal(logicalState(), before);
+    }
+    const changed = await upsert({ body_edits: [{ start: a[3], new_text: "" }, good, { start: a[0], new_text: "Current: revised\nHistorical: legacy reason" }] });
+    item = changed.structuredContent;
+    assert.deepEqual(changed.details, item);
+    assert.equal(JSON.parse(changed.content[0].text).path, item.todo.artifacts[0].path);
+    assert.equal(item.todo.revision, 3); assert.equal(item.todo.artifacts[0].required, true);
+    assert.equal(item.todo.context_refs[0].artifact_id, artifactId);
+    assert.equal(bodyBytes(item, item.todo.artifacts[0].path).toString(), "Current: revised\nHistorical: legacy reason\r\n\r\nUpdated repeat\r\nTarget: café 🦊\nHistory: retained\n");
+    assert.deepEqual(bodyBytes(item, originalVersion), original);
+    await assert.rejects(read({ expected_version: originalVersion }), /changed/);
+    const fresh = await instance();
+    assert.equal((await fresh.call("context_project_search", { query: "Updated repeat" })).results[0].match_line, 4);
+    const bundle = await resumeBundle(lineRoot, owner.todo.id);
+    assert.equal(bundle.required_artifacts[0].version, item.todo.artifacts[0].path);
+    assert.ok(!JSON.stringify(bundle).includes("Updated repeat"), "orientation is catalog-only");
+    await fresh.call("context_project", { action: "resume", selector: owner.todo.id });
+    assert.match(fresh.stored.find(entry => entry.customType === "todo-context-v1").content, /current\/historical\/target/);
+    // A metadata-only intervening write retains the body pin but invalidates the owner revision.
+    const prev = item; const pin = item.todo.artifacts[0].path;
+    item = (await upsert({ title: "Metadata changed", expected_version: "ignored legacy pin" })).structuredContent;
+    assert.equal(item.todo.artifacts[0].path, pin);
+    const now = anchors((await read()).structuredContent);
+    await assert.rejects(upsert({ revision: prev.todo.revision, body_edits: [{ start: now[0], new_text: "same" }] }), /Stale revision/);
+    item = (await upsert({ body_edits: [{ start: now[0], new_text: "Current: refreshed" }] })).structuredContent;
+    await assert.rejects(upsert({ expected_version: pin, body_edits: [{ start: now[0], new_text: "stale" }] }), /changed/);
+    // Migrated/raw valid UTF-8: preserve leading/trailing bytes and unterminated EOF.
+    const rawVersion = item.todo.artifacts[0].path;
+    removeBody(item, rawVersion); restoreBody(item, rawVersion, "\ufeff leading\r\n\nlast 🦊");
+    const eof = (await read()).structuredContent, ea = anchors(eof);
+    assert.equal(eof.total_lines, 3);
+    item = (await upsert({ body_edits: [{ start: ea[2], new_text: "end" }] })).structuredContent;
+    assert.equal(bodyBytes(item, item.todo.artifacts[0].path).toString(), "\ufeff leading\r\n\nend");
+    const all = anchors((await read()).structuredContent), nonblank = logicalState();
+    await assert.rejects(upsert({ body_edits: [{ start: all[0], end: all[2], new_text: " \n" }] }), /body/);
+    assert.equal(logicalState(), nonblank);
+    // Whole annotated lines, including an oversized later line, never loop or skip.
+    item = (await upsert({ body: "x\n".repeat(900) })).structuredContent;
+    let next = 1, count = 0;
+    do { const p = (await read({ start_line: next, end_line: 850 })).structuredContent; assert.ok(p.body.length <= 12000); assert.equal(p.start_line, next); count += p.end_line - p.start_line + 1; next = p.next_line; } while (next !== null);
+    assert.equal(count, 850);
+    item = (await upsert({ body: "short\n" + "x".repeat(12000) + "\nafter" })).structuredContent;
+    assert.equal((await read()).structuredContent.next_line, 2);
+    await assert.rejects(read({ start_line: 2 }), /character paging/);
+    assert.equal((await pi.call("context_project_artifact", { action: "read", id: owner.todo.id, artifact_id: artifactId })).body.length, 12000);
+    // Effective stored size: 100000 plus one final LF only.
+    item = (await upsert({ body: "small" })).structuredContent;
+    let sa = anchors((await read()).structuredContent);
+    item = (await upsert({ body_edits: [{ start: sa[0], new_text: "x".repeat(100000) }] })).structuredContent;
+    assert.equal(bodyBytes(item, item.todo.artifacts[0].path).length, 100001);
+    item = (await upsert({ body: "first\nlast" })).structuredContent; sa = anchors((await read()).structuredContent);
+    const sizeBefore = logicalState();
+    await assert.rejects(upsert({ body_edits: [{ start: sa[0], new_text: "x".repeat(100000) }] }), /100000/);
+    assert.equal(logicalState(), sizeBefore);
+    // Editing a hidden optional body restores consultation eligibility like full replacement.
+    item = (await upsert({ required: false })).structuredContent;
+    item = await tighten(lineRoot, owner.todo.id, item.todo.revision, { reason: "Synthetic hidden source", consult_on_demand_artifacts: [artifactId] });
+    assert.ok(item.todo.context_policy.consult_on_demand_artifacts.includes(artifactId));
+    const hiddenAnchors = anchors((await read()).structuredContent);
+    item = (await upsert({ required: false, body_edits: [{ start: hiddenAnchors[0], new_text: "restored" }] })).structuredContent;
+    assert.ok(!item.todo.context_policy.consult_on_demand_artifacts.includes(artifactId));
+    // Fatal source decoding belongs only to new modes; failed edits remain atomic.
+    const badPin = item.todo.artifacts[0].path; removeBody(item, badPin); restoreBody(item, badPin, Buffer.from([0xff, 0x0a]));
+    const invalidBefore = logicalState();
+    await assert.rejects(read(), /UTF-8/);
+    await assert.rejects(upsert({ body_edits: [{ start: sa[0], new_text: "valid" }] }), /UTF-8/);
+    assert.equal(logicalState(), invalidBefore);
+    assert.equal((await pi.call("context_project_artifact", { action: "read", id: owner.todo.id, artifact_id: artifactId })).body, "�\n");
+    item = (await upsert({ body: "  legacy normalized  ", expected_version: "still ignored" })).structuredContent;
+    assert.equal(bodyBytes(item, item.todo.artifacts[0].path).toString(), "legacy normalized\n");
   }
   process.env.PI_TODO_PATH = root;
   const project = await create(root, "project", "Rollout", "Complete the rollout");

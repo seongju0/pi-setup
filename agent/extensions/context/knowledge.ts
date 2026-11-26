@@ -6,7 +6,7 @@ import { list, locate, type Located } from "./storage.ts";
 
 export type KnowledgeInput = { query: string; selector?: string; view?: "active" | "full"; limit?: number; cursor?: string };
 type Hit = Partial<Provenance> & {
-  index?: number; match_field?: "body" | "metadata"; match_offset?: number;
+  index?: number; match_field?: "body" | "metadata"; match_offset?: number; match_line?: number;
   owner_id: string; owner_title: string; parent_id: string | null; owner_revision: number;
   source_kind: string; record_id?: string; evidence_id?: string; artifact_id?: string; artifact_version?: string;
   lifecycle?: string; excerpt: string; read: Record<string, unknown>;
@@ -96,7 +96,7 @@ export async function collectKnowledgeMatches(root: string, input: { query: stri
       const bodyMatch = body.toLowerCase().indexOf(query);
       add(`artifact/${artifact.id}`, "artifact", [artifact.title, artifact.description, body].join("\n"), {
         artifact_id: artifact.id, artifact_version: artifact.path, lifecycle: artifact.lifecycle, ...provenance,
-        match_field: bodyMatch >= 0 ? "body" : "metadata", ...(bodyMatch >= 0 ? { match_offset: bodyMatch } : {}),
+        match_field: bodyMatch >= 0 ? "body" : "metadata", ...(bodyMatch >= 0 ? { match_offset: bodyMatch, match_line: body.slice(0, bodyMatch).split("\n").length } : {}),
         read: { tool: "context_project_artifact", action: "read", id: todo.id, artifact_id: artifact.id, expected_version: artifact.path, offset: Math.max(0, bodyMatch - 80) },
       }, !provenance.in_active_context);
     }

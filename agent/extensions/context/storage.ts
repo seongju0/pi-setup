@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { applyChanges, createTodo, rejectRetiredCurrentState, validate, type Changes, type Todo } from "./state.ts";
 import { effects, validateGraph, validateTransition } from "./dependencies.ts";
-import { canonicalRoot, decodeOwner, insertOwner, locator, readRows, synchronous, updateOwner, validateReferences, withRead, withWrite } from "./database.ts";
+import { artifactBytes, canonicalRoot, decodeOwner, insertOwner, locator, readRows, synchronous, updateOwner, validateReferences, withRead, withWrite } from "./database.ts";
 
 /** directory is a deprecated legacy locator, not a physical document directory. */
 export type Located = { directory: string; todo: Todo; parent_id?: string };
@@ -45,12 +45,12 @@ function saveUpdate(db: DatabaseSync, rows: Located[], item: Located, _activity:
   updateOwner(db, item);
   return { ...effects(rows, item), updated_parent: undefined };
 }
-export type MutationContext = { rows: Located[]; writeArtifact: (version: string, bytes: Uint8Array) => void };
+export type MutationContext = { rows: Located[]; readArtifact: (version: string) => Buffer; writeArtifact: (version: string, bytes: Uint8Array) => void };
 export async function mutate(root: string, id: string, revision: number, transform: (todo: Todo, item: Located, context: MutationContext) => Todo, signal?: AbortSignal, activity = false) {
   return withWrite(root, (db, root) => {
     const rows = readRows(db, root); const item = select(rows, id);
     if (item.todo.revision !== revision) throw new Error(`Stale revision: expected ${revision}, current ${item.todo.revision}. Read again before retrying.`);
-    const proposed = synchronous(transform(structuredClone(item.todo), item, { rows, writeArtifact: (version, bytes) => { db.prepare("INSERT INTO artifact_revisions(owner_id,version,body) VALUES(?,?,?)").run(item.todo.id, version, bytes); } }));
+    const proposed = synchronous(transform(structuredClone(item.todo), item, { rows, readArtifact: version => artifactBytes(db, item.todo.id, version), writeArtifact: (version, bytes) => { db.prepare("INSERT INTO artifact_revisions(owner_id,version,body) VALUES(?,?,?)").run(item.todo.id, version, bytes); } }));
     if ("blockers" in proposed || (proposed.status as string) === "blocked") throw new Error("Use depends_on instead of legacy blockers/blocked status");
     const next = validate(proposed);
     if (activity && next.status === "todo") next.status = "in_progress";

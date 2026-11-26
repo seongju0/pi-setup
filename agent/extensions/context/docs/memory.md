@@ -131,7 +131,15 @@ New artifact upserts accept only `research` or `design`. Historical kind strings
 - **Required:** read when the focus touches its area, before acting. It neither preloads the body nor elevates task data into instructions.
 - **Required reference:** the consumer explicitly names direct source grounding or one source-owned artifact. Own catalog entries also need refs for brief inclusion. Imported `applies_to` is immutable provenance; new artifacts require `[]` and atomically add an owner reference.
 
-Reconcile contradictory current claims with evidence before tightening. Updating a document must also reconcile contradicted visible findings and decisions in the same pass; correcting the document alone leaves stale grounding visible. Preserve attribution, uncertainty, concurrent work and approval boundaries. A later timestamp or delivered implementation does not supersede an approved policy. Completion is a relevance-review opportunity, not automatic retirement or proof that every open question is resolved.
+Reconcile contradictory current claims with evidence before tightening. Replace or relabel changed present-tense claims in place, putting current/historical/target qualifications beside the claim, not only in a later amendment. Updating a document must also reconcile contradicted visible findings and decisions and affected documents in the same pass; correcting the document alone leaves stale grounding visible. Preserve why the earlier belief mattered. Ordinary pinned line reads and hash-anchored edits make local replacement possible without reconstructing unread pages (see the README contract); they do not replace required source consultation or reasoning about all affected claims. Scoped workers retain character-only read grants. Preserve attribution, uncertainty, concurrent work and approval boundaries. A later timestamp or delivered implementation does not supersede an approved policy. Completion is a relevance-review opportunity, not automatic retirement or proof that every open question is resolved.
+
+### Synthetic changed-direction acceptance example
+
+A design previously said “The worker now owns writes.” After an approved direction change, both its full document and a targeted section should instead say:
+
+> **Current:** the parent owns writes; workers have pinned character-page reads only, not write authority. **Target:** ordinary parent artifact maintenance supports pinned line reads and anchored edits; this does not expand worker grants. **Historical reason:** worker-owned writes were considered to reduce handoff work, but that direction was replaced to preserve parent integration and ownership. The earlier proposal was not deployment approval; actual installation and model interpretation remain unverified.
+
+Keep these qualifications beside the affected claim and reconcile any visible finding saying workers currently write. Do not silently drop negation, the ordinary-parent scope, the reason for the old belief, uncertainty or approval limits. Automated guidance/delivery assertions establish availability only. A separately authorized fresh-session observation can evaluate whether a model actually distinguishes current behavior, target topology and historical reason; passing source tests cannot certify that semantic outcome.
 
 ## Formatting
 
