@@ -21,7 +21,7 @@ instructions or settings. Adapt instruction links and adopt their required tools
 and skills too.
 
 Load extensions in a new session or use `/reload` deliberately in an idle session.
-To try one from this checkout, use `pi -e ./agent/extensions/context/index.ts`.
+To try one from this checkout, use `pi -e ./agent/extensions/task/index.ts`.
 
 ## Extensions
 
@@ -32,7 +32,7 @@ To try one from this checkout, use `pi -e ./agent/extensions/context/index.ts`.
 | [no-sleep](agent/extensions/no-sleep) | Keep macOS awake during runs with `caffeinate` |
 | [statusline](agent/extensions/statusline/README.md) | Git, model, context and cache footer; configurable loader |
 | [reply-visuals](agent/extensions/reply-visuals/README.md) | Chat emphasis and status chips |
-| [Context](agent/extensions/context/README.md) | Durable work context, artifacts and integrated session-local tasks |
+| [task](agent/extensions/task/README.md) | Standalone session-local task board (`task` / `/task`); requires sibling `extensions/lib/status-style.ts` |
 | [session-history](agent/extensions/session-history/README.md) | Search saved conversation history and read exact references |
 | [usage](agent/extensions/usage/README.md) | Local token usage and cost estimates |
 | [view](agent/extensions/view/README.md) | Open paths in your editor; defaults to Zed |
@@ -40,10 +40,14 @@ To try one from this checkout, use `pi -e ./agent/extensions/context/index.ts`.
 | [herdr-session](agent/extensions/herdr-session/README.md) | Herdr tabs, research workers, reports and optional reboot restore |
 | [subagent](agent/extensions/subagent/README.md) | Parent-owned background workers and selected MCP capabilities |
 
-Context is self-contained: copy its whole directory, with Node.js 26+ and a supported Pi installation. It provides `context_project` / `context_project_*` tools for independent project memory, `context_knowledge` for explicitly maintained reusable knowledge and unchanged `task` / `/task` session-local task JSON. `/context` is the only project command; old `todo*` tool aliases, `/todo` and the retired move tool are not registered. Existing SQLite schema1 project stores need the separate explicit schema2 upgrade; legacy JSON import remains a different supported CLI. Copying source does not migrate data. Session-history is optional enhanced journal retrieval, not a Context source dependency. Before adopting Context, manually retire both old task and todo extension entries; preserve all runtime task/project/session data. See the [Context adoption steps](agent/extensions/context/README.md#adoption).
+[Context](https://github.com/seongju0/context) is an independent package for durable
+project memory and reusable knowledge, not bundled in this catalog. Follow its
+own adoption and update instructions. The standalone `task/` extension here keeps
+session-local task JSON separate from Context; copying source does not migrate data.
 Subagents require sibling web-search source unless callers explicitly use
-`web: false`. Optional `contextArtifacts` additionally requires the whole adjacent
-`context/` source directory and Node.js 26+/supported Pi 1.6.0; omitted grants have
+`web: false`. Optional `contextArtifacts` additionally requires the external
+Context package (via `CONTEXT_PACKAGE_DIR` or adjacent public adapter entries)
+and Node.js 26+/supported Pi 1.6.0; omitted grants have
 no Context dependency. The adapter exposes only assigned version-pinned artifact
 reads, not full Context or inherited permissions. Without it, hand off complete
 pinned snapshots/inline material or accessible external files. Source copying does
@@ -162,9 +166,11 @@ keeping both entries can expose duplicate guidance.
 For older linked setups, update the checkout through Git, not `pi-setup update`:
 the retired updater can pull successfully, then fail on the removed setup script.
 The old `~/.local/bin/pi-setup` launcher becomes dangling; retire it manually.
-Context replaces the old source `task/` and `todo/` entries; its runtime data paths
-are unchanged. The custom `update-skills` extension and `/skills` updater were
-retired. Remove an older `extensions/update-skills/` entry explicitly if you no
+Context source now lives in its independent repository. When adopting it, compare
+and manually retire an older bundled `extensions/context/` copy to avoid duplicate
+registration; do not remove runtime stores or saved sessions. Keep the standalone
+`task/` extension for session tasks; retire old `todo/` source entries separately.
+The custom `update-skills` extension and `/skills` updater were retired. Remove an older `extensions/update-skills/` entry explicitly if you no
 longer want that command; copying new source does not remove the old copy.
 The illustration catalogue moved from `draft-pr/references/illustration-examples.md`
 to `walkthrough/references/illustration-examples.md`. Adopt both updated skill
@@ -176,6 +182,11 @@ records, and `~/.local/state/pi-setup/{herdr-sessions,backups}/`.
 ## Development
 
 Run `npm test` with Node.js 26+ and an existing Pi installation. Tests use
-temporary state and no real service calls. See [AGENTS.md](AGENTS.md).
+temporary state and no real service calls. External Context integration is visibly
+skipped by default; opt in with `CONTEXT_PACKAGE_DIR=/absolute/path/to/context npm test`
+to exercise its real public core/Pi adapters with synthetic SQLite fixtures, both
+package-root resolution and installed-style adjacent entries. No clone or network
+access is performed. Set `PI_TEST_PACKAGE_ROOT` to select an existing Pi installation.
+Context domain tests belong to the standalone repository. See [AGENTS.md](AGENTS.md).
 
 [MIT license](LICENSE).

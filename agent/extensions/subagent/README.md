@@ -33,9 +33,11 @@ Copy the whole `subagent/` directory plus sibling `lib/models.ts`,
 launch explicitly loads web-search; missing source fails even if no search is
 requested. Only callers setting `web: false` can omit it. Available physical
 models/provider authentication and any selected MCP configuration remain
-owner-managed. For optional `contextArtifacts`, also copy the whole adjacent
-`context/` source directory (Node.js 26+, supported Pi SDK 1.6.0); omission needs
-no Context source/store. Preserve existing saved child sessions and metadata.
+owner-managed. For optional `contextArtifacts`, use the independent
+[Context package](https://github.com/seongju0/context) (Node.js 26+, supported Pi SDK
+1.6.0): set `CONTEXT_PACKAGE_DIR` to its package root, or place its public Pi adapter
+beside this extension as `context/` using the package owner's adoption instructions.
+Omission needs no Context source/store. Preserve existing saved child sessions and metadata.
 Source changes do not activate new inputs in an older installed launcher; adoption
 and reload remain deliberate operator steps.
 
@@ -139,14 +141,17 @@ files, or spawn a new child with revised grants. External files use existing fil
 tools, not a Context grant schema. Without the optional adapter/source, use that
 same snapshot/file handoff; IDs or links alone do not provide retrieval.
 
-The adjacent public entries are `../context/delegation.ts` and
-`../context/reader.ts`; no Context runtime import occurs when grants are omitted.
+`CONTEXT_PACKAGE_DIR` resolves `src/adapters/pi/{delegation,reader}.ts` under a
+package root (or those entries directly under the configured directory). Otherwise
+the adjacent public entries are `../context/{delegation,reader}.ts`. Preserve the
+external package layout; an adjacent link to its Pi adapter keeps relative imports
+intact. No Context runtime import occurs when grants are omitted.
 Missing source, malformed configuration or initial stale pins fail explicitly,
 never fall back to full Context. Startup relies on supported Pi 1.6.0 fatal RPC
 extension-load handling and ChildRpc's exit rejection, with no readiness command.
 SQLite never initializes a missing store, though WAL/SHM sidecars may change.
 This is a tool API boundary, not filesystem isolation or proof of model reading
-and compliance. See [Context's public contract](../context/docs/delegation.md).
+and compliance. See [Context's public contract](https://github.com/seongju0/context/blob/main/src/adapters/pi/README.md).
 
 ### Skill-based assignments
 
@@ -373,7 +378,7 @@ extensions/subagent/
 ├── viewer.ts            native picker + scrolling read-only transcript overlay
 ├── rpc.ts               subprocess + JSONL transport + command correlation
 ├── mcp.ts               selected-server config + child MCP integration
-├── context.ts           optional adjacent public Context adapter + wrapper generation
+├── context.ts           optional external public Context adapter + wrapper generation
 └── tests/
     ├── fake-pi.mjs      deterministic child CLI fixture
     ├── test.mjs         regression suite; no provider calls
@@ -410,7 +415,7 @@ The regression suite uses the real Pi extension loader and real subprocesses wit
 
 - Physical/inherited model selection, context reuse, concurrency limits, and busy-send rejection.
 - Web-extension loading and capability persistence; selected MCP connections, tools and resources, unknown/disabled server rejection, optional personal policy blocking, project-policy exclusion, and configured-policy failure before connection.
-- Scoped Context grants through actual generated wrappers, real SDK loading and SQLite: independent scopes, fixed sends/root capture, stale initial pins, pure stale/unavailable restore, wrapper regeneration, malformed snapshots, copied optional dependency and load errors. The fake CLI does not emulate Pi loading; fatal startup handling rests on supported SDK source, not provider end-to-end proof.
+- Optional standalone integration (`CONTEXT_PACKAGE_DIR=/absolute/path/to/context npm test`; visibly skipped without it), using public core exports and Pi adapters, with package-root and installed-style adjacency. Scoped Context grants through actual generated wrappers, real SDK loading and synthetic SQLite: independent scopes, fixed sends/root capture, stale initial pins, pure stale/unavailable restore, wrapper regeneration, malformed snapshots, copied optional dependency and load errors. The fake CLI does not emulate Pi loading; fatal startup handling rests on supported SDK source, not provider end-to-end proof.
 - Reports/receipts and parent/child operating guidance, artifacts before settlement, retries, failures, explicit cancellation without assignment deadlines, dialogs, and transport framing.
 - Reload/fork/tree ownership, restore, cleanup, and headless behavior.
 - Compact widget bounds and recency ordering, animation/disposal, Tasks isolation, themes, narrow/Unicode layout, native versus billed context, and compaction/unknown telemetry.
@@ -437,6 +442,6 @@ Primary references reviewed against installed Pi **1.1.0** and upstream commit [
 7. [RpcClient implementation](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/src/modes/rpc/rpc-client.ts) and [client example](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/examples/rpc-client.ts): command correlation, event subscription before prompting, and client lifecycle.
 8. [SDK](https://pi.dev/docs/latest/sdk): the in-process alternative; RPC was chosen to retain a CLI process boundary.
 9. Local [`lib/models.ts`](../lib/models.ts): physical-model validation.
-10. [Terminal UI](https://pi.dev/docs/latest/tui), [widget-placement example](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/examples/extensions/widget-placement.ts), and local [Context session-task registration](../context/tasks/register.ts): above-editor widget placement, theme-aware rendering, width-safe lines, and independent widget keys.
+10. [Terminal UI](https://pi.dev/docs/latest/tui), [widget-placement example](https://github.com/earendil-works/pi/blob/c5f5b3282d5e4203c085e59837ba17aeaf2829b5/packages/coding-agent/examples/extensions/widget-placement.ts), and local [session-task registration](../task/register.ts): above-editor widget placement, theme-aware rendering, width-safe lines, and independent widget keys.
 
 Live `latest` documentation can change. Recheck the installed CLI/API contracts when upgrading Pi.

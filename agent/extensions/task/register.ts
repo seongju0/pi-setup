@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { SelectList, Text, truncateToWidth, type SelectItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { cleanLabel, statusCard, statusText, taskStyles } from "../internal/status-style.ts";
+import { cleanLabel, statusCard, statusText, taskStyles } from "../lib/status-style.ts";
 import { apply, blockers, emptyState, loadState, saveState, sessionPath, statuses, type Input, type State, type Task } from "./state.ts";
 
 const idSchema = Type.String({ pattern: "^[1-9][0-9]*$" });

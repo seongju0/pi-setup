@@ -40,13 +40,25 @@ try {
   assert.deepEqual(loaded.errors, []);
   assert.deepEqual(loaded.extensions.map(extension => extension.path).sort(), extensions.map(path => join(env.PI_CODING_AGENT_DIR, "extensions", basename(path), "index.ts")).sort());
   assert.ok(loaded.extensions.some(extension => extension.tools.has("session_history")));
-  const context = loaded.extensions.filter(extension => extension.tools.has("context_project_recap"));
-  assert.equal(context.length, 1);
-  assert.equal(basename(dirname(context[0].path)), "context");
-  assert.ok(context[0].tools.has("task"));
-  assert.ok(!loaded.extensions.some(extension => ["task", "todo"].includes(basename(dirname(extension.path)))));
+  assert.ok(!loaded.extensions.some(extension => extension.tools.has("context_project_recap")), "Catalog does not bundle Context");
+  assert.ok(!extensions.some(path => basename(path) === "context"));
+  const taskExt = loaded.extensions.filter(extension => extension.tools.has("task"));
+  assert.equal(taskExt.length, 1);
+  assert.equal(basename(dirname(taskExt[0].path)), "task");
+  assert.ok(!loaded.extensions.some(extension => basename(dirname(extension.path)) === "todo"));
   assert.ok(!loaded.extensions.some(extension => extension.commands.has("skills")), "Copied catalog does not register the retired skill-updater command");
   console.log(`PASS: all ${extensions.length} copied extension entry points load through Pi discovery; support files are not extensions.`);
+
+  if (process.env.CONTEXT_PACKAGE_DIR?.trim()) {
+    const contextEntry = join(resolve(process.env.CONTEXT_PACKAGE_DIR), "src/adapters/pi/index.ts");
+    const integrated = await discoverAndLoadExtensions([contextEntry], scratch, env.PI_CODING_AGENT_DIR);
+    assert.deepEqual(integrated.errors, []);
+    const context = integrated.extensions.filter(extension => extension.tools.has("context_project_recap"));
+    assert.equal(context.length, 1, "Explicit standalone integration registers one Context");
+    assert.ok(!context[0].tools.has("task"));
+    assert.equal(integrated.extensions.filter(extension => extension.tools.has("task")).length, 1);
+    console.log("PASS: explicit standalone Context plus copied catalog discover one Context and one task.");
+  } else console.log("SKIP: standalone Context discovery (set CONTEXT_PACKAGE_DIR to opt in).");
 
   const { loadSkills } = await import(pathToFileURL(join(piRoot, "dist/core/skills.js")));
   const skills = loadSkills({ cwd: scratch, agentDir: env.PI_CODING_AGENT_DIR, skillPaths: [join(env.PI_CODING_AGENT_DIR, "skills")], includeDefaults: false });

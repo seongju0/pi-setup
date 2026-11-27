@@ -1,4 +1,4 @@
-// Run from the repository root: npm test. Direct: node agent/extensions/context/tests/test.mjs
+// Run from the repository root: npm test. Direct: node agent/extensions/task/tests/test.mjs
 // Uses Pi's real extension loader; no model calls or real task data.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -6,7 +6,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { apply, blockers, emptyState, loadState, parseState, saveState, sessionPath } from "../tasks/state.ts";
+import { apply, blockers, emptyState, loadState, parseState, saveState, sessionPath } from "../state.ts";
 
 const directory = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageRoot = process.env.PI_TEST_PACKAGE_ROOT ?? join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "@earendil-works/pi-coding-agent");
@@ -175,7 +175,7 @@ try {
   assert.equal(context.message.customType, "task-context-v1");
   assert.match(context.message.content, /Session task snapshot/);
   assert.equal(await taskSnapshot(), undefined);
-  assert.deepEqual(await interactive.emit({ type: "context", messages: [] }), [{ messages: [] }]);
+  assert.deepEqual(await interactive.emit({ type: "context", messages: [] }), []);
   await interactive.call({ action: "update", id: uiTask.id, status: "completed" });
   const followup = (await interactive.call({ action: "create", subject: "Remaining work", description: "One active task", dependsOn: [uiTask.id] })).tasks[0];
   const activeContext = await taskSnapshot();
@@ -217,7 +217,6 @@ try {
   await writeFile(sessionPath(scratch, "session-a"), "{broken");
   await assert.rejects(first.call({ action: "create", subject: "Do not overwrite", description: "" }), /Cannot read/);
   assert.equal(await readFile(sessionPath(scratch, "session-a"), "utf8"), "{broken");
-  await assert.rejects(stat(join(process.env.PI_TODO_PATH, "todo.sqlite")), { code: "ENOENT" });
   console.log("task checks passed: storage, validation, concurrency, lifecycle, tools, keyboard UI, narrow rendering");
 } finally {
   if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
