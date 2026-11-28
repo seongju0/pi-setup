@@ -345,12 +345,12 @@ try {
     const malformedResult = await malformed.call({ action: 'send', id: fixed.id, message: 'normal' });
     assert.equal(malformedResult.isError, true); assert.match(malformedResult.details.error, /Unsupported.*protocol/);
     // Real wrapper load errors are fatal at the host boundary; fake CLI deliberately does not emulate loading.
-    await writeFile(firstWrapper, `import { scopedArtifactReader } from ${JSON.stringify(join(process.env.CONTEXT_PACKAGE_DIR, 'src/adapters/pi/reader.ts'))}; export default scopedArtifactReader({protocol:'unsupported'});`);
+    await writeFile(firstWrapper, `import { scopedArtifactReader } from ${JSON.stringify(join(process.env.CONTEXT_PACKAGE_DIR, 'src/pi/reader.ts'))}; export default scopedArtifactReader({protocol:'unsupported'});`);
     clearExtensionCache();
     const failedReader = await loadExtensions([firstWrapper], scratch, undefined, createExtensionRuntime());
     assert.equal(failedReader.errors.length, 1); assert.equal(failedReader.extensions.length, 0);
     // Installed-style adjacency: public adapter symlink, not a copied domain implementation.
-    await symlink(join(process.env.CONTEXT_PACKAGE_DIR, 'src/adapters/pi'), join(copiedExtensions, 'context'), 'dir');
+    await symlink(join(process.env.CONTEXT_PACKAGE_DIR, 'src/pi'), join(copiedExtensions, 'context'), 'dir');
     delete process.env.CONTEXT_PACKAGE_DIR;
     await rename(`${contextStore}-unavailable`, contextStore); process.env.CONTEXT_STORE_PATH = contextStore;
     const copied = await optional.call({ action: 'spawn', name: 'copied-with-context', message: 'normal', web: false, contextArtifacts: [assignedTargets[1]] });

@@ -141,7 +141,7 @@ files, or spawn a new child with revised grants. External files use existing fil
 tools, not a Context grant schema. Without the optional adapter/source, use that
 same snapshot/file handoff; IDs or links alone do not provide retrieval.
 
-`CONTEXT_PACKAGE_DIR` resolves `src/adapters/pi/{delegation,reader}.ts` under a
+`CONTEXT_PACKAGE_DIR` resolves `src/pi/{delegation,reader}.ts` under a
 package root (or those entries directly under the configured directory). Otherwise
 the adjacent public entries are `../context/{delegation,reader}.ts`. Preserve the
 external package layout; an adjacent link to its Pi adapter keeps relative imports
@@ -151,7 +151,7 @@ never fall back to full Context. Startup relies on supported Pi 1.6.0 fatal RPC
 extension-load handling and ChildRpc's exit rejection, with no readiness command.
 SQLite never initializes a missing store, though WAL/SHM sidecars may change.
 This is a tool API boundary, not filesystem isolation or proof of model reading
-and compliance. See [Context's public contract](https://github.com/seongju0/context/blob/main/src/adapters/pi/README.md).
+and compliance. See [Context's public contract](https://github.com/seongju0/context/blob/main/src/pi/README.md).
 
 ### Skill-based assignments
 

@@ -17,7 +17,7 @@ function candidateDirectories(): string[] {
   const configured = process.env.CONTEXT_PACKAGE_DIR?.trim();
   if (configured) {
     const abs = resolve(configured);
-    candidates.push(join(abs, "src/adapters/pi"), abs);
+    candidates.push(join(abs, "src/pi"), abs);
   }
   candidates.push(siblingContextDirectory);
   return candidates;

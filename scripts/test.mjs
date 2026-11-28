@@ -50,7 +50,7 @@ try {
   console.log(`PASS: all ${extensions.length} copied extension entry points load through Pi discovery; support files are not extensions.`);
 
   if (process.env.CONTEXT_PACKAGE_DIR?.trim()) {
-    const contextEntry = join(resolve(process.env.CONTEXT_PACKAGE_DIR), "src/adapters/pi/index.ts");
+    const contextEntry = join(resolve(process.env.CONTEXT_PACKAGE_DIR), "src/pi/index.ts");
     const integrated = await discoverAndLoadExtensions([contextEntry], scratch, env.PI_CODING_AGENT_DIR);
     assert.deepEqual(integrated.errors, []);
     const context = integrated.extensions.filter(extension => extension.tools.has("context_project_recap"));
